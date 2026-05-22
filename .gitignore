@@ -1,0 +1,72 @@
+# Local OS/editor files
+.DS_Store
+*.swp
+*.swo
+
+# Python/cache/build outputs
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Local agent/session artifacts
+.nanobot/
+sessions/
+.local_openclaw/
+.codex_tmp_*
+tmp/
+outputs/
+
+# Credentials and local env
+.env
+.env.*
+*.key
+*.pem
+
+# Large/generated archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# Upstream media/frontend assets not needed for SRO benchmark handoff
+nanobot-sro-v3/case/
+nanobot-sro-v3/images/
+nanobot-sro-v3/webui/
+
+# Historical benchmark outputs; keep curated fixtures and compact CSV/docs
+SRO_test/qwenclawbench/*/
+!SRO_test/qwenclawbench/baseline/
+!SRO_test/qwenclawbench/sro_v3/
+SRO_test/qwenclawbench/baseline/*/
+SRO_test/qwenclawbench/sro_v3/*/
+!SRO_test/qwenclawbench/baseline/task_21_openclaw_comprehension/
+!SRO_test/qwenclawbench/sro_v3/task_21_openclaw_comprehension/
+!SRO_test/qwenclawbench/baseline/task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check/
+!SRO_test/qwenclawbench/sro_v3/task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check/
+!SRO_test/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_5q/
+!SRO_test/qwenclawbench/sro_v3/task_loogle_shortdep_fall_of_outremer_5q/
+!SRO_test/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_3q_followup/
+!SRO_test/qwenclawbench/sro_v3/task_loogle_shortdep_fall_of_outremer_3q_followup/
+SRO_test/qwenclawbench/**/results/
+SRO_test/qwenclawbench/**/runtime/scripts/results/
+SRO_test/qwenclawbench/**/transcripts/
+SRO_test/qwenclawbench/**/result.json
+SRO_test/qwenclawbench/**/task_transcript.jsonl
+SRO_test/qwenclawbench/**/judge_transcript.jsonl
+SRO_test/qwenclawbench/**/benchmark.log
+
+# External benchmark clones/caches
+qwenclawbench_full/
+qwenclawbench_repo/
+
+# Packaged runtime fixtures should not include generated benchmark result dirs.
+handoff/**/runtime/scripts/results/
+
+# Keep source code, curated docs, handoff directory, and scripts tracked.
