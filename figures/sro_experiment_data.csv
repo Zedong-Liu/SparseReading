@@ -9,13 +9,14 @@ Qwen,task_00086,T86 cmd security,SRO win,QwenClawBench,0.309,0.954,140514,90695,
 Qwen,task_00098,T98 book rec diagnosis,Boundary,QwenClawBench,0.917,1.0,186005,143502,14,10,,,closure helped; 22.9% token reduction
 DeepSeek,task_21,T21 openclaw PDF,SRO win,PinchBench/QwenClawBench,1.0,1.0,714716,349224,33,14,,,DeepSeek-V4-Pro Phase3 slots collect plus native fallback; 51.1% token reduction; verify guard blocked low-quality q3/q4 candidates
 DeepSeek,task_00012,T12 stock audit,SRO win,QwenClawBench,0.7917,0.9688,253685,110056,11,6,,,DeepSeek-V4-Pro Phase3 clean audit closure win; score +0.177; token reduction 56.6%
-DeepSeek,task_00036,T36 file size,Gate/pass,QwenClawBench,0.6875,0.6875,51881,44265,6,5,,,native gate; 14.7% token reduction
-DeepSeek,task_00059,T59 discount calc,Gate/pass,QwenClawBench,0.708,0.833,575574,173156,23,9,,,runtime fix retest; 69.9% token reduction
+DeepSeek,task_00036,T36 file size,Gate/pass,QwenClawBench,0.375,0.375,53102,41406,5,4,,,DeepSeek-V4-Pro; Pro underperforms Flash (0.375 vs 0.688); gate 22.0% token reduction
+DeepSeek,task_00059,T59 discount calc,Gate/pass,QwenClawBench,0.65,0.65,597544,440683,23,18,,,"DeepSeek-V4-Pro; gate no improvement (both 0.650); baseline 597k tokens, gate 441k (-26.3%)"
 DeepSeek,task_00067,T67 SPARQL query,Boundary,QwenClawBench,0.6208,0.5583,167609,148837,8,7,,,DeepSeek-V4-Pro Phase3 gate native bypass; no sro calls; score delta likely judge/native variance; not SRO tool loss
 DeepSeek,task_00058,T58 DID regression,Gate/pass,QwenClawBench,1.0,1.0,447300,375432,18,17,,,DeepSeek-V4-Pro Phase3 native bypass; no sro calls; same score with lower token/time; not SRO tool win
-DeepSeek,task_00073,T73 P&L analysis,Gate/pass,QwenClawBench,0.854,0.854,318177,213807,11,8,,,gate pass low overhead
-DeepSeek,task_00086,T86 cmd security,Gate/pass,QwenClawBench,0.6,0.954,1152253,859009,40,32,,,profile gate; no SRO
-DeepSeek,task_00098,T98 book rec diagnosis,Gate/pass,QwenClawBench,0.896,0.867,467170,312598,19,15,,,gate native; token down
-DeepSeek,task_loogle_shortdep_fall_of_outremer_5q,LooGLE Outremer 5Q,SRO win,LooGLE/QwenClawBench,1.0,1.0,177141,61285,11,5,,,DeepSeek-V4-Flash readerfix v2; single-line 100k-char LooGLE shortdep task; SRO collect slot digest; 65.4% token reduction; no score drop
-DeepSeek,task_loogle_shortdep_fall_of_outremer_3q_followup,LooGLE Outremer 3Q,SRO win,LooGLE/QwenClawBench,1.0,1.0,155688,40300,9,4,,,DeepSeek-V4-Flash readerfix; fixed text reader duration/date/location slots; gate-only rerun vs unchanged native baseline; 74.1% token reduction; no score drop
+DeepSeek,task_00073,T73 P&L analysis,Gate/pass,QwenClawBench,1.0,0.9688,227171,227000,7,8,,,"DeepSeek-V4-Pro; baseline 1.0, gate 0.969; +0.146 baseline vs Flash; minimal gate token change"
+DeepSeek,task_00086,T86 cmd security,SRO win,QwenClawBench,0.65,0.9885,209601,163995,7,7,,,DeepSeek-V4-Pro; gate 0.988 vs baseline 0.650; strong SRO improvement; baseline 81.8% fewer tokens vs Flash (210k vs 1.15M)
+DeepSeek,task_00098,T98 book rec diagnosis,Boundary,QwenClawBench,0.9392,0.8958,257617,749269,13,30,,,DeepSeek-V4-Pro; baseline 0.939 vs Flash 0.896; gate 0.896 with 749k tokens (high variance); 30 req
+DeepSeek,task_loogle_shortdep_fall_of_outremer_5q,LooGLE Outremer 5Q,SRO win,LooGLE/QwenClawBench,1.0,1.0,178178,45647,11,4,,,"DeepSeek-V4-Pro; both 1.0; gate token 74.4% reduction (178k→46k, 4 req)"
+DeepSeek,task_loogle_shortdep_fall_of_outremer_3q_followup,LooGLE Outremer 3Q,Gate/pass,LooGLE/QwenClawBench,1.0,1.0,146528,125530,9,8,,,DeepSeek-V4-Pro; both 1.0; gate 125k tokens (vs Flash 40k); model variance on native bypass
 Qwen,task_loogle_shortdep_fall_of_outremer_3q_followup,LooGLE Outremer 3Q,SRO win,LooGLE/QwenClawBench,0.0,1.0,621281,27511,50,4,,,Qwen3.5-35B-A3B local readerfix; matched fixed runset baseline exhausted 50 tool calls/no answer; SRO collect answer-shaped digest; score +1.0; 95.6% token reduction
+DeepSeek,task_00094,T94 exam monitor,SRO win,QwenClawBench,1.0,1.0,360827,212567,17,13,,,DeepSeek-V4-Pro; baseline 1.0 vs Flash 0.800; gate 1.0; 41.1% token reduction (361k→213k)
