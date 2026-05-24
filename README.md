@@ -27,7 +27,7 @@ uv run --project nanobot-sro-v3 pytest \
 
 ```bash
 export API_KEY="..."
-export API_BASE_URL="https://api.deepseek.com/v1"
+export API_BASE_URL="https://llmapi.paratera.com/v1"
 export BENCH_MODEL="deepseek-v4-flash"
 export PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000
 export TIMEOUT_MULTIPLIER=1
@@ -83,7 +83,7 @@ SRO mode 将 `baseline` 替换为 `sro_v3`，runtime 内容一致，运行时通
 
 ```bash
 export API_KEY="你的 DeepSeek API key"
-export API_BASE_URL="https://api.deepseek.com/v1"
+export API_BASE_URL="https://llmapi.paratera.com/v1"
 export BENCH_MODEL="deepseek-v4-flash"
 export PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000
 export TIMEOUT_MULTIPLIER=1
@@ -119,7 +119,7 @@ task_21 要求 agent 从一份 OpenClaw 技能生态分析 PDF 中提取 8 个�
 
 ```bash
 export API_KEY="你的 DeepSeek API key"
-export API_BASE_URL="https://api.deepseek.com/v1"
+export API_BASE_URL="https://llmapi.paratera.com/v1"
 export BENCH_MODEL="deepseek-v4-flash"
 export PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000
 export TIMEOUT_MULTIPLIER=1
@@ -173,6 +173,40 @@ local_agent_comp/run_qcb_trusted_batch.sh \
 
 - `SRO_test/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_5q/` — 5 问题，满分
 - `SRO_test/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_3q_followup/` — 3 问题，需 readerfix 满分
+
+## 并行批处理
+
+`run_qcb_trusted_batch.sh` 支持并行执行多个 task，通过 `PARALLEL_JOBS` 环境变量控制并发数（默认 1，即串行）。
+
+### 用法
+
+```bash
+# 3 个 task 并发执行 baseline + gate 对比
+PARALLEL_JOBS=3 \
+  local_agent_comp/run_qcb_trusted_batch.sh \
+  --runset my_parallel_test_$(date +%Y%m%dT%H%M%S) \
+  --modes baseline,gate \
+  --tasks task_00036_find_largest_file_in_downloads_directory \
+          task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check \
+          task_21_openclaw_comprehension
+```
+
+### 并发安全
+
+每个 task/mode 组合自动获得独立的 agent 和 judge 目录，不会互相干扰：
+
+- **Task agent**: `~/.openclaw/agents/bench-{model}-{mode}-{task}/`
+- **Judge agent**: `~/.openclaw/agents/bench-judge-{model}-{mode}-{task}/`
+
+无需担心 session 文件冲突或 `cleanup_agent_sessions` 交叉删除。
+
+### 并行度建议
+
+- API 限流不明时从 `PARALLEL_JOBS=2` 起步
+- 纯 automated grading 任务可放心开到 4-6
+- 含 LLM judge（hybrid）的任务建议 ≤ 3，避免远端 judge API 限流
+- `--dry-run` 先确认路径无误再正式跑
+
 
 ## 已验证结果（CSV 全部 20 行）
 
