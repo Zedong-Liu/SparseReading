@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -372,7 +373,8 @@ def _build_judge_prompt(task: Task, transcript_summary: str, rubric: str, worksp
 
 def _ensure_judge_agent(judge_agent_prefix: str, judge_model: str, skill_dir: Path) -> str:
     model_slug = slugify_model(judge_model)
-    agent_id = f"{judge_agent_prefix}-{model_slug}"
+    judge_suffix = os.environ.get("PINCHBENCH_JUDGE_AGENT_SUFFIX", "").strip()
+    agent_id = f"{judge_agent_prefix}-{model_slug}{judge_suffix}"
     workspace = Path("/tmp/pinchbench/judge/workspace")
     ensure_agent_exists(agent_id, judge_model, workspace)
     return agent_id

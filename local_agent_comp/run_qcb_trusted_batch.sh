@@ -204,6 +204,65 @@ copy_latest_artifacts() {
   fi
 }
 
+PARALLEL_JOBS="${PARALLEL_JOBS:-1}"
+
+_run_one_task() {
+  local mode="$1"
+  local task="$2"
+  local src="$3"
+  local dst="$4"
+  local command="$5"
+
+  configure_mode_env "$mode"
+
+  echo
+  echo "=== PLAN $mode $task ==="
+  echo "source: $src"
+  echo "dest:   $dst"
+  echo "env:    SRO_ENABLED=${SRO_ENABLED:-} SRO_BENEFIT_GATE_OVERRIDE=${SRO_BENEFIT_GATE_OVERRIDE:-} SRO_COLLECTION_CLOSURES_ENABLED=${SRO_COLLECTION_CLOSURES_ENABLED:-} SRO_DISABLED_CLOSURE_FAMILIES=${SRO_DISABLED_CLOSURE_FAMILIES:-}"
+  echo "cmd:    $command"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    return 0
+  fi
+
+  rm -rf "$dst"
+  mkdir -p "$dst/results" "$dst/transcripts" "$dst/config"
+  cp -R "$src" "$dst/runtime"
+
+  export PATH="$ROOT/local_bin:$PATH"
+  export MODEL="$BENCH_MODEL"
+  export API_BASE_URL="${API_BASE_URL:-https://llmapi.paratera.com/v1}"
+  export API_KEY
+  export NANOBOT_SOURCE_PATH="$ROOT/nanobot-sro-v3"
+  export PYTHONPATH="$ROOT/nanobot-sro-v3${PYTHONPATH:+:$PYTHONPATH}"
+  export PINCHBENCH_HISTORY_DIR="$dst/transcripts"
+  export PINCHBENCH_JUDGE_MAX_MSG_CHARS="${PINCHBENCH_JUDGE_MAX_MSG_CHARS:-200000}"
+  export PINCHBENCH_RUN_ID="${RUNSET}-${mode}-${task}-$(date +%Y%m%dT%H%M%S)"
+  # Isolate agent and judge sessions directories per task to avoid concurrency races
+  export PINCHBENCH_AGENT_SUFFIX="-${mode}-${task}"
+  export PINCHBENCH_JUDGE_AGENT_SUFFIX="-${mode}-${task}"
+
+  write_manifest "$dst/config/manifest.json" "$mode" "$task" "$src" "$dst" "$command"
+
+  (
+    cd "$dst/runtime/scripts"
+    uv run --with openai --with tqdm --with requests --with pyyaml python benchmark.py \
+      --model "$BENCH_MODEL" \
+      --suite "$task" \
+      --output-dir "$dst/results" \
+      --runs 1 \
+      --timeout-multiplier "$TIMEOUT_MULTIPLIER" \
+      --no-upload
+  )
+
+  copy_latest_artifacts "$dst" "$task"
+  echo "=== DONE $mode $task ==="
+  echo "result: $dst/result.json"
+}
+
+# Collect all (mode, task) pairs and validate sources
+declare -a JOBS=()
 for raw_mode in "${MODE_LIST[@]}"; do
   mode="$(echo "$raw_mode" | tr -d '[:space:]')"
   [[ -n "$mode" ]] || continue
@@ -224,48 +283,38 @@ for raw_mode in "${MODE_LIST[@]}"; do
       exit 1
     fi
 
-    configure_mode_env "$mode"
-
-    echo
-    echo "=== PLAN $mode $task ==="
-    echo "source: $src"
-    echo "dest:   $dst"
-    echo "env:    SRO_ENABLED=${SRO_ENABLED:-} SRO_BENEFIT_GATE_OVERRIDE=${SRO_BENEFIT_GATE_OVERRIDE:-} SRO_COLLECTION_CLOSURES_ENABLED=${SRO_COLLECTION_CLOSURES_ENABLED:-} SRO_DISABLED_CLOSURE_FAMILIES=${SRO_DISABLED_CLOSURE_FAMILIES:-}"
-    echo "cmd:    $command"
-
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      continue
-    fi
-
-    rm -rf "$dst"
-    mkdir -p "$dst/results" "$dst/transcripts" "$dst/config"
-    cp -R "$src" "$dst/runtime"
-
-    export PATH="$ROOT/local_bin:$PATH"
-    export MODEL="$BENCH_MODEL"
-    export API_BASE_URL="${API_BASE_URL:-https://llmapi.paratera.com/v1}"
-    export API_KEY
-    export NANOBOT_SOURCE_PATH="$ROOT/nanobot-sro-v3"
-    export PYTHONPATH="$ROOT/nanobot-sro-v3${PYTHONPATH:+:$PYTHONPATH}"
-    export PINCHBENCH_HISTORY_DIR="$dst/transcripts"
-    export PINCHBENCH_JUDGE_MAX_MSG_CHARS="${PINCHBENCH_JUDGE_MAX_MSG_CHARS:-200000}"
-    export PINCHBENCH_RUN_ID="${RUNSET}-${mode}-${task}-$(date +%Y%m%dT%H%M%S)"
-
-    write_manifest "$dst/config/manifest.json" "$mode" "$task" "$src" "$dst" "$command"
-
-    (
-      cd "$dst/runtime/scripts"
-      uv run --with openai --with tqdm --with requests --with pyyaml python benchmark.py \
-        --model "$BENCH_MODEL" \
-        --suite "$task" \
-        --output-dir "$dst/results" \
-        --runs 1 \
-        --timeout-multiplier "$TIMEOUT_MULTIPLIER" \
-        --no-upload
-    )
-
-    copy_latest_artifacts "$dst" "$task"
-    echo "=== DONE $mode $task ==="
-    echo "result: $dst/result.json"
+    JOBS+=("${mode}|${task}|${src}|${dst}|${command}")
   done
 done
+
+# Execute jobs (parallel when PARALLEL_JOBS > 1)
+if [[ "$PARALLEL_JOBS" -le 1 ]]; then
+  for job in "${JOBS[@]}"; do
+    IFS='|' read -r mode task src dst command <<< "$job"
+    _run_one_task "$mode" "$task" "$src" "$dst" "$command"
+  done
+else
+  pids=()
+  for job in "${JOBS[@]}"; do
+    # Wait for a slot if at max capacity
+    while [[ ${#pids[@]} -ge $PARALLEL_JOBS ]]; do
+      new_pids=()
+      for pid in "${pids[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+          new_pids+=("$pid")
+        fi
+      done
+      pids=("${new_pids[@]}")
+      [[ ${#pids[@]} -ge $PARALLEL_JOBS ]] && sleep 1
+    done
+
+    IFS='|' read -r mode task src dst command <<< "$job"
+    _run_one_task "$mode" "$task" "$src" "$dst" "$command" &
+    pids+=($!)
+  done
+
+  # Wait for remaining jobs
+  for pid in "${pids[@]}"; do
+    wait "$pid" 2>/dev/null || true
+  done
+fi
