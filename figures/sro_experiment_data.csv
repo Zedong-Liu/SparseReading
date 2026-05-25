@@ -20,3 +20,15 @@ DeepSeek,task_loogle_shortdep_fall_of_outremer_5q,LooGLE Outremer 5Q,SRO win,Loo
 DeepSeek,task_loogle_shortdep_fall_of_outremer_3q_followup,LooGLE Outremer 3Q,Gate/pass,LooGLE/QwenClawBench,1.0,1.0,146528,125530,9,8,,,DeepSeek-V4-Pro; both 1.0; gate 125k tokens (vs Flash 40k); model variance on native bypass
 Qwen,task_loogle_shortdep_fall_of_outremer_3q_followup,LooGLE Outremer 3Q,SRO win,LooGLE/QwenClawBench,0.0,1.0,621281,27511,50,4,,,Qwen3.5-35B-A3B local readerfix; matched fixed runset baseline exhausted 50 tool calls/no answer; SRO collect answer-shaped digest; score +1.0; 95.6% token reduction
 DeepSeek,task_00094,T94 exam monitor,SRO win,QwenClawBench,1.0,1.0,360827,212567,17,13,,,DeepSeek-V4-Pro; baseline 1.0 vs Flash 0.800; gate 1.0; 41.1% token reduction (361k→213k)
+DeepSeek-V4-Pro,task_00036,T36 file size,Gate/pass,PinchBench/QwenClawBench,0.375,0.375,53102,41406,5,4,,,Gate pass; Pro underperforms Flash
+DeepSeek-V4-Pro,task_00059,T59 discount,Gate/pass,PinchBench/QwenClawBench,0.65,0.65,597544,440683,23,18,,,Gate pass; model variance saves 157k tokens
+DeepSeek-V4-Pro,task_00073,T73 P&L,Gate/pass,PinchBench/QwenClawBench,1.0,0.969,227171,227000,7,8,,,Gate pass; Pro baseline already 1.0
+DeepSeek-V4-Pro,task_00086,T86 cmd sec,SRO win,PinchBench/QwenClawBench,0.65,0.988,209601,163995,7,7,,,SRO win; 1 sro_read replaces 25 native reads
+DeepSeek-V4-Pro,task_00098,T98 book rec,Gate/pass,PinchBench/QwenClawBench,0.939,0.979,257617,389456,13,17,,,"weak_diagnosis bypass; high variance, 0 SRO calls"
+DeepSeek-V4-Pro,task_loogle_5q,L5Q LooGLE,SRO win,PinchBench/QwenClawBench,1.0,1.0,178178,45647,11,4,,,"SRO win; 1 sro_read scans 100k-char doc, 74% token reduction"
+DeepSeek-V4-Pro,task_loogle_3q,L3Q LooGLE,Gate/pass,PinchBench/QwenClawBench,1.0,1.0,146528,125530,9,8,,,Gate pass; 3 sro_read but score already 1.0
+DeepSeek-V4-Pro,task_00094,T94 exam,Gate/pass,PinchBench/QwenClawBench,1.0,1.0,360827,212567,17,13,,,"Gate/pass; 0 SRO, model variance only"
+DeepSeek-V4-Pro,task_00012,T12 stock audit,SRO win,PinchBench/QwenClawBench,0.792,0.969,253685,110056,11,6,,,"SRO win; audit closure, 57% token reduction"
+DeepSeek-V4-Pro,task_21,T21 compr.,SRO win,PinchBench/QwenClawBench,1.0,1.0,714716,349224,33,14,,,"SRO win; 3 sro_read, 51% token reduction"
+DeepSeek-V4-Pro,task_00058,T58 DiD,Gate/pass,PinchBench/QwenClawBench,1.0,1.0,447300,375432,18,17,,,"Gate/pass; SRO bypassed, 0 SRO calls"
+DeepSeek-V4-Pro,task_00067,T67 SPARQL,Boundary,PinchBench/QwenClawBench,0.621,0.558,167609,148837,8,7,,,"Boundary; slight regression, 0 SRO calls"
