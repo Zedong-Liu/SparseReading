@@ -1,0 +1,3 @@
+task_id,variant,runset,benchmark_version,score,total_tokens,requests,timed_out,sro_read_calls,sro_card_calls,observation
+task_00059_user_discount_calculator,p0_plus_c,p0_c_flash_20260527,b8d34fd,0.7083333333333334,920819,35,false,0,0,"native path; automated calculation cases failed while LLM judge was full score"
+task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix,p0_plus_c,p0_c_flash_20260527,b8d34fd,0.6786666666666666,1073123,40,false,0,0,"native path; delivered fixes but missed schema mismatch and incomplete cross-file evidence"
