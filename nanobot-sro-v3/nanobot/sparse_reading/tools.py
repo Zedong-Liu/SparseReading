@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from nanobot.agent.tools.base import Tool
+from nanobot.sparse_reading.models import MAX_HINT_NEEDLES, MAX_HINT_SLOTS
 from nanobot.sparse_reading.orchestrator import SparseReadingOrchestrator
 
 
@@ -48,7 +49,7 @@ class SroCardTool(Tool):
                 "instruction": "For multi-question reports, copy each user question into one compact slot.",
                 "hint": {
                     "goal": "state the evidence needed from this artifact",
-                    "type_hint": card.type,
+                    "type_hint": "text" if card.type == "txt" else card.type,
                 },
             }
         return json.dumps(payload, ensure_ascii=False, indent=2)
@@ -64,14 +65,7 @@ class SroReadTool(Tool):
 
     @property
     def description(self) -> str:
-        return (
-            "Read sparse evidence from a large object using mode scout/focus/collect/refine/verify. "
-            "SRO evidence is authoritative for the requested evidence goal: if collect/focus returns overall_status=ready or no unresolved items, write the deliverable or run one short calculation instead of rereading source files. "
-            "For multi-question PDF/report tasks, the first read after sro_card should be mode=collect with hint.slots; do not use scout or a long needles list for that case. "
-            "For directory collections that require diagnosis/audit/rules/config facts, use mode=collect first; use mode=focus only when you need candidate filenames and not facts. "
-            "Slots are lightweight objects with id, question, expected, and optional aliases; collect returns a compact slot_digest rather than a large evidence matrix. "
-            "When calc_ready is returned, use the derived TSV artifact(s) in one short calculation script."
-        )
+        return "Return sparse evidence for one object. If evidence is ready for output, write the deliverable; do not read further."
 
     @property
     def read_only(self) -> bool:
@@ -84,16 +78,77 @@ class SroReadTool(Tool):
             "properties": {
                 "target": {
                     "type": "object",
-                    "description": "Either {'path': '/file'} for first read or {'artifact_id': 'sro_...'} for follow-up",
+                    "description": "Provide path for first discovery or artifact_id for follow-up.",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "artifact_id": {"type": "string"},
+                    },
+                    "additionalProperties": False,
                 },
                 "mode": {
                     "type": "string",
                     "enum": ["scout", "focus", "collect", "refine", "verify"],
-                    "description": "Sparse reading macro mode",
                 },
                 "hint": {
                     "type": "object",
-                    "description": "HintSpec object: goal, needles, want, scope, artifact, type_hint, must_keep, optional slots[{id, question, expected, aliases}]. Use slots, not many needles, for multi-fact long-document QA.",
+                    "description": "Evidence request for the selected object and mode.",
+                    "properties": {
+                        "goal": {"type": "string"},
+                        "needles": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "maxItems": MAX_HINT_NEEDLES,
+                        },
+                        "want": {
+                            "type": "string",
+                            "enum": ["fact", "count", "verbatim", "table", "schema", "list"],
+                        },
+                        "scope": {
+                            "type": "string",
+                            "enum": ["new", "narrow", "expand", "verify"],
+                        },
+                        "artifact": {"type": "string"},
+                        "type_hint": {
+                            "type": "string",
+                            "enum": [
+                                "auto",
+                                "pdf",
+                                "text",
+                                "csv",
+                                "xlsx",
+                                "json",
+                                "yaml",
+                                "xml",
+                                "mixed",
+                                "collection",
+                            ],
+                        },
+                        "must_keep": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "slots": {
+                            "type": "array",
+                            "maxItems": MAX_HINT_SLOTS,
+                            "description": "Ordered question slots.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "string"},
+                                    "question": {"type": "string"},
+                                    "expected": {"type": "string"},
+                                    "aliases": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                        "maxItems": 8,
+                                    },
+                                },
+                                "required": ["id", "question"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    },
+                    "additionalProperties": False,
                 },
             },
             "required": ["target", "mode", "hint"],

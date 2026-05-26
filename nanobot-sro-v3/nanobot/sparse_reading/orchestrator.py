@@ -329,7 +329,7 @@ class SparseReadingOrchestrator:
                     "want": "fact",
                     "scope": "new",
                     "artifact": card.artifact_id,
-                    "type_hint": card.type,
+                    "type_hint": "text" if card.type == "txt" else card.type,
                     "must_keep": [],
                 },
             },
