@@ -122,8 +122,21 @@ class HintSpec:
         else:
             needles = [str(item).strip() for item in needles_raw if str(item).strip()]
             if len(needles) > MAX_HINT_NEEDLES:
-                errors.append(f"hint.needles must contain at most {MAX_HINT_NEEDLES} items; use hint.slots for multi-fact tasks")
+                overflow = needles[MAX_HINT_NEEDLES:]
                 needles = needles[:MAX_HINT_NEEDLES]
+                # Auto-convert overflow needles to slots so collection reads don't fail
+                auto_slots = []
+                for idx, needle in enumerate(overflow, start=1):
+                    auto_slots.append(SlotSpec(
+                        id=f"needle_overflow_{idx}",
+                        question=f"Find information about: {needle}",
+                        expected="fact",
+                        aliases=[needle],
+                    ))
+                if auto_slots and not slots:
+                    slots = auto_slots
+                    # Repair note: overflow handled, not a blocking error
+                    errors.append(f"hint.needles truncated from {len(needles) + len(overflow)} to {MAX_HINT_NEEDLES}; {len(auto_slots)} overflow auto-converted (repair_ok)")
         want_raw = str(obj.get("want") or "fact").strip()
         want = cls._normalize_want(want_raw)
         if want not in VALID_WANTS:

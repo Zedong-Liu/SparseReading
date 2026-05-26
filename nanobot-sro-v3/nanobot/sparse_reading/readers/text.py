@@ -249,6 +249,9 @@ class TextReader:
                     score -= 3.0
             if self._slot_wants_count(slot) and re.search(r"\b\d[\d,]*(?:\.\d+)?\b", unit.text):
                 score += 1.2
+            if ("category" in f"{slot.expected} {slot.question}".lower()) and "count" in hay:
+                if "skill category" in hay or "top categories" in hay:
+                    score += 8.0
             if self._slot_wants_list(slot):
                 if any(term in hay for term in self._slot_section_terms(slot)):
                     score += 8.0
@@ -336,7 +339,7 @@ class TextReader:
 
     def _extract_count(self, text: str, question: str) -> str:
         if "how long" in question or "duration" in question:
-            duration = re.search(r"\b(\d[\d,]*(?:\.\d+)?)\s+years?\b", text, re.IGNORECASE)
+            duration = re.search(r"\b(\d[\d,]*(?:\.\d+)?)\s+(?:years?|months?|weeks?|days?|hours?)\b", text, re.IGNORECASE)
             if duration:
                 return duration.group(1)
         nums = re.findall(r"\b\d[\d,]*(?:\.\d+)?\b", text)
@@ -392,6 +395,7 @@ class TextReader:
                     score += 2 * sum(1 for term in useful_terms if term in local)
                     if "when" in question and any(term in local for term in ("crowned", "collected", "signed", "published")):
                         score += 1
+                    score += 3 * sum(1 for term in TextReader._date_action_terms(question) if term in local)
                     score += 4 * sum(1 for term in TextReader._date_focus_terms(question) if term in local)
                     dated_sentences.append((score, match.group(0)))
         if dated_sentences:
@@ -412,6 +416,14 @@ class TextReader:
                 focus.append(term)
         return list(dict.fromkeys(focus))
 
+    @staticmethod
+    def _date_action_terms(question: str) -> list[str]:
+        actions = {
+            "appointed", "approved", "collected", "crowned", "deployed", "launched",
+            "migrated", "promoted", "published", "released", "signed", "started",
+        }
+        return [term for term in actions if term in question.lower()]
+
     @classmethod
     def _extract_location(cls, text: str, question: str, terms: list[str]) -> str:
         sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", text.strip()) if part.strip()]
@@ -431,8 +443,8 @@ class TextReader:
             search_text = " ".join(sentences[event_idx : event_idx + 3])
 
         patterns = [
-            r"\bembarked\s+for\s+([A-Z][A-Za-z .'-]{1,60}?)(?:\s+where|[.,;]|$)",
-            r"\b(?:went|returned|departed|sailed|travelled|traveled|left)\s+(?:for|to)\s+([A-Z][A-Za-z .'-]{1,60}?)(?:\s+where|[.,;]|$)",
+            r"\bembarked\s+for\s+([A-Z][A-Za-z .'-]{1,60}?)(?:\s+(?:where|for)\b|[.,;]|$)",
+            r"\b(?:went|returned|departed|sailed|travelled|traveled|left|moved)\s+(?:for|to)\s+([A-Z][A-Za-z .'-]{1,60}?)(?:\s+(?:where|for)\b|[.,;]|$)",
         ]
         for pattern in patterns:
             match = re.search(pattern, search_text)
@@ -455,7 +467,9 @@ class TextReader:
 
     @staticmethod
     def _extract_category_count(text: str, question: str) -> str:
-        pairs = re.findall(r"([A-Z][A-Za-z &/+.-]{2,60}?)\s*\(?([0-9][0-9,]*)\)?", text)
+        pairs = re.findall(r"(?:was|is|are|were|:)\s+([A-Z][A-Za-z &/+.-]{2,60}?)\s*\(?([0-9][0-9,]*)\)?", text)
+        if not pairs:
+            pairs = re.findall(r"([A-Z][A-Za-z &/+.-]{2,60}?)\s*\(?([0-9][0-9,]*)\)?", text)
         cleaned: list[tuple[str, str]] = []
         for name, count in pairs:
             name = re.sub(r"\s+", " ", name).strip(" -:")
@@ -546,7 +560,7 @@ class TextReader:
     @staticmethod
     def _slot_wants_count(slot: SlotSpec) -> bool:
         text = f"{slot.expected} {slot.question}".lower()
-        return any(term in text for term in ("count", "how many", "number", "total", "remained"))
+        return any(term in text for term in ("count", "how many", "how long", "duration", "number", "total", "remained"))
 
     @staticmethod
     def _slot_wants_location(slot: SlotSpec) -> bool:

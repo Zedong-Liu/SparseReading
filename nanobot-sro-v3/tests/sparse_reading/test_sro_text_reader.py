@@ -364,6 +364,55 @@ def test_collect_extracts_category_counts_without_date_distractor(tmp_path):
     assert slots["second_category"]["candidate"] == "Search & Research: 253"
 
 
+def test_collect_prefers_category_count_table_over_summary_mentions(tmp_path):
+    path = tmp_path / "report.md"
+    path.write_text(
+        "Executive summary\n\n"
+        "In one large community-curated index, the biggest skill categories include "
+        "AI & LLM meta-tools (287), Search & Research (253), and DevOps & Cloud (212).\n\n"
+        "Quantitative signal from the skills ecosystem\n\n"
+        "Top categories by listed count include:\n"
+        "Skill category (community index)\n"
+        "Count\n"
+        "AI & LLMs\n"
+        "287\n"
+        "Search & Research\n"
+        "253\n"
+        "DevOps & Cloud\n"
+        "212\n",
+        encoding="utf-8",
+    )
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(path)
+
+    pack = sro.read(
+        {"artifact_id": card.artifact_id},
+        "collect",
+        {
+            "goal": "Answer category count questions",
+            "artifact": card.artifact_id,
+            "type_hint": "text",
+            "slots": [
+                {
+                    "id": "top_category",
+                    "question": "What is the largest skill category by count, and how many skills does it have?",
+                    "expected": "category name and number",
+                },
+                {
+                    "id": "second_category",
+                    "question": "What is the second-largest skill category by count, and how many skills does it have?",
+                    "expected": "category name and number",
+                },
+            ],
+        },
+    )
+
+    assert pack.slot_digest is not None
+    slots = {slot["id"]: slot for slot in pack.slot_digest["slots"]}
+    assert slots["top_category"]["candidate"] == "AI & LLMs: 287"
+    assert slots["second_category"]["candidate"] == "Search & Research: 253"
+
+
 def test_text_reader_chunks_single_line_long_text_and_finds_late_sentence(tmp_path):
     path = tmp_path / "document.txt"
     filler = "The chronicle repeats generic background about ports and envoys. " * 80
@@ -512,6 +561,41 @@ def test_collect_readiness_gate_allows_explicit_low_confidence_verify(tmp_path):
     assert "broad collect/focus suppressed" not in second.summary
 
 
+def test_collect_readiness_gate_allows_format_mismatch_verify(tmp_path):
+    path = tmp_path / "report.md"
+    path.write_text(
+        "Skill category summary\n\n"
+        "February: 7, was a date fragment in the appendix, not a category.\n"
+        "The largest skill category was AI & LLMs (287).\n"
+        "The second-largest skill category was Search & Research (253).\n",
+        encoding="utf-8",
+    )
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(path)
+    hint = {
+        "goal": "Answer category facts",
+        "artifact": card.artifact_id,
+        "slots": [
+            {
+                "id": "top_category",
+                "question": "What is the largest skill category by count, and how many skills does it have?",
+                "expected": "category name and number",
+            }
+        ],
+    }
+
+    first = sro.read({"artifact_id": card.artifact_id}, "collect", hint)
+    assert first.slot_digest is not None
+    first.slot_digest["slots"][0]["candidate"] = "February: 7,"
+    first.slot_digest["slots"][0]["confidence"] = 0.99
+    sro._slot_digests[card.artifact_id] = first.slot_digest
+    second = sro.read({"artifact_id": card.artifact_id}, "verify", hint)
+
+    assert second.slot_digest is not None
+    assert "broad collect/focus suppressed" not in second.summary
+    assert second.slot_digest["slots"][0]["candidate"] == "AI & LLMs: 287"
+
+
 def test_collect_readiness_gate_suppresses_malformed_followup(tmp_path):
     path = tmp_path / "report.md"
     path.write_text(
@@ -544,6 +628,53 @@ def test_collect_readiness_gate_suppresses_malformed_followup(tmp_path):
     assert second.slot_digest is not None
     assert "broad collect/focus suppressed" in second.summary
     assert second.slot_digest["allowed_next"] == ["write_file"]
+
+
+def test_collect_general_text_reader_patterns_are_not_history_specific(tmp_path):
+    path = tmp_path / "incident_review.md"
+    path.write_text(
+        "Release review\n\n"
+        "The beta soak lasted 14 days before the launch board met.\n"
+        "The gateway migration planning note was dated 03 March 2026. "
+        "The API gateway was promoted on 17 April 2026 after the canary passed.\n"
+        "Nora appointed Maya as incident coordinator for the postmortem. "
+        "The response team then moved to Dublin for the onsite review.\n",
+        encoding="utf-8",
+    )
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(path)
+
+    pack = sro.read(
+        {"artifact_id": card.artifact_id},
+        "collect",
+        {
+            "goal": "Answer non-history text facts",
+            "artifact": card.artifact_id,
+            "slots": [
+                {
+                    "id": "soak_duration",
+                    "question": "How long did the beta soak last?",
+                    "expected": "a duration in days",
+                },
+                {
+                    "id": "gateway_promoted",
+                    "question": "When was the API gateway promoted?",
+                    "expected": "a date",
+                },
+                {
+                    "id": "team_after_coordinator",
+                    "question": "Where did the response team go after Maya was appointed incident coordinator?",
+                    "expected": "a location",
+                },
+            ],
+        },
+    )
+
+    assert pack.slot_digest is not None
+    slots = {slot["id"]: slot for slot in pack.slot_digest["slots"]}
+    assert slots["soak_duration"]["candidate"] == "14"
+    assert slots["gateway_promoted"]["candidate"] == "17 April 2026"
+    assert slots["team_after_coordinator"]["candidate"] == "Dublin"
 
 
 def test_collect_prefers_gateway_api_and_counts_proposed_task_labels(tmp_path):
@@ -592,3 +723,69 @@ def test_collect_prefers_gateway_api_and_counts_proposed_task_labels(tmp_path):
     slots = {slot["id"]: slot for slot in pack.slot_digest["slots"]}
     assert slots["api_type"]["candidate"].lower() == "typed websocket api"
     assert slots["task_count"]["candidate"] == "2"
+
+def test_excerpt_mapping_includes_all_short_config_values(tmp_path):
+    """_excerpt_mapping includes both matched and unmatched short config values."""
+    from nanobot.sparse_reading.readers.collection import CollectionReader
+    from nanobot.sparse_reading.models import HintSpec
+    import json
+
+    f = tmp_path / "sw.json"
+    f.write_text(json.dumps({
+        "scoring_weights": {"kw": 0.40, "rb": 0.35, "ss": 0.20, "fr": 0.05},
+        "desc": "A long description that should not crowd out the numeric values above."
+    }), encoding="utf-8")
+
+    reader = CollectionReader()
+    hint = HintSpec(goal="diagnose", needles=["eviction"], type_hint="collection")
+    from nanobot.sparse_reading.readers.collection import CollectionItem
+    item = CollectionItem(name="sw.json", path=f, size=f.stat().st_size, kind="json")
+    result = reader._excerpt_mapping(item, f.read_text(), hint)
+    # All 4 values should be present (0.40 normalizes to 0.4)
+    for val in ("0.4", "0.35", "0.2", "0.05"):
+        assert val in result, f"missing {val} in:\n{result}"
+    assert "desc" in result or "description" in result.lower()
+
+
+def test_excerpt_mapping_yaml_includes_all_scalar_values(tmp_path):
+    """_excerpt_mapping on YAML includes all key:value pairs."""
+    from nanobot.sparse_reading.readers.collection import CollectionReader
+    from nanobot.sparse_reading.models import HintSpec
+
+    f = tmp_path / "alt.yaml"
+    f.write_text("seed_quota: 10\ndedup: keep_first\nctx_window: 0\nmax: 50\n", encoding="utf-8")
+    reader = CollectionReader()
+    hint = HintSpec(goal="extract config", needles=["config"], type_hint="collection")
+    from nanobot.sparse_reading.readers.collection import CollectionItem
+    item = CollectionItem(name="alt.yaml", path=f, size=f.stat().st_size, kind="yaml")
+    result = reader._excerpt_mapping(item, f.read_text(), hint)
+    for val in ("10", "keep_first", "0", "50"):
+        assert val in result, f"missing {val} in:\n{result}"
+
+
+def test_compact_keys_shortens_shared_prefixes():
+    """_compact_keys shortens keys when 3+ rows share the same dot-parent."""
+    from nanobot.sparse_reading.readers.collection import CollectionReader
+
+    rows = [
+        "$.scoring_weights.keyword_match: 0.40",
+        "$.scoring_weights.recency_bias: 0.35",
+        "$.scoring_weights.semantic_similarity: 0.20",
+        "$.scoring_weights.frequency: 0.05",
+    ]
+    compact = CollectionReader._compact_keys(rows)
+    assert compact[0] == "keyword_match: 0.40"
+    assert compact[3] == "frequency: 0.05"
+
+    # Stay as-is when mixed parents (general description row uses $ not $.scoring_weights)
+    rows2 = [
+        "$.scoring_weights.kw: 0.4",
+        "$.scoring_weights.rb: 0.35",
+        "$.desc: text",
+    ]
+    compact2 = CollectionReader._compact_keys(rows2)
+    # desc has different parent ($ not $.scoring_weights), so only 2 rows share prefix
+    assert compact2 == rows2  # unchanged
+
+    # No-op when under 2 dot-keys
+    assert CollectionReader._compact_keys(["a.x: 1", "b.y: 2"]) == ["a.x: 1", "b.y: 2"]

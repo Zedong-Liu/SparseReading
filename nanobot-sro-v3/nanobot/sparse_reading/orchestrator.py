@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 from collections.abc import Callable
 from typing import Any
@@ -13,6 +14,7 @@ from nanobot.sparse_reading.benefit_gate import BenefitDecision, BenefitGate
 from nanobot.sparse_reading.detector import FileInfo, inspect_file
 from nanobot.sparse_reading.models import (
     VALID_MODES,
+    EvidenceBlock,
     EvidencePack,
     FileCard,
     HintSpec,
@@ -54,6 +56,7 @@ class SparseReadingOrchestrator:
         self._required_outputs_by_artifact: dict[str, set[str]] = {}
         self._written_outputs_by_artifact: dict[str, set[str]] = {}
         self._native_collection_roots: set[str] = set()
+        self._diagnostic_sections: dict[str, dict[str, str]] = {}
         self._macro_activation_callback = macro_activation_callback
         self._macro_available = macro_available
         self._macro_requested = False
@@ -358,8 +361,10 @@ class SparseReadingOrchestrator:
             gated = self._text_readiness_gate(artifact_id, info.type, mode, hint)
             if gated:
                 return gated
-        if errors:
-            return self._invalid_hint_pack(artifact_id, mode, info.type, hint, errors)
+        # Filter repair_ok errors: these are auto-healing, not blocking
+        blocking_errors = [e for e in errors if "repair_ok" not in e]
+        if blocking_errors:
+            return self._invalid_hint_pack(artifact_id, mode, info.type, hint, blocking_errors)
         if hint.artifact and hint.artifact != artifact_id:
             return EvidencePack(
                 artifact_id,
@@ -382,6 +387,8 @@ class SparseReadingOrchestrator:
                 return gated
             budget = self._collection_budget(mode)
             pack = self.collection_reader.read(info.path, artifact_id, mode, hint, budget)
+            if pack.next_action and "_diagnostic_sections" in pack.next_action:
+                self._diagnostic_sections[artifact_id] = pack.next_action.pop("_diagnostic_sections")
             if mode == "collect" and pack.evidence:
                 self._remember_collection_children(info.path, artifact_id, pack)
             return pack
@@ -462,15 +469,19 @@ class SparseReadingOrchestrator:
     @staticmethod
     def _allow_text_slot_verify(existing: dict[str, Any], hint: HintSpec) -> bool:
         slots_by_id = {str(slot.get("id")): slot for slot in existing.get("slots", []) if slot.get("id")}
-        requested = [slots_by_id.get(slot.id) for slot in hint.slots]
-        if not requested or any(slot is None for slot in requested):
+        requested = [(slot, slots_by_id.get(slot.id)) for slot in hint.slots]
+        if not requested or any(existing_slot is None for _, existing_slot in requested):
             return False
         if str(existing.get("overall_status") or "") == "needs_verify":
             return True
-        return all(SparseReadingOrchestrator._text_slot_candidate_is_suspicious(slot) for slot in requested if slot)
+        return all(
+            SparseReadingOrchestrator._text_slot_candidate_is_suspicious(existing_slot, requested_slot)
+            for requested_slot, existing_slot in requested
+            if existing_slot
+        )
 
     @staticmethod
-    def _text_slot_candidate_is_suspicious(slot: dict[str, Any]) -> bool:
+    def _text_slot_candidate_is_suspicious(slot: dict[str, Any], requested_slot: Any | None = None) -> bool:
         candidate = str(slot.get("candidate") or "").strip()
         try:
             confidence = float(slot.get("confidence") or 0.0)
@@ -484,7 +495,32 @@ class SparseReadingOrchestrator:
             return True
         if candidate.endswith(("[clipped]", "...")):
             return True
-        return len(candidate) <= 3 and not candidate.isdigit()
+        if len(candidate) <= 3 and not candidate.isdigit():
+            return True
+        return SparseReadingOrchestrator._text_candidate_format_mismatch(candidate, requested_slot)
+
+    @staticmethod
+    def _text_candidate_format_mismatch(candidate: str, requested_slot: Any | None) -> bool:
+        if requested_slot is None:
+            return False
+        prompt = f"{getattr(requested_slot, 'expected', '')} {getattr(requested_slot, 'question', '')}".lower()
+        candidate = candidate.strip()
+        if "category" in prompt:
+            if ":" not in candidate or not re.search(r"\d", candidate):
+                return True
+            label = candidate.split(":", 1)[0].strip().lower()
+            if label in TextReader._MONTHS or candidate.endswith(","):
+                return True
+        if any(term in prompt for term in ("date", "when")):
+            has_date = re.search(
+                r"\b(?:\d{1,2}\s+)?(?:January|February|March|April|May|June|July|August|September|October|November|December)(?:\s+\d{1,2},?)?\s+\d{4}\b|\b\d{4}[-/]\d{2}[-/]\d{2}\b|\b\d{4}\b",
+                candidate,
+            )
+            if not has_date:
+                return True
+        if any(term in prompt for term in ("count", "how many", "number")) and not re.search(r"\d", candidate):
+            return True
+        return False
 
     def _collection_readiness_gate(self, artifact_id: str, mode: str) -> EvidencePack | None:
         if self._is_native_escape_collection(artifact_id):
@@ -498,6 +534,10 @@ class SparseReadingOrchestrator:
         self._record_ready_collection_guard(artifact_id)
         allowed_next = ready.get("allowed_next") or ["write_file"]
         evidence = list(self._ready_collection_evidence.get(artifact_id, [])) if self._required_outputs_pending(artifact_id) else []
+        instruction = ready.get(
+            "instruction",
+            "Use the existing ready collection digest to write the deliverable; do not reread resolved sources.",
+        )
         return EvidencePack(
             artifact_id=artifact_id,
             mode=mode,
@@ -507,10 +547,7 @@ class SparseReadingOrchestrator:
             unresolved=[],
             next_action={
                 "allowed_next": allowed_next,
-                "instruction": ready.get(
-                    "instruction",
-                    "Use the existing ready collection digest to write the deliverable; do not reread resolved sources.",
-                ),
+                "instruction": instruction,
                 "guard": "ready_collection_artifact",
             },
         )
@@ -641,6 +678,8 @@ class SparseReadingOrchestrator:
     def _collection_child_guard(self, path: str | Path) -> str:
         try:
             key = str(Path(path).resolve(strict=False))
+            if key not in self._collection_child_guards and self.workspace and not Path(path).is_absolute():
+                key = str((self.workspace / path).resolve(strict=False))
         except Exception:
             key = str(path)
         artifact_id = self._collection_child_guards.get(key)
@@ -661,16 +700,18 @@ class SparseReadingOrchestrator:
             "instruction",
             "Use the existing collection digest or slot_digest to write the required deliverable. Do not verify resolved source facts.",
         )
+        allowed = ["write_file"]
         payload = {
             "sro_guard": True,
             "message": (
                 "This source file is already covered by the collection excerpt digest. "
                 "Treat the digest as usable evidence, not as a preliminary summary. "
-                "Do not broad-read this source again."
+                "Do not broad-read this source again. Use sro_read focus on specific source "
+                "files if you need to verify individual facts before writing."
             ),
             "covered_by_artifact": artifact_id,
             "evidence_complete_for_source": True,
-            "allowed_next": ["write_file"],
+            "allowed_next": allowed,
             "required_outputs_missing": missing,
             "next_action": {
                 "tool": "write_file",
@@ -682,6 +723,8 @@ class SparseReadingOrchestrator:
     def _ready_collection_child_artifact(self, path: str | Path) -> str:
         try:
             key = str(Path(path).resolve(strict=False))
+            if key not in self._ready_collection_child_guards and self.workspace and not Path(path).is_absolute():
+                key = str((self.workspace / path).resolve(strict=False))
         except Exception:
             key = str(path)
         artifact_id = self._ready_collection_child_guards.get(key, "")
