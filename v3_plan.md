@@ -147,3 +147,39 @@ Acceptance:
 - Integration fixture: `sro_card -> scout -> focus -> refine -> verify`.
 - Verify broad `read_file` handoff, short command passthrough, and sufficient EvidencePack anchors.
 - First PinchBench run only `task_21` and `task_18`; add same-object-type tasks only after inspection.
+
+## P0: Skill Presentation Simplification
+
+Objective:
+
+- Improve model adherence and reduce always-on instruction cost by rewriting only
+  `nanobot/skills/sparse-reading/SKILL.md` as a compact protocol guide.
+- Preserve the current SRO protocol, reader behavior, closure behavior, benefit
+  gate decisions, guard behavior, and tool schemas.
+
+Scope:
+
+- Replace repeated prose with one routing table, one follow-up/stop rule table,
+  and one canonical `collect` plus `slots` example.
+- Keep the established positive trajectories for long PDF/text multi-question
+  tasks and collection audit tasks.
+- Defer tool-description and JSON-schema changes to a separate phase after
+  this skill-only comparison.
+
+Acceptance criteria:
+
+- The skill removes duplicated prose while retaining explicit instructions for
+  `collect` plus `slots`, artifact continuity, `overall_status`, `calc_ready`,
+  collection-ready output, and any protocol constraints required by observed
+  invalid or inefficient trajectories. Word count is recorded, not gated.
+- Sparse-reading unit tests pass with no changes to runtime implementation or
+  existing test expectations.
+- A controlled `gate` comparison runs the same current source tree with the
+  legacy skill and compact skill on DeepSeek-V4-Flash and DeepSeek-V4-Pro for:
+  `task_21_openclaw_comprehension`,
+  `task_loogle_shortdep_fall_of_outremer_3q_followup`, and
+  `task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check`.
+- The compact-skill runs preserve score on these positive tasks and do not add
+  repeated source-reading or guard-loop trajectories. Token/request changes
+  are recorded; a further wording iteration is required if an avoidable
+  adherence regression is observed.

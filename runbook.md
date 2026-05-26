@@ -618,3 +618,80 @@ proxychains4 -q pip install --no-cache-dir \
   --force-reinstall openpyxl==3.1.5
 "'
 ```
+## 2026-05-26: P0 SKILL.md Presentation A/B
+
+This experiment changes only `nanobot-sro-v3/nanobot/skills/sparse-reading/SKILL.md`.
+The legacy comparison is a frozen local source snapshot created before editing:
+
+```bash id="p0-skill-freeze-legacy"
+rm -rf /tmp/sro_p0_legacy_root
+mkdir -p /tmp/sro_p0_legacy_root
+rsync -a --exclude .git --exclude .venv --exclude __pycache__ --exclude .pytest_cache \
+  /Users/captainliu/sparse-reading/nanobot-sro-v3/ \
+  /tmp/sro_p0_legacy_root/nanobot-sro-v3/
+ln -s /Users/captainliu/sparse-reading/SRO_test /tmp/sro_p0_legacy_root/SRO_test
+ln -s /Users/captainliu/sparse-reading/local_bin /tmp/sro_p0_legacy_root/local_bin
+```
+
+Local protocol regression:
+
+```bash id="p0-skill-unit-tests"
+cd /Users/captainliu/sparse-reading/nanobot-sro-v3
+uv run --with pytest python3.12 -m pytest tests/sparse_reading/ -q
+```
+
+Legacy DeepSeek comparisons:
+
+```bash id="p0-skill-legacy-flash"
+cd /Users/captainliu/sparse-reading
+SRO_PROJECT_ROOT=/tmp/sro_p0_legacy_root \
+API_KEY="$DEEPSEEK_API_KEY" API_BASE_URL=https://llmapi.paratera.com/v1 \
+BENCH_MODEL=DeepSeek-V4-Flash TIMEOUT_MULTIPLIER=1 PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000 \
+local_agent_comp/run_qcb_trusted_batch.sh \
+  --runset p0_skill_legacy_flash_20260526 --modes gate --tasks \
+  task_21_openclaw_comprehension \
+  task_loogle_shortdep_fall_of_outremer_3q_followup \
+  task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check
+```
+
+```bash id="p0-skill-legacy-pro"
+cd /Users/captainliu/sparse-reading
+SRO_PROJECT_ROOT=/tmp/sro_p0_legacy_root \
+API_KEY="$DEEPSEEK_API_KEY" API_BASE_URL=https://llmapi.paratera.com/v1 \
+BENCH_MODEL=DeepSeek-V4-Pro TIMEOUT_MULTIPLIER=2 PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000 \
+local_agent_comp/run_qcb_trusted_batch.sh \
+  --runset p0_skill_legacy_pro_20260526 --modes gate --tasks \
+  task_21_openclaw_comprehension \
+  task_loogle_shortdep_fall_of_outremer_3q_followup \
+  task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check
+```
+
+Accepted compact-skill comparisons:
+
+```bash id="p0-skill-v6-flash"
+cd /Users/captainliu/sparse-reading
+API_KEY="$DEEPSEEK_API_KEY" API_BASE_URL=https://llmapi.paratera.com/v1 \
+BENCH_MODEL=DeepSeek-V4-Flash TIMEOUT_MULTIPLIER=1 PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000 \
+local_agent_comp/run_qcb_trusted_batch.sh \
+  --runset p0_skill_compact_v6_flash_20260526 --modes gate --tasks \
+  task_21_openclaw_comprehension \
+  task_loogle_shortdep_fall_of_outremer_3q_followup \
+  task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check
+```
+
+```bash id="p0-skill-v6-pro"
+cd /Users/captainliu/sparse-reading
+API_KEY="$DEEPSEEK_API_KEY" API_BASE_URL=https://llmapi.paratera.com/v1 \
+BENCH_MODEL=DeepSeek-V4-Pro TIMEOUT_MULTIPLIER=2 PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000 \
+local_agent_comp/run_qcb_trusted_batch.sh \
+  --runset p0_skill_compact_v6_pro_20260526 --modes gate --tasks \
+  task_21_openclaw_comprehension \
+  task_loogle_shortdep_fall_of_outremer_3q_followup \
+  task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check
+```
+
+Diagnostic runsets retained for analysis: `p0_skill_compact_flash_20260526`
+(ready-status over-verification), `p0_skill_compact_v2_pro_20260526`
+(collection write-ready ignored), `p0_skill_compact_v3_flash_20260526`
+(model service error), and `p0_skill_compact_v5_flash_20260526`
+(`scope: "anchored"` invalid call and timeout).

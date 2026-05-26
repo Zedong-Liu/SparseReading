@@ -2515,3 +2515,108 @@ Validation:
 
 - Handoff wrapper dry-run succeeded for LooGLE 3Q baseline/gate.
 - Unit verification: `uv run --project nanobot-sro-v3 pytest nanobot-sro-v3/tests/sparse_reading/test_sro_text_reader.py nanobot-sro-v3/tests/sparse_reading/test_sro_protocol.py nanobot-sro-v3/tests/sparse_reading/test_sparseread_public_api.py -q` -> `93 passed`.
+## 2026-05-26: P0 SKILL.md Presentation Simplification
+
+### Scope
+
+The only functional SRO artifact changed in this P0 work is the always-on
+protocol document `nanobot-sro-v3/nanobot/skills/sparse-reading/SKILL.md`.
+Runtime reader logic, tool schema, closure behavior, and existing protocol
+tests were not modified in this phase.
+
+The skill changed from 956 words to 513 words. Reduction was useful for
+removing repeated prose, but word count was not treated as a hard gate after
+testing showed that a missing legal `hint.scope` constraint caused an invalid
+tool call.
+
+### Final Document Changes
+
+- One routing table defines first-read behavior, including immediate
+  `collect` plus ordered `hint.slots` for explicit multi-question PDF/text
+  tasks.
+- Terminal write rules make `slot_digest.overall_status: "ready"` and
+  collection `allowed_next: write_file` authoritative against unnecessary raw
+  reads.
+- Output writing preserves the user's requested format and original question
+  order.
+- `hint.scope` legal values are stated explicitly:
+  `"new"`, `"narrow"`, `"verify"`, and `"expand"`.
+
+### Iteration Evidence
+
+| Iteration | Observation | Document correction |
+| --- | --- | --- |
+| compact v1, Flash PDF | Correct answer but 25 requests / 566,208 tokens after verifying a `ready` digest and raw-reading the PDF | Elevated `overall_status: "ready"` to a terminal write rule |
+| compact v2, Pro audit | Score 0.97 but 21 requests / 511,340 tokens after inspecting source files and code despite collection evidence | Elevated collection `allowed_next: write_file` to a terminal write rule |
+| compact v3/v4, Flash PDF | Correct extracted values were written with numbering or in swapped question order; score fell | Required unnumbered answer-only output in original user question order; made explicit multi-question first reads override generic `scout` routing |
+| compact v5, Flash LooGLE | Used invalid `scope: "anchored"` and timed out | Added the accepted `hint.scope` enum and exact-check `verify` instruction |
+
+An additional compact v3 Flash run returned `[Assistant reply unavailable due
+to model error.]` with zero usage for all three tasks; it was excluded as an
+API failure. One Pro audit result was excluded because the judge environment
+failed DNS resolution while fetching a dependency.
+
+### Verification
+
+Local regression:
+
+```text
+uv run --with pytest python3.12 -m pytest tests/sparse_reading/ -q
+106 passed in 1.41s
+```
+
+DeepSeek-V4-Flash `gate` comparison:
+
+| Task | Legacy score / tokens / requests | Accepted v6 score / tokens / requests |
+| --- | ---: | ---: |
+| `task_21_openclaw_comprehension` | 1.00 / 57,838 / 4 | 1.00 / 46,799 / 4 |
+| `task_loogle_shortdep_fall_of_outremer_3q_followup` | 1.00 / 47,361 / 5 | 1.00 / 78,561 / 6 |
+| `task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check` | 0.9375 / 668,436 / 23 | 0.97 / 372,531 / 15 |
+| **Total** | **2.9375 / 773,635 / 32** | **2.97 / 497,891 / 25** |
+
+Flash aggregate delta: score `+0.0325`, tokens `-275,744` (`-35.6%`), and
+requests `-7` (`-21.9%`). The long-text task incurred one additional focused
+round, but no invalid-scope or repeated-source-read loop remained; the large
+collection audit reduced both raw-read activity and total cost.
+
+DeepSeek-V4-Pro `gate` comparison:
+
+| Task | Legacy score / tokens / requests | Accepted v6 score / tokens / requests |
+| --- | ---: | ---: |
+| `task_21_openclaw_comprehension` | 1.00 / 58,691 / 4 | 1.00 / 53,822 / 4 |
+| `task_loogle_shortdep_fall_of_outremer_3q_followup` | 1.00 / 399,760 / 19 | 1.00 / 44,542 / 4 |
+| `task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check` | 0.97 / 89,057 / 5 | 1.00 / 61,117 / 4 |
+| **Total** | **2.97 / 547,508 / 28** | **3.00 / 159,481 / 12** |
+
+Pro aggregate delta: score `+0.03`, tokens `-388,027` (`-70.9%`), and
+requests `-16` (`-57.1%`). In the accepted run, every Pro task followed a
+four-request completion path; the legacy long-text over-reading trajectory was
+eliminated.
+
+### Flash Generalization Follow-Up
+
+An additional Flash batch recorded in
+`SRO_test/qwenclawbench/p0_skill_generalization_flash_20260526.csv` compared
+P0 current behavior with available baseline and legacy results outside the
+initial three-task smoke set. Across the 11 tasks with baselines:
+
+| Variant | Total score | Mean score | Total tokens |
+| --- | ---: | ---: | ---: |
+| Baseline | 8.10 | 0.737 | 5.6M |
+| Legacy skill | 8.54 | 0.776 | 5.9M |
+| P0 current skill | 9.46 | 0.860 | 3.1M |
+
+Against baseline, P0 current improves mean score by about `+17%` while
+reducing total tokens by about `45%`. Notable gains include `task_00055`,
+`task_00059`, `task_00073`, and `task_00086`. `loogle_10q` remains a recorded
+score regression (`1.000` to `0.909`) despite a large token reduction; its
+grader-format explanation should be verified separately rather than assumed.
+`task_00059` is a visible quality-for-cost tradeoff and is a later closure
+efficiency question, not a reason to broaden P0.
+
+### Verdict
+
+P0 is accepted for the tested task set. A compact, non-duplicative protocol
+document improved adherence on both models without changing SRO runtime
+behavior. Further work on tool descriptions or structured schemas remains a
+separate phase; this P0 result does not require those protocol changes.
