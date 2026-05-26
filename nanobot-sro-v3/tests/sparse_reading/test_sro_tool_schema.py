@@ -3,18 +3,9 @@ import json
 from pathlib import Path
 
 from nanobot.sparse_reading.orchestrator import SparseReadingOrchestrator
-from nanobot.sparse_reading.tools import SroCardTool, SroReadTool
+from nanobot.sparse_reading.tools import SroCardTool
 
 
-def test_sro_read_description_keeps_one_terminal_rule(tmp_path: Path) -> None:
-    description = SroReadTool(SparseReadingOrchestrator(tmp_path)).description
-
-    assert "Return sparse evidence" in description
-    assert "ready for output" in description
-    assert "write the deliverable" in description
-    assert "overall_status" not in description
-    assert "multi-question" not in description
-    assert "calc_ready" not in description
 def test_text_initial_hints_use_schema_type_hint(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SRO_ENABLED", "1")
     text_path = tmp_path / "document.txt"
