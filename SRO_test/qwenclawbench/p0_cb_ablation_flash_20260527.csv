@@ -1,0 +1,7 @@
+task_id,variant,runset,benchmark_version,score,total_tokens,requests,timed_out,sro_read_calls,sro_card_calls,post_ready_extra_sro,observation
+task_00059_user_discount_calculator,p0_plus_c_plus_b,p0_cb_flash_r1_20260527,8ec7b7d,0.65,555405,24,false,0,0,,"native path; below P0"
+task_00059_user_discount_calculator,p0_plus_c_plus_b,p0_cb_flash_r2_20260527,8ec7b7d,0.6208333333333333,372797,16,false,0,0,,"native path; inactive boolean handling failed"
+task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix,p0_plus_c_plus_b,p0_cb_flash_r1_20260527,8ec7b7d,0.36,788075,28,false,0,0,,"native path; diagnosed evidence but did not write required deliverables"
+task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix,p0_plus_c_plus_b,p0_cb_flash_r2_20260527,8ec7b7d,0.7266666666666666,514790,24,false,0,0,,"native path; wrote deliverables but missed schema mismatch"
+task_loogle_shortdep_fall_of_outremer_5q,p0_plus_c_plus_b,p0_cb_flash_r1_20260527,8ec7b7d,1,118153,8,false,4,0,2,"collect ready; two avoidable follow-up sro_read calls"
+task_loogle_shortdep_fall_of_outremer_5q,p0_plus_c_plus_b,p0_cb_flash_r2_20260527,8ec7b7d,1,62784,5,false,2,0,0,"collect ready; wrote directly after ready"
