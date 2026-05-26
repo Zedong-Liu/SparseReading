@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from nanobot.agent.tools.base import Tool
-from nanobot.sparse_reading.models import MAX_HINT_NEEDLES, MAX_HINT_SLOTS
 from nanobot.sparse_reading.orchestrator import SparseReadingOrchestrator
 
 
@@ -78,77 +77,16 @@ class SroReadTool(Tool):
             "properties": {
                 "target": {
                     "type": "object",
-                    "description": "Provide path for first discovery or artifact_id for follow-up.",
-                    "properties": {
-                        "path": {"type": "string"},
-                        "artifact_id": {"type": "string"},
-                    },
-                    "additionalProperties": False,
+                    "description": "Either {'path': '/file'} for first read or {'artifact_id': 'sro_...'} for follow-up",
                 },
                 "mode": {
                     "type": "string",
                     "enum": ["scout", "focus", "collect", "refine", "verify"],
+                    "description": "Sparse reading macro mode",
                 },
                 "hint": {
                     "type": "object",
-                    "description": "Evidence request for the selected object and mode.",
-                    "properties": {
-                        "goal": {"type": "string"},
-                        "needles": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "maxItems": MAX_HINT_NEEDLES,
-                        },
-                        "want": {
-                            "type": "string",
-                            "enum": ["fact", "count", "verbatim", "table", "schema", "list"],
-                        },
-                        "scope": {
-                            "type": "string",
-                            "enum": ["new", "narrow", "expand", "verify"],
-                        },
-                        "artifact": {"type": "string"},
-                        "type_hint": {
-                            "type": "string",
-                            "enum": [
-                                "auto",
-                                "pdf",
-                                "text",
-                                "csv",
-                                "xlsx",
-                                "json",
-                                "yaml",
-                                "xml",
-                                "mixed",
-                                "collection",
-                            ],
-                        },
-                        "must_keep": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                        },
-                        "slots": {
-                            "type": "array",
-                            "maxItems": MAX_HINT_SLOTS,
-                            "description": "Ordered question slots.",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "id": {"type": "string"},
-                                    "question": {"type": "string"},
-                                    "expected": {"type": "string"},
-                                    "aliases": {
-                                        "type": "array",
-                                        "items": {"type": "string"},
-                                        "maxItems": 8,
-                                    },
-                                },
-                                "required": ["id", "question"],
-                                "additionalProperties": False,
-                            },
-                        },
-                    },
-                    "additionalProperties": False,
+                    "description": "HintSpec object: goal, needles, want, scope, artifact, type_hint, must_keep, optional slots[{id, question, expected, aliases}]. Use slots, not many needles, for multi-fact long-document QA.",
                 },
             },
             "required": ["target", "mode", "hint"],
