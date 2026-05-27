@@ -1,0 +1,9 @@
+variant,runset,benchmark_version,task_id,score,total_tokens,requests,timed_out,sro_read_calls,sro_card_calls,observation
+P0,p0_native_repeat_r1_20260527,026d7cf,00059,0.7083333333333334,338338,16,false,0,0,native path; C absent
+P0,p0_native_repeat_r1_20260527,026d7cf,00055,0.8466666666666667,1087113,39,false,0,0,native path; C absent
+P0,p0_native_repeat_r2_20260527,026d7cf,00059,0.7083333333333334,578264,26,false,0,0,native path; C absent
+P0,p0_native_repeat_r2_20260527,026d7cf,00055,0.3433333333333333,1188382,40,false,0,0,native path; C absent
+P0+C,p0c_native_repeat_r1_20260527,b8d34fd,00059,0.8444444444444443,926427,34,false,0,0,native path; normalization not executed
+P0+C,p0c_native_repeat_r1_20260527,b8d34fd,00055,0.9066666666666666,900072,34,false,0,0,native path; normalization not executed
+P0+C,p0c_native_repeat_r2_20260527,b8d34fd,00059,0.7083333333333334,262964,13,false,0,0,native path; normalization not executed
+P0+C,p0c_native_repeat_r2_20260527,b8d34fd,00055,0.8893333333333333,316892,16,false,0,0,native path; normalization not executed
