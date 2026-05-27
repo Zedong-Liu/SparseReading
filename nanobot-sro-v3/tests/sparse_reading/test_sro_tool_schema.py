@@ -21,9 +21,9 @@ def test_sro_read_description_is_short_and_keeps_terminal_rule(tmp_path: Path) -
     description = SroReadTool(SparseReadingOrchestrator(tmp_path)).description
 
     assert "Return sparse evidence" in description
-    assert "ready for output" in description
-    assert "write the deliverable" in description
-    assert "do not read further" in description
+    assert "evidence is ready" in description
+    assert "every requested deliverable now" in description
+    assert "do not read or verify source evidence further" in description
     assert "overall_status" not in description
     assert "multi-question" not in description
     assert "calc_ready" not in description
