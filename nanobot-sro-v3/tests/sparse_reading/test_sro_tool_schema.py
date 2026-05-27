@@ -17,16 +17,19 @@ def _schema(tmp_path: Path) -> dict:
     return SroReadTool(SparseReadingOrchestrator(tmp_path)).parameters
 
 
-def test_sro_read_description_is_short_and_keeps_terminal_rule(tmp_path: Path) -> None:
+def test_sro_read_description_keeps_high_value_routing_and_terminal_rules(tmp_path: Path) -> None:
     description = SroReadTool(SparseReadingOrchestrator(tmp_path)).description
 
-    assert "Return sparse evidence" in description
-    assert "evidence is ready" in description
+    assert "Read sparse evidence" in description
+    assert "start with collect and hint.slots" in description
+    assert "collection audit" in description
+    assert "use focus only to identify candidate filenames" in description
+    assert "returned evidence is ready" in description
     assert "every requested deliverable now" in description
-    assert "do not read or verify source evidence further" in description
+    assert "do not read or verify covered source evidence further" in description
+    assert "calc_ready" in description
     assert "overall_status" not in description
-    assert "multi-question" not in description
-    assert "calc_ready" not in description
+    assert "slot_digest" not in description
 
 
 def test_sro_read_schema_exposes_standard_target_shape(tmp_path: Path) -> None:

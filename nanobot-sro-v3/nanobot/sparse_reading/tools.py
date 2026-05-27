@@ -71,7 +71,13 @@ class SroReadTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Return sparse evidence for one object. If evidence is ready, write every requested deliverable now; do not read or verify source evidence further."
+        return (
+            "Read sparse evidence from one large object using mode scout/focus/collect/refine/verify. "
+            "For multiple explicit PDF or long-text questions, start with collect and hint.slots. "
+            "For collection audit, diagnosis, rules, or cross-file facts, start with collect; use focus only to identify candidate filenames. "
+            "If returned evidence is ready, write every requested deliverable now; do not read or verify covered source evidence further. "
+            "When calc_ready is returned, run one short calculation from its derived artifact(s)."
+        )
 
     @property
     def read_only(self) -> bool:
