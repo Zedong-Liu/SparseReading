@@ -72,11 +72,12 @@ class SroReadTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Read sparse evidence from one large object using mode scout/focus/collect/refine/verify. "
-            "For multiple explicit PDF or long-text questions, start with collect and hint.slots. "
-            "For collection audit, diagnosis, rules, or cross-file facts, start with collect; use focus only to identify candidate filenames. "
-            "If returned evidence is ready, write every requested deliverable now; do not read or verify covered source evidence further. "
-            "When calc_ready is returned, run one short calculation from its derived artifact(s)."
+            "Read sparse evidence from a large object using mode scout/focus/collect/refine/verify. "
+            "SRO evidence is authoritative for the requested evidence goal: if collect/focus returns overall_status=ready or no unresolved items, write the deliverable or run one short calculation instead of rereading source files. "
+            "For multi-question PDF/report tasks, the first read after sro_card should be mode=collect with hint.slots; do not use scout or a long needles list for that case. "
+            "For directory collections that require diagnosis/audit/rules/config facts, use mode=collect first; use mode=focus only when you need candidate filenames and not facts. "
+            "Slots are lightweight objects with id, question, expected, and optional aliases; collect returns a compact slot_digest rather than a large evidence matrix. "
+            "When calc_ready is returned, use the derived TSV artifact(s) in one short calculation script."
         )
 
     @property
