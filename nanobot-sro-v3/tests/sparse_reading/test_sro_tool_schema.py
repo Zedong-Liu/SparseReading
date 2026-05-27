@@ -23,6 +23,7 @@ def test_sro_read_description_is_short_and_keeps_terminal_rule(tmp_path: Path) -
     assert "Return sparse evidence" in description
     assert "ready for output" in description
     assert "write the deliverable" in description
+    assert "do not read further" in description
     assert "overall_status" not in description
     assert "multi-question" not in description
     assert "calc_ready" not in description

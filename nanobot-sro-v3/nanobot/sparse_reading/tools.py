@@ -71,7 +71,7 @@ class SroReadTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Return sparse evidence for one object. When evidence is ready for output, write the deliverable without further reads."
+        return "Return sparse evidence for one object. If evidence is ready for output, write the deliverable; do not read further."
 
     @property
     def read_only(self) -> bool:
