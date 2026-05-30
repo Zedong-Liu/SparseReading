@@ -20,15 +20,17 @@ DeepSeek-V4-Flash,task_loogle_shortdep_fall_of_outremer_5q,L5Q LooGLE,SRO win,Lo
 DeepSeek-V4-Flash,task_loogle_shortdep_fall_of_outremer_3q_followup,L3Q LooGLE,Gate/pass,LooGLE/QwenClawBench,1.0,1.0,248460,65147,14,5,,,DeepSeek-V4-Flash retest; gate -74% tokens
 Qwen,task_loogle_shortdep_fall_of_outremer_3q_followup,L3Q LooGLE,SRO win,LooGLE/QwenClawBench,0.0,1.0,621281,27511,50,4,,,Qwen3.5-35B-A3B local readerfix; matched fixed runset baseline exhausted 50 tool calls/no answer; SRO collect answer-shaped digest; score +1.0; 95.6% token reduction
 DeepSeek-V4-Flash,task_00094,T94 exam,Gate/pass,QwenClawBench,1.0,1.0,256217,192766,14,10,,,"high variance (4 runs each); both modes can reach 1.0; BL=256K/14r, Gate=193K/10r"
-DeepSeek-V4-Pro,task_00036,T36 file size,Gate/pass,PinchBench/QwenClawBench,0.375,0.375,53102,41406,5,4,,,Gate pass; Pro underperforms Flash
-DeepSeek-V4-Pro,task_00059,T59 discount,SRO win,PinchBench/QwenClawBench,0.65,0.971,597544,286609,23,11,,,Force SRO +0.321; 287K vs gate 441K
-DeepSeek-V4-Pro,task_00073,T73 P&L,Gate/pass,PinchBench/QwenClawBench,1.0,0.969,227171,227000,7,8,,,Gate pass; Pro baseline already 1.0
-DeepSeek-V4-Pro,task_00086,T86 cmd sec,SRO win,PinchBench/QwenClawBench,0.65,0.988,209601,163995,7,7,,,SRO win; 1 sro_read replaces 25 native reads
-DeepSeek-V4-Pro,task_00098,T98 book rec,Gate/pass,PinchBench/QwenClawBench,0.939,0.979,257617,389456,13,17,,,"weak_diagnosis bypass; high variance, 0 SRO calls"
-DeepSeek-V4-Pro,task_loogle_5q,L5Q LooGLE,SRO win,PinchBench/QwenClawBench,1.0,1.0,178178,45647,11,4,,,"SRO win; 1 sro_read scans 100k-char doc, 74% token reduction"
+DeepSeek-V4-Pro,task_00036,T36 file size,Gate/pass,PinchBench/QwenClawBench,0.375,0.500,53102,40704,5,4,,,P1.5 fix3; native bypass; score +0.125 and -23% tokens
+DeepSeek-V4-Pro,task_00059,T59 discount,Gate/pass,PinchBench/QwenClawBench,0.65,0.708,597544,497561,23,19,,,P1.5 fix3; native bypass; score +0.058 and -17% tokens vs Pro baseline
+DeepSeek-V4-Pro,task_00073,T73 P&L,Gate/pass,PinchBench/QwenClawBench,1.0,1.0,227171,308489,7,12,,,"P1.5 fix3; native bypass; same score, higher tokens than baseline but stronger than P0-current Pro"
+DeepSeek-V4-Pro,task_00086,T86 cmd sec,SRO win,PinchBench/QwenClawBench,0.65,0.942,209601,325232,7,12,,,P1.5 fix3; SRO active; large score lift with higher token cost than baseline
+DeepSeek-V4-Pro,task_00098,T98 book rec,Boundary,PinchBench/QwenClawBench,0.939,0.938,257617,359893,13,16,,,"P1.5 fix3; native bypass; score effectively tied with baseline, higher tokens, stronger than P0-current Pro"
+DeepSeek-V4-Pro,task_loogle_5q,L5Q LooGLE,SRO win,LooGLE/QwenClawBench,1.0,1.0,178178,84533,11,7,,,P1.5 fix3; SRO active; same score and -53% tokens
 DeepSeek-V4-Pro,task_loogle_3q,L3Q LooGLE,Gate/pass,PinchBench/QwenClawBench,1.0,1.0,146528,125530,9,8,,,Gate pass; 3 sro_read but score already 1.0
-DeepSeek-V4-Pro,task_00094,T94 exam,Gate/pass,PinchBench/QwenClawBench,1.0,1.0,360827,212567,17,13,,,"Gate/pass; 0 SRO, model variance only"
-DeepSeek-V4-Pro,task_00012,T12 stock audit,SRO win,PinchBench/QwenClawBench,0.792,0.969,253685,110056,11,6,,,"SRO win; audit closure, 57% token reduction"
-DeepSeek-V4-Pro,task_21,T21 openclaw,SRO win,PinchBench/QwenClawBench,1.0,1.0,714716,349224,33,14,,,"SRO win; 3 sro_read, 51% token reduction"
-DeepSeek-V4-Pro,task_00058,T58 DiD,Gate/pass,PinchBench/QwenClawBench,1.0,1.0,447300,375432,18,17,,,"Gate/pass; SRO bypassed, 0 SRO calls"
-DeepSeek-V4-Pro,task_00067,T67 SPARQL,Boundary,PinchBench/QwenClawBench,0.621,0.558,167609,148837,8,7,,,"Boundary; slight regression, 0 SRO calls"
+DeepSeek-V4-Pro,task_00094,T94 exam,Gate/pass,PinchBench/QwenClawBench,1.0,1.0,360827,262705,17,12,,,P1.5 fix3; native bypass; same score and -27% tokens
+DeepSeek-V4-Pro,task_00012,T12 stock audit,SRO win,PinchBench/QwenClawBench,0.792,0.970,253685,54246,11,4,,,P1.5 fix3; audit closure; score +0.178 and -79% tokens
+DeepSeek-V4-Pro,task_21,T21 openclaw,SRO win,PinchBench/QwenClawBench,1.0,1.0,714716,49919,33,4,,,"P1.5 fix3; SRO active; same score, -93% tokens vs Pro baseline"
+DeepSeek-V4-Pro,task_00058,T58 DiD,Gate/pass,PinchBench/QwenClawBench,1.0,1.0,447300,291875,18,15,,,P1.5 fix3 accepted single-task blocker rerun; native bypass; same score and -35% tokens
+DeepSeek-V4-Pro,task_00067,T67 SPARQL,Boundary,PinchBench/QwenClawBench,0.621,0.558,167609,140766,8,7,,,"P1.5 fix3; native bypass; slight score regression, -16% tokens"
+DeepSeek-V4-Pro,task_00055,T55 literature bot,Boundary,PinchBench/QwenClawBench,0.913,0.853,1362621,431042,50,20,,,P1.5 fix3; native bypass; lower than same-day high baseline but much cheaper; unstable native task
+DeepSeek-V4-Pro,task_loogle_shortdep_fall_of_outremer,L10Q LooGLE,SRO win,LooGLE/QwenClawBench,1.0,1.0,236177,48487,13,4,,,P1.5 fix3; SRO active; same score and -79% tokens vs Pro baseline

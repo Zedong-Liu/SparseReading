@@ -39,6 +39,8 @@ COLORS = {
     "Baseline": "#8A8F98",
     "Qwen": "#4A9ED6",
     "DeepSeek": "#E05555",
+    "DeepSeek-V4-Flash": "#E05555",
+    "DeepSeek-V4-Pro": "#F0A050",
     "grid": "#E8EBEF",
     "text": "#202833",
     "muted": "#6B7280",
@@ -178,9 +180,13 @@ def annotate_badge(
 # ---------------------------------------------------------------------------
 
 def chart_accuracy_token_trajectory(df: pd.DataFrame) -> None:
-    models = ["Qwen", "DeepSeek"]
+    preferred = ["Qwen", "DeepSeek", "DeepSeek-V4-Flash", "DeepSeek-V4-Pro"]
+    present = list(dict.fromkeys(df.model))
+    models = [model for model in preferred if model in present] + [
+        model for model in present if model not in preferred
+    ]
     n_models = len(models)
-    fig, axes = plt.subplots(3, 2, figsize=(22, 15.5), squeeze=False)
+    fig, axes = plt.subplots(3, n_models, figsize=(11 * n_models, 15.5), squeeze=False)
     for mi, model in enumerate(models):
         sub = df[df.model == model].reset_index(drop=True)
         cand_color = COLORS[model]
@@ -270,14 +276,20 @@ def chart_accuracy_token_trajectory(df: pd.DataFrame) -> None:
     from matplotlib.patches import Patch
     legend_elements = [
         Patch(facecolor=COLORS["Baseline"], alpha=0.86, label="Baseline"),
-        Patch(facecolor=COLORS["Qwen"], alpha=0.94, label="SRO / Gate  (Qwen)"),
-        Patch(facecolor=COLORS["DeepSeek"], alpha=0.94, label="SRO / Gate  (DeepSeek)"),
+        *[
+            Patch(
+                facecolor=COLORS.get(model, COLORS["text"]),
+                alpha=0.94,
+                label=f"SRO / Gate  ({model})",
+            )
+            for model in models
+        ],
     ]
     fig.legend(
         handles=legend_elements,
         loc="upper center",
         bbox_to_anchor=(0.5, 0.985),
-        ncol=3,
+        ncol=min(len(legend_elements), 4),
         fontsize=12.5,
         frameon=True,
         edgecolor=COLORS["grid"],

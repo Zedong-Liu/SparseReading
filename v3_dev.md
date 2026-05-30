@@ -3244,3 +3244,10 @@ Pro result on these tasks is not caused by direct reader usage. It is consistent
 with the accepted fix3 direction: reduce SRO schema/tool-description pollution
 in bypass contexts while preserving the light bounded-native cue and the direct
 SRO gains on active sparse-reading tasks.
+
+The official figure data store `figures/sro_experiment_data.csv` was then
+updated to use P1.5 fix3 as the current DeepSeek-V4-Pro SRO/Gate result set.
+This replaced older Pro gate/force-SRO rows, added the previously missing
+`00055` and LooGLE 10Q rows, and regenerated `figures/README_v2.md` plus the
+three v2 chart outputs. Boundary rows remain explicit where P1.5 fix3 improves
+over P0-current but is not a clean win against the same-model baseline.
