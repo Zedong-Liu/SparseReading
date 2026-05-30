@@ -416,6 +416,12 @@ class GrepTool(_SearchTool):
                         "Error: this source is already covered by a ready SRO collection digest. "
                         "Use the digest/slot_digest to write the deliverable; do not grep resolved source files."
                     )
+                slot_checker = getattr(self._sro, "has_text_slot_digest", None)
+                if slot_checker and target.is_file() and slot_checker(target):
+                    return (
+                        "Error: this text source already has an SRO slot_digest. "
+                        "Use the slot candidates or sro_read verify for specific unresolved slots; do not grep the source."
+                    )
 
             flags = re.IGNORECASE if case_insensitive else 0
             try:

@@ -238,20 +238,33 @@ BENCH_MODEL=DeepSeek-V4-Flash \
   --dry-run
 ```
 
-When using a native DeepSeek API key rather than the Paratera proxy, set the
-native endpoint and lowercase model id:
+## API Policy
+
+**All local API tests MUST use the Paratera proxy.** Keep the API key outside
+the repository and expose it locally as `DEEPSEEK_API_KEY`.
+
+- Endpoint: `https://llmapi.paratera.com/v1`
+- Model name format: Paratera accepts the mixed-case `DeepSeek-V4-Flash`
+- Scripts `run_glm51_qcb_one.sh` and `run_qcb_trusted_batch.sh` already hardcode
+  this endpoint; the DeepSeek official API (`api.deepseek.com`) is NOT used
+  for local tests
+
+When running benchmarks, ensure `API_KEY=$DEEPSEEK_API_KEY` is exported:
 
 ```bash
-API_KEY="$DEEPSEEK_API_KEY" \
-API_BASE_URL="https://api.deepseek.com/v1" \
-BENCH_MODEL=deepseek-v4-flash \
-TIMEOUT_MULTIPLIER=1 \
-PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000 \
-local_agent_comp/run_qcb_trusted_batch.sh \
-  --runset ds_closure_ablation_20260520 \
-  --modes gate,no_audit_closure \
-  --tasks task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check
+export API_KEY="$DEEPSEEK_API_KEY"
+export API_BASE_URL="https://llmapi.paratera.com/v1"
 ```
+
+Speed baseline (2026-05-24, DeepSeek-V4-Flash):
+- Non-streaming roundtrip: ~1,155 ms
+- TTFT (streaming): ~1,314 ms
+- TPOT: ~35.9 ms/token
+- Throughput: ~11 tok/s
+
+Note: Paratera adds extra per-token latency vs direct DeepSeek API
+(~3-4× on TPOT) due to gateway streaming overhead.
+
 
 Local prerequisites:
 
@@ -618,6 +631,82 @@ proxychains4 -q pip install --no-cache-dir \
   --force-reinstall openpyxl==3.1.5
 "'
 ```
+
+## Diagnostic Ledger Tests
+
+```bash id="diag-ledger-tests"
+cd /Users/captainliu/sparse-reading/nanobot-sro-v3
+uv run --with pytest python3.12 -m pytest tests/sparse_reading/test_sro_protocol.py -q -k "diagnostic_ledger or ledger or over_10 or readiness or preserves_audit or task44_integration"
+```
+
+All SRO tests:
+
+```bash id="sro-all-tests"
+cd /Users/captainliu/sparse-reading/nanobot-sro-v3
+uv run --with pytest python3.12 -m pytest tests/sparse_reading/test_sro_protocol.py -q
+```
+
+## Diagnostic Ledger Compact View + Detail Expansion (2026-05-23)
+
+### Local Tests
+
+```bash id="diag-compact-tests"
+cd /Users/captainliu/sparse-reading/nanobot-sro-v3
+uv run --with pytest python3.12 -m pytest tests/sparse_reading/ -q
+```
+
+### Detail Expansion Syntax
+
+Model requests specific diagnostic sections via `sro_read` with needles:
+
+| Section | Needle |
+|---|---|
+| Config snapshot + disabled flags | `diagnostic_detail_config` |
+| Config diffs | `diagnostic_detail_diffs` |
+| Log events / eviction | `diagnostic_detail_loss` |
+| Metric tables / precision | `diagnostic_detail_metrics` |
+| Methodology / evaluation flags | `diagnostic_detail_evaluation` |
+| Proposal inventory | `diagnostic_detail_proposals` |
+| Full section index | `diagnostic_detail_full` |
+
+Example:
+
+```json
+{
+  "target": {"artifact_id": "sro_..."},
+  "mode": "collect",
+  "hint": {
+    "goal": "config detail",
+    "needles": ["diagnostic_detail_config"],
+    "want": "fact",
+    "type_hint": "collection"
+  }
+}
+```
+
+### Remote Sync
+
+```bash id="diag-sync"
+rsync -az --delete \
+  --exclude .git \
+  --exclude __pycache__ \
+  --exclude "*.pyc" \
+  --exclude .pytest_cache \
+  --exclude .ruff_cache \
+  --exclude .venv \
+  /Users/captainliu/sparse-reading/nanobot-sro-v3/ \
+  6000p:/data1/lzd/nanobot-sro-v3/
+```
+
+### Remote Verification
+
+```bash id="diag-remote-verify"
+ssh 6000p 'docker exec lzd-docker bash -lc "
+cd /data/lzd/nanobot-sro-v3
+/root/miniconda3/envs/kvserve-qwen35/bin/python -m pytest tests/sparse_reading/ -q
+"'
+```
+
 ## 2026-05-26: P0 SKILL.md Presentation A/B
 
 This experiment changes only `nanobot-sro-v3/nanobot/skills/sparse-reading/SKILL.md`.
@@ -695,3 +784,237 @@ Diagnostic runsets retained for analysis: `p0_skill_compact_flash_20260526`
 (collection write-ready ignored), `p0_skill_compact_v3_flash_20260526`
 (model service error), and `p0_skill_compact_v5_flash_20260526`
 (`scope: "anchored"` invalid call and timeout).
+
+## 2026-05-26: P1 Tool Interface Schema Smoke
+
+P1 local regression:
+
+```bash id="p1-schema-unit-tests"
+cd /Users/captainliu/sparse-reading/nanobot-sro-v3
+uv run --with pytest python3.12 -m pytest tests/sparse_reading/ -q
+```
+
+Bounded DeepSeek-V4-Flash smoke run:
+
+```bash id="p1-schema-smoke-flash"
+cd /Users/captainliu/sparse-reading
+API_KEY="$DEEPSEEK_API_KEY" API_BASE_URL=https://llmapi.paratera.com/v1 \
+BENCH_MODEL=DeepSeek-V4-Flash TIMEOUT_MULTIPLIER=1 PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000 \
+local_agent_comp/run_qcb_trusted_batch.sh \
+  --runset p1_schema_smoke_flash_20260526 --modes gate --tasks \
+  task_21_openclaw_comprehension \
+  task_loogle_shortdep_fall_of_outremer_3q_followup \
+  task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check
+```
+
+Results are under
+`SRO_test/qwenclawbench/p1_schema_smoke_flash_20260526/gate/`.
+
+Expanded Flash comparison run, P1 condition only:
+
+```bash id="p1-schema-generalization-flash"
+cd /Users/captainliu/sparse-reading
+API_KEY="$DEEPSEEK_API_KEY" API_BASE_URL=https://llmapi.paratera.com/v1 \
+BENCH_MODEL=DeepSeek-V4-Flash TIMEOUT_MULTIPLIER=1 PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000 \
+PARALLEL_JOBS=4 local_agent_comp/run_qcb_trusted_batch.sh \
+  --runset p1_schema_generalization_flash_20260526 --modes gate --tasks \
+  task_loogle_shortdep_fall_of_outremer \
+  task_00059_user_discount_calculator \
+  task_00058_did_regression_on_simulated_panel_data \
+  task_00067_write_sparql_query_for_product_reviews_containing_iphone \
+  task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix \
+  task_00086_command_prefix_security_analysis \
+  task_loogle_shortdep_fall_of_outremer_5q \
+  task_00094_exam_monitor_system_audit_cron_sync_bug_rate_limit_gap_and_site
+```
+
+Comparison data are recorded in
+`SRO_test/qwenclawbench/p1_schema_generalization_flash_20260526.csv`.
+
+Targeted P1 adjustment validation after normalizing `.txt` hints and retaining
+one ready-to-write terminal cue:
+
+```bash id="p1-schema-targeted-fix-flash"
+cd /Users/captainliu/sparse-reading
+API_KEY="$DEEPSEEK_API_KEY" API_BASE_URL=https://llmapi.paratera.com/v1 \
+BENCH_MODEL=DeepSeek-V4-Flash TIMEOUT_MULTIPLIER=1 PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000 \
+PARALLEL_JOBS=4 local_agent_comp/run_qcb_trusted_batch.sh \
+  --runset p1_schema_targeted_fix_flash_20260526 --modes gate --tasks \
+  task_loogle_shortdep_fall_of_outremer_5q \
+  task_loogle_shortdep_fall_of_outremer \
+  task_00059_user_discount_calculator \
+  task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix
+```
+
+The two LooGLE results are recorded in
+`SRO_test/qwenclawbench/p1_schema_targeted_fix_flash_20260526.csv`. The
+`00059` and `00055` control reruns crashed before producing scored results and
+did not invoke `sro_read`; use their prior scored P0/P1 runs for trajectory
+diagnosis only, not for attribution to the targeted fix.
+
+P0+C+B ablation after removing the expanded `sro_read` schema (`A`), tested
+from commit `8ec7b7d` on branch `codex/p1-ablation-p0-c-b`:
+
+```bash id="p0-cb-ablation-flash-r1"
+cd /Users/captainliu/sparse-reading
+API_KEY="$DEEPSEEK_API_KEY" API_BASE_URL=https://llmapi.paratera.com/v1 \
+BENCH_MODEL=DeepSeek-V4-Flash TIMEOUT_MULTIPLIER=1 PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000 \
+PARALLEL_JOBS=3 local_agent_comp/run_qcb_trusted_batch.sh \
+  --runset p0_cb_flash_r1_20260527 --modes gate --tasks \
+  task_00059_user_discount_calculator \
+  task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix \
+  task_loogle_shortdep_fall_of_outremer_5q
+```
+
+```bash id="p0-cb-ablation-flash-r2"
+cd /Users/captainliu/sparse-reading
+API_KEY="$DEEPSEEK_API_KEY" API_BASE_URL=https://llmapi.paratera.com/v1 \
+BENCH_MODEL=DeepSeek-V4-Flash TIMEOUT_MULTIPLIER=1 PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000 \
+PARALLEL_JOBS=3 local_agent_comp/run_qcb_trusted_batch.sh \
+  --runset p0_cb_flash_r2_20260527 --modes gate --tasks \
+  task_00059_user_discount_calculator \
+  task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix \
+  task_loogle_shortdep_fall_of_outremer_5q
+```
+
+Results are recorded in
+`SRO_test/qwenclawbench/p0_cb_ablation_flash_20260527.csv`.
+
+P0+C ablation after also removing the shortened description / terminal cue
+change (`B`), tested from commit `b8d34fd` on branch
+`codex/p1-ablation-p0-c`:
+
+```bash id="p0-c-ablation-flash"
+cd /Users/captainliu/sparse-reading
+API_KEY="$DEEPSEEK_API_KEY" API_BASE_URL=https://llmapi.paratera.com/v1 \
+BENCH_MODEL=DeepSeek-V4-Flash TIMEOUT_MULTIPLIER=1 PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000 \
+PARALLEL_JOBS=2 local_agent_comp/run_qcb_trusted_batch.sh \
+  --runset p0_c_flash_20260527 --modes gate --tasks \
+  task_00059_user_discount_calculator \
+  task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix
+```
+
+Results are recorded in
+`SRO_test/qwenclawbench/p0_c_ablation_flash_20260527.csv`.
+
+Repeated native-path control for unmodified P0 versus P0+C:
+
+- P0 was run from isolated worktree
+  `/Users/captainliu/sparse-reading_bench/p0_repeat_20260527` at commit
+  `026d7cf`.
+- P0+C was run from isolated worktree
+  `/Users/captainliu/sparse-reading_bench/p0c_repeat_20260527` at commit
+  `b8d34fd`.
+- Both worktrees received the same benchmark-runner empty-array fix
+  (`pids=("${new_pids[@]:-}")`) and identical task fixture symlinks; neither
+  changes the SRO variant under comparison.
+
+```bash id="p0-native-repeat-flash-r1-r2"
+cd /Users/captainliu/sparse-reading_bench/p0_repeat_20260527
+for runset in p0_native_repeat_r1_20260527 p0_native_repeat_r2_20260527; do
+  API_KEY="$DEEPSEEK_API_KEY" API_BASE_URL=https://llmapi.paratera.com/v1 \
+  BENCH_MODEL=DeepSeek-V4-Flash TIMEOUT_MULTIPLIER=1 PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000 \
+  PARALLEL_JOBS=2 local_agent_comp/run_qcb_trusted_batch.sh \
+    --runset "$runset" --modes gate --tasks \
+    task_00059_user_discount_calculator \
+    task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix
+done
+```
+
+```bash id="p0c-native-repeat-flash-r1-r2"
+cd /Users/captainliu/sparse-reading_bench/p0c_repeat_20260527
+for runset in p0c_native_repeat_r1_20260527 p0c_native_repeat_r2_20260527; do
+  API_KEY="$DEEPSEEK_API_KEY" API_BASE_URL=https://llmapi.paratera.com/v1 \
+  BENCH_MODEL=DeepSeek-V4-Flash TIMEOUT_MULTIPLIER=1 PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000 \
+  PARALLEL_JOBS=2 local_agent_comp/run_qcb_trusted_batch.sh \
+    --runset "$runset" --modes gate --tasks \
+    task_00059_user_discount_calculator \
+    task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix
+done
+```
+
+Results are recorded in
+`SRO_test/qwenclawbench/p0_vs_p0c_native_repeat_flash_20260527.csv`.
+
+## P1.5 Fix3/Fix4 DeepSeek Pro Verification
+
+Use these commands to reproduce the P1.5 fix3/fix4 checks from 2026-05-30.
+The fix4 deliverable-first variant was exploratory and was rejected after the
+full 8-task rerun because it worsened native-bypass tasks `00055` and `00094`.
+
+```bash id="p15-fix3-final-pro-8task"
+cd /Users/captainliu/sparse-reading
+source ~/.zshrc
+export API_KEY="$DEEPSEEK_API_KEY"
+export API_BASE_URL="https://llmapi.paratera.com/v1"
+export BENCH_MODEL=DeepSeek-V4-Pro
+export TIMEOUT_MULTIPLIER=2
+export PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000
+export PARALLEL_JOBS=4
+local_agent_comp/run_qcb_trusted_batch.sh \
+  --runset p15_fix3_final_pro_8task_20260530 --modes gate --tasks \
+  task_loogle_shortdep_fall_of_outremer \
+  task_loogle_shortdep_fall_of_outremer_5q \
+  task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix \
+  task_00058_did_regression_on_simulated_panel_data \
+  task_00059_user_discount_calculator \
+  task_00067_write_sparql_query_for_product_reviews_containing_iphone \
+  task_00086_command_prefix_security_analysis \
+  task_00094_exam_monitor_system_audit_cron_sync_bug_rate_limit_gap_and_site
+```
+
+```bash id="p15-fix4-deliverable-pro-00058"
+cd /Users/captainliu/sparse-reading
+source ~/.zshrc
+export API_KEY="$DEEPSEEK_API_KEY"
+export API_BASE_URL="https://llmapi.paratera.com/v1"
+export BENCH_MODEL=DeepSeek-V4-Pro
+export TIMEOUT_MULTIPLIER=2
+export PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000
+export PARALLEL_JOBS=1
+local_agent_comp/run_qcb_trusted_batch.sh \
+  --runset p15_fix4_deliverable_pro_00058_20260530 --modes gate --tasks \
+  task_00058_did_regression_on_simulated_panel_data
+```
+
+Final sparse-reading regression used:
+
+```bash id="p15-fix4-sparse-tests"
+cd /Users/captainliu/sparse-reading/nanobot-sro-v3
+uv run --with pytest --with pytest-asyncio pytest tests/sparse_reading -q
+```
+
+P0-current backfill for `00073` and `00098` used the archived P0 worktree:
+
+```bash id="p0-current-pro-73-98-backfill"
+cd /Users/captainliu/sparse-reading_bench/p0_repeat_20260527
+source ~/.zshrc
+export API_KEY="$DEEPSEEK_API_KEY"
+export API_BASE_URL="https://llmapi.paratera.com/v1"
+export BENCH_MODEL=DeepSeek-V4-Pro
+export TIMEOUT_MULTIPLIER=2
+export PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000
+export PARALLEL_JOBS=2
+local_agent_comp/run_qcb_trusted_batch.sh \
+  --runset p0_current_pro_73_98_20260531 --modes gate --tasks \
+  task_00073_2026_new_issuance_p_l_decomposition_and_year_over_year_analysis \
+  task_00098_diagnose_scheduled_book_recommendation_failure
+```
+
+```bash id="p0-current-flash-73-98-backfill"
+cd /Users/captainliu/sparse-reading_bench/p0_repeat_20260527
+source ~/.zshrc
+export API_KEY="$DEEPSEEK_API_KEY"
+export API_BASE_URL="https://llmapi.paratera.com/v1"
+export BENCH_MODEL=DeepSeek-V4-Flash
+export TIMEOUT_MULTIPLIER=1
+export PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000
+export PARALLEL_JOBS=2
+local_agent_comp/run_qcb_trusted_batch.sh \
+  --runset p0_current_flash_73_98_20260531 --modes gate --tasks \
+  task_00073_2026_new_issuance_p_l_decomposition_and_year_over_year_analysis \
+  task_00098_diagnose_scheduled_book_recommendation_failure
+```
+
+The comparison with P1.5 fix3 Pro is recorded in
+`SRO_test/qwenclawbench/p15_fix3_vs_p0_current_73_98_20260531.csv`.

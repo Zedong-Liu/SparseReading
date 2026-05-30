@@ -1008,6 +1008,28 @@ def test_access_handoff_requests_lazy_macro_activation(tmp_path, monkeypatch):
     assert sro.macro_available is True
 
 
+def test_native_workspace_tool_descriptions_do_not_advertise_sro(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    sro = SparseReadingOrchestrator(tmp_path, macro_available=False)
+
+    reader = ReadFileTool(workspace=tmp_path, sro=sro)
+    lister = ListDirTool(workspace=tmp_path, sro=sro)
+
+    assert "SRO" not in reader.description
+    assert "SRO" not in lister.description
+
+
+def test_force_sro_tool_descriptions_keep_protocol_hint(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    sro = SparseReadingOrchestrator(tmp_path, macro_available=True)
+
+    reader = ReadFileTool(workspace=tmp_path, sro=sro)
+    lister = ListDirTool(workspace=tmp_path, sro=sro)
+
+    assert "SRO" in reader.description
+    assert "SRO" in lister.description
+
+
 def test_access_handoff_ignores_small_log_inside_native_bundle(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     (tmp_path / "config").mkdir()
@@ -1369,6 +1391,54 @@ def test_policy_allows_cat_on_root_generated_diagnosis_report(tmp_path):
     allowed = policy.guard("cat diagnosis_report.md", str(tmp_path))
 
     assert allowed is None
+
+
+def test_policy_allows_command_security_root_outputs(tmp_path):
+    policy = SparseCommandPolicy()
+    report = tmp_path / "security_analysis_report.md"
+    report.write_text("# Security\n\n" + ("finding\n" * 900), encoding="utf-8")
+    classifications = tmp_path / "command_classifications.json"
+    classifications.write_text('{"analyzed_commands": []}\n' * 600, encoding="utf-8")
+
+    assert policy.guard("cat security_analysis_report.md", str(tmp_path)) is None
+    assert policy.guard("python3 -c \"import json; json.load(open('command_classifications.json'))\"", str(tmp_path)) is None
+
+
+def test_policy_and_grep_block_broad_text_search_after_slot_digest(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    source = tmp_path / "document.txt"
+    source.write_text(
+        "The public registry had 5,705 community-built skills.\n" * 500,
+        encoding="utf-8",
+    )
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(source)
+    pack = sro.read(
+        {"artifact_id": card.artifact_id},
+        "collect",
+        {
+            "goal": "Answer report facts",
+            "artifact": card.artifact_id,
+            "type_hint": "text",
+            "slots": [
+                {
+                    "id": "total_skills",
+                    "question": "How many community-built skills were in the public registry?",
+                    "expected": "count",
+                }
+            ],
+        },
+    )
+    assert pack.slot_digest is not None
+
+    policy = SparseCommandPolicy(sro)
+    blocked = policy.guard("grep -i registry document.txt | head -20", str(tmp_path))
+    assert blocked
+    assert "slot_digest" in blocked
+
+    grep = GrepTool(workspace=tmp_path, sro=sro)
+    grep_result = asyncio.run(grep.execute(pattern="registry", path="document.txt", output_mode="content"))
+    assert "slot_digest" in grep_result
 
 
 def test_policy_allows_python_calculation_without_large_file_read(tmp_path):

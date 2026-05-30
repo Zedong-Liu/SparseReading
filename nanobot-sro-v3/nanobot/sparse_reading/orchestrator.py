@@ -116,11 +116,13 @@ class SparseReadingOrchestrator:
             resolved = Path(path)
         generated_names = {
             "answer.txt",
+            "command_classifications.json",
             "final_answer.md",
             "diagnosis_report.md",
             "did_results_summary.md",
             "metrics_summary.json",
             "analysis_results.json",
+            "security_analysis_report.md",
         }
         if resolved.name.lower() in generated_names:
             return True
@@ -479,6 +481,14 @@ class SparseReadingOrchestrator:
             for requested_slot, existing_slot in requested
             if existing_slot
         )
+
+    def has_text_slot_digest(self, path: str | Path) -> bool:
+        try:
+            info = self.inspect(path)
+        except Exception:
+            return False
+        artifact_id = self._path_to_artifact.get(str(info.path))
+        return bool(artifact_id and artifact_id in self._slot_digests)
 
     @staticmethod
     def _text_slot_candidate_is_suspicious(slot: dict[str, Any], requested_slot: Any | None = None) -> bool:

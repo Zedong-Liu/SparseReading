@@ -152,15 +152,20 @@ class ReadFileTool(_FsTool):
 
     @property
     def description(self) -> str:
-        return (
+        description = (
             "Read a file (text, image, or document). "
             "Text output format: LINE_NUM|CONTENT. "
             "Images return visual content for analysis. "
             "Supports PDF, DOCX, XLSX, PPTX documents. "
             "Use offset and limit for large text files. "
             "Reads exceeding ~128K chars are truncated. "
-            "If SRO returns a guard saying evidence is complete, use write_file or one short exec instead of rereading the source."
         )
+        if self._sro and self._sro.macro_available:
+            description += (
+                "If SRO returns a guard saying evidence is complete, use write_file "
+                "or one short exec instead of rereading the source."
+            )
+        return description
 
     @property
     def read_only(self) -> bool:
@@ -901,12 +906,17 @@ class ListDirTool(_FsTool):
 
     @property
     def description(self) -> str:
-        return (
+        description = (
             "List the contents of a directory. "
             "Set recursive=true to explore nested structure. "
             "Common noise directories (.git, node_modules, __pycache__, etc.) are auto-ignored. "
-            "If the result is an SRO handoff, follow its next_action instead of reading every listed file."
         )
+        if self._sro and self._sro.macro_available:
+            description += (
+                "If the result is an SRO handoff, follow its next_action instead "
+                "of reading every listed file."
+            )
+        return description
 
     @property
     def read_only(self) -> bool:

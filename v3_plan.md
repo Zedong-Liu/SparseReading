@@ -183,3 +183,63 @@ Acceptance criteria:
   repeated source-reading or guard-loop trajectories. Token/request changes
   are recorded; a further wording iteration is required if an avoidable
   adherence regression is observed.
+
+## P1: Tool Interface Schema Clarification
+
+Objective:
+
+- Make valid `sro_read` calls easier to produce by exposing the existing
+  `HintSpec` contract in the tool schema and removing duplicated behavioral
+  prose from tool descriptions while retaining one concise terminal cue where
+  direct-path validation shows it affects adherence.
+- Preserve the P0 skill rules, runtime parsing/repair behavior, readers,
+  closures, and response payload shape.
+
+Scope:
+
+- Shorten `sro_read` description to its function plus one ready-to-write
+  terminal cue.
+- Expand existing `target` and `hint` schema fields using current runtime
+  types, enum values, and canonical array limits.
+- Normalize suggested `.txt` initial hints from `txt` to the existing
+  canonical `type_hint: "text"` value advertised by the schema.
+- Add schema-focused unit tests without changing existing protocol tests.
+
+Acceptance criteria:
+
+- The schema exposes `target.path`, `target.artifact_id`, `hint.goal`,
+  `needles`, `want`, `scope`, `artifact`, `type_hint`, `must_keep`, and
+  `slots` with canonical item fields and enums where the runtime has them.
+- Suggested hint values produced by initial handoffs conform to the exposed
+  schema. No reader, closure, response shape, guard policy, or skill-routing
+  change is introduced.
+- Sparse-reading tests pass.
+- A bounded DeepSeek-V4-Flash typical-task smoke check finds no new invalid
+  `HintSpec` or malformed target/mode trajectory and does not reveal an
+  avoidable correctness regression.
+
+## P1.5: Native Bypass Neutrality
+
+Objective:
+
+- Reduce SRO protocol-context interference on tasks that remain on native tools
+  while preserving current SRO-positive behavior.
+- Prefer neutral activation-boundary wording over teaching task-specific native
+  strategies; preserve native agent behavior when SRO has not been
+  recommended, and do not change gate, reader, tool, or response behavior.
+
+Scope:
+
+- Amend only `nanobot/skills/sparse-reading/SKILL.md`, and keep SRO guidance
+  inactive until a tool recommends SRO or returns an SRO handoff.
+- Keep the existing SRO handoff and terminal-write protocol authoritative once
+  a tool recommends SRO.
+
+Acceptance criteria:
+
+- Sparse-reading tests pass with no runtime implementation changes.
+- An eight-task DeepSeek-V4-Pro gate run records score, token cost, and route
+  behavior for the existing baseline set.
+- Native-bypass tasks show no new SRO negotiation and do not exhibit avoidable
+  SRO-induced exploration loops; SRO-active tasks show no avoidable protocol
+  regression.

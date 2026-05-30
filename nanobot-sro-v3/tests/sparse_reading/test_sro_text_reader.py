@@ -497,6 +497,51 @@ def test_collect_handles_duration_day_month_date_and_where_after_adjacent_senten
     assert slots["king_after_balian"]["candidate"] == "Cyprus"
 
 
+def test_collect_handles_inline_prose_list_and_offer_phrase(tmp_path):
+    path = tmp_path / "document.txt"
+    path.write_text(
+        (
+            "In September 1280, the Mongol army crossed the Euphrates and occupied "
+            "the strategic fortifications of Aintab, Baghras and Darbsak. "
+            "Soon thereafter, a Mongol ambassador appeared at Acre. "
+            "The Commune wrote to Lucia at Acre offering to accept her if she would confirm its position. "
+            "Sending an envoy to Cairo, Qalawun offered to spare the city in return for a bounty. "
+            "The offer was rejected."
+        ),
+        encoding="utf-8",
+    )
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(path)
+
+    pack = sro.read(
+        {"artifact_id": card.artifact_id},
+        "collect",
+        {
+            "goal": "Answer questions about the Fall of Outremer",
+            "artifact": card.artifact_id,
+            "type_hint": "text",
+            "slots": [
+                {
+                    "id": "mongol_forts",
+                    "question": "Which fortifications did the Mongol army occupy in September 1280?",
+                    "expected": "a name or list",
+                },
+                {
+                    "id": "qalawun_offer",
+                    "question": "What was Qalawun's offer to Acre?",
+                    "expected": "a short phrase",
+                },
+            ],
+        },
+    )
+
+    assert pack.slot_digest is not None
+    assert pack.slot_digest["overall_status"] == "ready"
+    slots = {slot["id"]: slot for slot in pack.slot_digest["slots"]}
+    assert slots["mongol_forts"]["candidate"] == "Aintab, Baghras and Darbsak"
+    assert slots["qalawun_offer"]["candidate"] == "to spare the city in return for a bounty"
+
+
 def test_collect_readiness_gate_suppresses_repeat_broad_read(tmp_path):
     path = tmp_path / "report.md"
     path.write_text(

@@ -156,6 +156,10 @@ class TextReader:
             count_choice = self._best_count_candidate(slot, ranked[:8], units)
             if count_choice:
                 candidate, candidate_block = count_choice
+        if not candidate and self._slot_wants_offer(slot):
+            offer_choice = self._best_offer_candidate(slot, ranked[:8], units)
+            if offer_choice:
+                candidate, candidate_block = offer_choice
         if not candidate:
             for block in ranked[:8]:
                 candidate = self._candidate_for_slot(slot, block, units)
@@ -198,6 +202,40 @@ class TextReader:
         if best is None:
             return None
         return best[1], best[2]
+
+    def _best_offer_candidate(
+        self,
+        slot: SlotSpec,
+        blocks: list[EvidenceBlock],
+        units: list[TextUnit],
+    ) -> tuple[str, EvidenceBlock] | None:
+        best: tuple[float, str, EvidenceBlock] | None = None
+        for block in blocks:
+            candidate = self._candidate_for_slot(slot, block, units)
+            if not candidate:
+                continue
+            quality = block.score + self._offer_candidate_bonus(candidate, block.text)
+            if best is None or quality > best[0]:
+                best = (quality, candidate, block)
+        if best is None:
+            return None
+        return best[1], best[2]
+
+    @staticmethod
+    def _offer_candidate_bonus(candidate: str, text: str) -> float:
+        low = f"{candidate}\n{text}".lower()
+        bonus = 0.0
+        if candidate.lower().startswith("to "):
+            bonus += 4.0
+        if "in return" in low:
+            bonus += 4.0
+        if "spare" in low:
+            bonus += 4.0
+        if "bounty" in low:
+            bonus += 3.0
+        if "renew" in low and "truce" in low:
+            bonus -= 2.0
+        return bonus
 
     @staticmethod
     def _count_candidate_bonus(slot: SlotSpec, candidate: str, text: str) -> float:
@@ -275,7 +313,11 @@ class TextReader:
             )
             if "count" in expected or "how many" in question or "number" in question:
                 return str(len(labels)) if labels else ""
-            return "; ".join(labels[:6])
+            if labels:
+                return "; ".join(labels[:6])
+            return self._extract_inline_list(text, question, self._slot_terms(slot)) or self._short_candidate(text, self._slot_terms(slot))
+        if self._slot_wants_offer(slot):
+            return self._extract_offer(text, question, self._slot_terms(slot))
         if "date" in expected or "date" in question or "collected" in question:
             return self._extract_date(text, question, self._slot_terms(slot))
         if "filename" in expected or "file" in question:
@@ -356,6 +398,71 @@ class TextReader:
         if any(term in question for term in ("after", "remain", "filtered", "filtering out")) and len(candidates) > 1:
             return candidates[1]
         return candidates[0]
+
+    @staticmethod
+    def _extract_inline_list(text: str, question: str, terms: list[str]) -> str:
+        useful_terms = [term for term in terms if len(term) >= 4]
+        sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", text.strip()) if part.strip()]
+        if not sentences:
+            return ""
+        ranked = sorted(
+            sentences[:80],
+            key=lambda sentence: sum(1 for term in useful_terms if term in sentence.lower()),
+            reverse=True,
+        )
+        for sentence in ranked[:8]:
+            match = re.search(
+                r"\b(?:fortifications?|castles?|towns?|cities?|sites?)\s+of\s+"
+                r"([A-Z][A-Za-zÀ-ÖØ-öø-ÿ' -]+(?:,\s*[A-Z][A-Za-zÀ-ÖØ-öø-ÿ' -]+)*(?:\s+and\s+[A-Z][A-Za-zÀ-ÖØ-öø-ÿ' -]+)?)",
+                sentence,
+            )
+            if match:
+                return re.sub(r"\s+", " ", match.group(1)).strip(" .;")
+            match = re.search(
+                r"\b(?:including|included|occupied|captured|took)\s+"
+                r"([A-Z][A-Za-zÀ-ÖØ-öø-ÿ' -]+(?:,\s*[A-Z][A-Za-zÀ-ÖØ-öø-ÿ' -]+)+(?:\s+and\s+[A-Z][A-Za-zÀ-ÖØ-öø-ÿ' -]+)?)",
+                sentence,
+            )
+            if match:
+                return re.sub(r"\s+", " ", match.group(1)).strip(" .;")
+        return ""
+
+    @staticmethod
+    def _slot_wants_offer(slot: SlotSpec) -> bool:
+        text = f"{slot.expected} {slot.question}".lower()
+        return any(term in text for term in ("offer", "offered", "offering", "proposal"))
+
+    @staticmethod
+    def _extract_offer(text: str, question: str, terms: list[str]) -> str:
+        useful_terms = [term for term in terms if len(term) >= 4 and term not in {"offer", "offered", "short", "phrase"}]
+        subject_terms = [term for term in useful_terms if term[:1].isalpha() and term not in {"acre"}]
+        sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", text.strip()) if part.strip()]
+        best: tuple[int, str] | None = None
+        for sentence in sentences[:100]:
+            low = sentence.lower()
+            if not re.search(r"\boffer(?:ed|ing|s)?\b", low):
+                continue
+            if subject_terms and not any(term in low for term in subject_terms[:3]):
+                continue
+            score = 5 + sum(2 for term in useful_terms if term in low)
+            if re.search(r"\boffered\s+to\b", low):
+                score += 4
+            if "in return" in low:
+                score += 3
+            if "spare" in low:
+                score += 3
+            if best is None or score > best[0]:
+                best = (score, sentence)
+        if best is None:
+            return ""
+        sentence = best[1]
+        match = re.search(r"\boffered\s+to\s+(.+?)(?:[.;]|$)", sentence, re.IGNORECASE)
+        if match:
+            return "to " + re.sub(r"\s+", " ", match.group(1)).strip()
+        match = re.search(r"\boffer(?:ed|ing|s)?\s+(.+?)(?:[.;]|$)", sentence, re.IGNORECASE)
+        if match:
+            return re.sub(r"\s+", " ", match.group(1)).strip()
+        return TextReader._short_candidate(sentence, terms)
 
 
     @staticmethod

@@ -217,6 +217,23 @@ Benchmark status:
 
 - DeepSeek subagent is responsible for rerunning `task_00086` canonical gate, closure generalization checks, and Phase 3 DeepSeek-V4-Pro if the cleanup passes.
 
+
+### 2026-05-23 — Gate bypass / native-only tasks (no SRO benefit)
+
+Three tasks confirmed as SRO gate bypass — the benefit gate already routes them to
+native, and SRO gate shows no score or efficiency gain:
+
+| Task | Baseline | Gate (Qwen) | Gate (DS Flash) | Root cause |
+|------|:--:|:--:|:--:|:--|
+| `task_00044` memory retrieval seed eviction diagnosis | 0.667 (Qwen) | 0.000 (loop/no output) | 0.000 | Multi-file config + CSV cross-referencing; SRO evidence fragments break Qwen's diagnostic flow. DS Flash cannot do this task at all. |
+| `task_00067` SPARQL query | 0.621 (Qwen) | 0.558 | — | Gate bypasses to native; SRO tools never called. Minor score difference is natural variance. |
+| `task_00058` DID regression | 1.0 (Qwen) | 1.0 | — | Gate bypasses to native; SRO tools never called. Token savings are from native variance. |
+
+These are *not* protocol bugs — the benefit gate correctly routes them native.
+No code changes needed. They are noted here as known SRO boundaries: tasks where
+sparse reading offers no advantage over native tool calls.
+
+
 ## Current Status
 
 - Main implementation repo: `/data/lzd/nanobot-sro-v3`
@@ -2515,6 +2532,214 @@ Validation:
 
 - Handoff wrapper dry-run succeeded for LooGLE 3Q baseline/gate.
 - Unit verification: `uv run --project nanobot-sro-v3 pytest nanobot-sro-v3/tests/sparse_reading/test_sro_text_reader.py nanobot-sro-v3/tests/sparse_reading/test_sro_protocol.py nanobot-sro-v3/tests/sparse_reading/test_sparseread_public_api.py -q` -> `93 passed`.
+
+## 2026-05-23 — Collection diagnostic ledger for multi-file diagnostic tasks
+
+Objective:
+- Improve SRO collection reader's ability to handle multi-file diagnostic tasks like `task_00044` (memory retrieval seed eviction diagnosis) that the existing `_diagnostic_closure` (API retry/schedule/fallback/rate_limit patterns) cannot cover.
+- Provide structured cross-file evidence without writing task-specific rules.
+
+Implementation:
+
+1. Added `collection_diagnostic_ledger` fallback closure in `nanobot/sparse_reading/readers/collection.py`:
+   - Triggered when specialized closures don't fire but the collection looks diagnostic-shaped (config + log + table/doc) or the hint contains diagnostic keywords.
+   - Outputs a `EvidenceBlock` with 8 fact-grounded sections:
+     - `config_snapshot`: key=value from YAML/JSON/TOML/INI with source
+     - `config_diffs`: cross-file key differences
+     - `disabled_or_zero_flags`: 0/false/disabled/none config values
+     - `log_events`: stage markers, eviction events, dropped seed IDs, N of M values
+     - `metric_tables`: full small-table CSV output
+     - `methodology_flags`: filter/restricted/subset hints from CSV/MD
+     - `proposal_inventory`: Proposal heading extraction from Markdown
+     - `evidence_coverage`: covered source families and source listing
+   - Does not generate final report text, recommend fixes, or hardcode task-specific fields.
+
+2. Added readiness gate: `_ledger_coverage_ready()` requires ≥3 of 4 families (config, log, table/metric, proposal/doc) and non-empty evidence (R1: present) before `overall_status=ready_for_write`.
+
+3. Fixed `HintSpec` >10 needles behavior (`models.py`): overflow needles auto-convert to slots instead of making collect invalid. Orchestrator filters `repair_ok` errors.
+
+4. Added `_fill_diagnostic_ledger_sources()` to load config, log, CSV, and MD files into source_texts.
+
+Files changed:
+- `nanobot/sparse_reading/readers/collection.py`
+- `nanobot/sparse_reading/models.py`
+- `nanobot/sparse_reading/orchestrator.py`
+
+Tests added:
+- 12 new tests in `tests/sparse_reading/test_sro_protocol.py`:
+  - config diff, disabled flags, log extraction, metric CSV, methodology filter, proposal inventory
+  - >10 needles repair
+  - readiness insufficient, readiness ready
+  - preserves audit closure priority
+  - task_00044 integration test
+  - does not fire on small query bundle
+
+Verification (local):
+```
+uv run --with pytest python3.12 -m pytest tests/sparse_reading/test_sro_protocol.py -q
+# 80 passed, 4 failed (4 failures pre-existing from handoff, not caused by this change)
+```
+
+## 2026-05-23 — Diagnostic ledger compact view + progressive detail expansion
+
+Objective:
+- Fix the root cause of Qwen 35B A3B task_00044 failure: the diagnostic ledger (~6000 chars) was truncated by `_TOOL_RESULT_PREVIEW_CHARS=1200` in `nanobot/utils/helpers.py`. The model only saw ~1200 chars of the beginning while the orchestrator treated the full ledger as ready, blocking source reads.
+- Implement compact view (≤900 chars of evidence text, fitting within 1200 char serialized output) as default.
+- Provide progressive detail expansion via existing `sro_read` + `diagnostic_detail_*` needle convention.
+- Keep full ledger accessible without producing a single truncated blob.
+
+### Design
+
+**Principle:** Same extraction, different rendering. The `_diagnostic_ledger_closure` still extracts all facts; it now returns `(compact_text, sections_dict, is_ready)` instead of one long string.
+
+**Compact view** (default, visible to model):
+- Short facts, one line per category
+- Under 900 chars of evidence text
+- After JSON serialization, all key facts fit within the 1200-char preview window
+- Includes detail guidance: `next: write deliverables; for support request diagnostic detail: config|diffs|loss|metrics|evaluation|proposals`
+
+**Detail expansion** (model-initiated):
+- Model sends `sro_read` with `needles: ["diagnostic_detail_config"]` etc.
+- Orchestrator detects the needle and returns only that section from stored data
+- Each section ≤1200 chars
+- Sections: config, diffs, loss, metrics, evaluation, proposals
+
+**Full ledger** (model-initiated):
+- `needles: ["diagnostic_detail_full"]` returns a section index
+- Model then requests one section at a time
+- No single blob that would be truncated
+
+**Readiness + Guard:**
+- Readiness based on section coverage (≥3 of 4 families)
+- Detail expansion requests pass through guard (not blocked)
+- Broad raw reads still blocked; guard response includes detail expansion guidance
+
+### Files changed
+
+- `nanobot/sparse_reading/readers/collection.py`:
+  - `_diagnostic_ledger_closure`: returns `(compact, sections, is_ready)` tuple
+  - Added `_split_ledger_sections`, `_render_compact_ledger`, `_ledger_coverage_from_sections`
+  - Updated `_excerpt_digest` to use new return type and store sections in `next_action["_diagnostic_sections"]`
+- `nanobot/sparse_reading/orchestrator.py`:
+  - Added `_diagnostic_sections` dict to store sections by artifact_id
+  - Added `_diagnostic_detail_pack` method for detail expansion
+  - Added `_diagnostic_section_from_needle` and `_diagnostic_section_from_goal`
+  - Updated `_collection_readiness_gate` and `_collection_child_guard` to include diagnostic detail guidance
+  - Added `EvidenceBlock` to imports
+- `tests/sparse_reading/test_sro_protocol.py`:
+  - Updated 8 existing diagnostic ledger tests for compact view
+  - Added 7 new tests: compact view fact categories, preview budget, config detail, loss detail, full ledger index, guard non-blocking, task_00012 regression
+
+### Compact view output (example)
+
+```
+DIAG ready
+config: diff: context_window: [config/alternate_config_v2.yaml]=0 vs [config/retrieval_config.yaml]=3; max_total_results: ... weights: keyword_match: 0.4; recency_bias: 0.35; semantic_similarity: 0.2; frequency: 0.05
+loss: evicted=3 of 10; 3 of 10. ids=5,12,34
+precision: Q1-2023:0.31 Q2-2023:0.42 Q3-2023:0.55 Q4-2023:0.68 Q1-2024:0.82 Q2-2024:0.91
+evaluation: source=data/benchmark_results_v2.csv: Filter applied: timestamp > 2024-01-01
+proposals: Proposal 1: Increase max_total_results t | Proposal 2: Round-Robin | Proposal 3: Priority Queue
+next: write deliverables; for support request diagnostic detail: config|diffs|loss|metrics|evaluation|proposals
+```
+
+Evidence text: ~900 chars. Total serialized: ~5200 chars. All key facts visible within first 1200 chars.
+
+### Detail expansion syntax
+
+```json
+// Request config snapshot
+{"needles": ["diagnostic_detail_config"], "goal": "config detail"}
+
+// Request config diffs
+{"needles": ["diagnostic_detail_diffs"], "goal": "diffs detail"}
+
+// Request full ledger index
+{"needles": ["diagnostic_detail_full"], "goal": "full ledger"}
+
+// Sections available: config, diffs, loss, metrics, evaluation, proposals
+```
+
+### Test results
+
+```
+uv run --with pytest python3.12 -m pytest tests/sparse_reading/ -q
+112 passed in 0.69s
+```
+
+All 85 protocol tests pass, including:
+- 8 updated diagnostic ledger tests (compact view)
+- 7 new tests (detail expansion, full ledger, guard, regression)
+- All pre-existing tests unaffected
+
+### Verification
+
+- First compact output fits within 1200-char tool preview: CONFIRMED
+- All 6 required fact categories visible in first 1200 chars: CONFIRMED
+- Detail expansion returns only requested section: CONFIRMED
+- Full ledger returns section index, not truncated blob: CONFIRMED
+- Detail requests not blocked by guard: CONFIRMED
+- task_00012 audit closure not regressed: CONFIRMED
+
+## 2026-05-24: task_00044 diagnostic ledger v4 — final
+
+### Result
+**Score: 0.684** (baseline 0.667), 11 requests, 199K tokens. Both deliverables written.
+
+### What worked (v4)
+1. `_diagnostic_sections` removed from serialized EvidencePack `next_action` — serialized result dropped from 20229 → ~1700 chars
+2. Compact view format: "DIAG compact evidence (use diagnostic_detail_<section> for full facts before writing)"
+3. Detail guidance on line 2 at position ~389 in serialized output, well within the 1200-char tool preview window
+4. or wordsToProofread regular collection child guard (no bypass)
+
+### Model trajectory
+`list_dir → sro_read collect(compact) → some files guarded/handoff → few small files direct-read → sro_read focus per-file → write_file × 2`
+Model did NOT use `diagnostic_detail_*` expansion (never learned the hidden syntax). Instead found hybrid path: compact view for global facts + sro_read focus on individual files for details.
+
+### What didn't work (evidence packet)
+Evidence packet (3000-6000 char raw evidence blob) consistently underperformed:
+- No “ready” signal → model never transitioned to writing
+- Raw evidence format confused Qwen 35B into exploration loops
+- Even with “next: write” at top, model didn't follow
+- Best evidence-packet score: 0.335, worst: 0.000 (complete loop)
+
+### Files modified
+- `nanobot/sparse_reading/readers/collection.py`: `_render_compact_ledger` v4 format
+- `nanobot/sparse_reading/orchestrator.py`: `_diagnostic_sections` pop from next_action
+- `tests/sparse_reading/test_sro_protocol.py`: updated assertions for compact view
+
+### Run command
+see runbook.md `diag-remote-verify` and `diag-remote-gate-task44`
+
+## 2026-05-24: task_00044 final — BYPASS
+
+### Conclusion
+SRO achieves quality improvement (0.684 > 0.667 baseline) but fails to beat native on tokens (199K > 126K). Task files are too small (most < 1K chars) for sparse reading to justify its protocol overhead.
+
+### Key data
+| Metric | Native baseline | v4 SRO | Delta |
+|---|---:|---:|---|
+| Score | 0.667 | 0.684 | +0.017 |
+| Requests | ~8 | 11 | +3 |
+| Tokens | 126K | 199K | +73K |
+| 14 source files total | ~80K chars | — | — |
+| SRO evidence delivered | — | ~27K chars | 3x less than full |
+
+### Why SRO can't beat native on tokens for this task
+- All 14 source files total ~80K chars; native reads them all in 6-7 `read_file` calls
+- SRO minimum rounds also 6-7 (list_dir + collect + focus + write), but rounds are more expensive
+- sro_card+sro_read tool schemas add ~500 tokens/request × 11 = 5,500 tokens
+- EvidencePack JSON wrapping adds ~45% overhead per SRO call
+- Focus on small files (< 1K) saves negligible content while paying full protocol cost
+
+### Evidence packet experiment (failed)
+Three variants (v1/v2/v3) all regressed to 0.000–0.335. Raw evidence blob format confuses Qwen 35B into exploration loops instead of writing.
+
+### Diagnostic detail expansion (unused)
+`diagnostic_detail_*` hidden needle protocol never adopted by model. Standard `sro_read focus` + raw `read_file` hybrid path was the model's natural choice.
+
+### Verdict
+task_00044 is a diagnostic bypass case. SRO is not token-efficient when source files are small. The protocol's quality advantage (0.684) is real but doesn't offset the token cost. Record as boundary case for future SRO applicability decisions.
+
 ## 2026-05-26: P0 SKILL.md Presentation Simplification
 
 ### Scope
@@ -2620,3 +2845,402 @@ P0 is accepted for the tested task set. A compact, non-duplicative protocol
 document improved adherence on both models without changing SRO runtime
 behavior. Further work on tool descriptions or structured schemas remains a
 separate phase; this P0 result does not require those protocol changes.
+
+## 2026-05-26: P1 Tool Interface Schema Clarification
+
+### Scope
+
+P1 exposes the existing canonical `sro_read` input contract in JSON Schema
+without changing the reader workflow or response shape:
+
+- Shortened `SroReadTool.description` to state the tool function only in the
+  initial comparison.
+- Expanded the existing `target` and `hint` schemas with runtime-supported
+  fields, enums, slot shape, and canonical array limits.
+- Added schema-contract unit tests without modifying reader or closure tests.
+
+No reader, closure, guard, response payload, or skill-routing behavior was
+changed in the initial comparison. Despite the added structure, the initial
+compact serialized `sro_read` description-and-parameters definition decreased
+from `1463` to `1378` characters because behavioral prose was removed from the
+tool description.
+
+### Verification
+
+Local regression:
+
+```text
+uv run --with pytest python3.12 -m pytest tests/sparse_reading/ -q
+110 passed
+```
+
+DeepSeek-V4-Flash bounded smoke run:
+
+| Task | P0 accepted score / tokens / requests | P1 score / tokens / requests |
+| --- | ---: | ---: |
+| `task_21_openclaw_comprehension` | 1.00 / 46,799 / 4 | 1.00 / 47,209 / 4 |
+| `task_loogle_shortdep_fall_of_outremer_3q_followup` | 1.00 / 78,561 / 6 | 1.00 / 62,198 / 5 |
+| `task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check` | 0.97 / 372,531 / 15 | 0.96875 / 54,270 / 4 |
+| **Total** | **2.97 / 497,891 / 25** | **2.96875 / 163,677 / 13** |
+
+The score change is only judge precision display for the audit task
+(`0.97` rounded versus `0.96875` exact). P1 smoke trajectories contain no
+timeouts, invalid `HintSpec` values, malformed targets, or invalid modes.
+Relative to the accepted P0 smoke run, requests dropped from `25` to `13` and
+tokens dropped from `497,891` to `163,677`; this is encouraging smoke evidence,
+not an attribution claim from a three-task sample.
+
+### Expanded Flash Comparison
+
+An eight-task P1-only run was executed with `PARALLEL_JOBS=4` and compared
+against existing Baseline and P0 results. The normalized comparison is in
+`SRO_test/qwenclawbench/p1_schema_generalization_flash_20260526.csv`.
+
+| Variant | Total score | Mean score | Total tokens | Requests |
+| --- | ---: | ---: | ---: | ---: |
+| Baseline | 5.980000 | 0.747500 | 4,631,058 | 190 |
+| P0 | 6.874000 | 0.859250 | 2,314,613 | 104 |
+| P1 | 6.791399 | 0.848925 | 2,014,824 | 98 |
+
+Compared with Baseline, P1 gains `+0.811399` total score and reduces tokens by
+`56.5%`. Compared with P0, P1 reduces tokens by another `13.0%` and six
+requests, but loses `0.082601` total score (`-0.010325` mean).
+
+Only three of these eight trajectories actually exercised `sro_read`:
+`task_loogle_shortdep_fall_of_outremer`,
+`task_loogle_shortdep_fall_of_outremer_5q`, and
+`task_00086_command_prefix_security_analysis`. Therefore score movement on
+`task_00055`, `task_00058`, `task_00059`, `task_00067`, and `task_00094`
+cannot be directly attributed to the P1 tool-schema change.
+
+The SRO-using trajectories expose two follow-up issues:
+
+- Both LooGLE runs continued reading after a ready slot digest. The 5-question
+  task remained perfect but grew from `39,270` P0 tokens to `239,151` P1
+  tokens. Removing every local stop cue from the tool description may have
+  reduced adherence at the tool-call decision point; one run is evidence to
+  investigate, not proof of causality.
+- Both P0 and P1 LooGLE handoffs contain `type_hint: "txt"`, while the P1
+  input schema advertises canonical `"text"` and `HintSpec` repairs unknown
+  values to `"auto"`. This mismatch predates P1 but is now visible as a
+  schema-to-response inconsistency.
+
+### Expanded Verdict
+
+P1 is compatible with execution and remains materially better than Baseline,
+but it is not accepted unchanged from this expanded check. Before committing
+P1, reconcile the existing `txt`/`text` hint mismatch and evaluate whether a
+single concise terminal cue should remain adjacent to `sro_read` without
+restoring the former verbose behavioral description.
+
+### Targeted P1 Adjustment And Verification
+
+The follow-up change is intentionally limited to the two issues directly
+observed on an SRO trajectory:
+
+- `SroCardTool` and normal text handoff hints now emit canonical
+  `type_hint: "text"` for `.txt` objects; the `file_card.type` field remains
+  unchanged.
+- `SroReadTool.description` retains one short terminal rule: once evidence is
+  ready for output, write the deliverable rather than reading further.
+
+This does not alter a reader, closure, guard, response shape, or task-specific
+route. The adjusted compact serialized definition is `1402` characters, still
+below the pre-P1 `1463` characters. Local regression after adjustment:
+
+```text
+uv run --with pytest python3.12 -m pytest tests/sparse_reading/ -q
+111 passed
+```
+
+DeepSeek-V4-Flash direct-path verification is recorded in
+`SRO_test/qwenclawbench/p1_schema_targeted_fix_flash_20260526.csv`:
+
+| Task | P0 score / tokens / requests | P1 before adjustment | P1 adjusted |
+| --- | ---: | ---: | ---: |
+| `task_loogle_shortdep_fall_of_outremer` | 0.909 / 49,612 / 4 | 0.909091 / 71,795 / 5 | 0.909091 / 49,828 / 4 |
+| `task_loogle_shortdep_fall_of_outremer_5q` | 1.000 / 39,270 / 4 | 1.000000 / 239,151 / 13 | 1.000000 / 62,347 / 5 |
+
+Both adjusted LooGLE traces use `type_hint: "text"`, receive a ready slot
+digest after the first `collect`, and write the output without another
+`sro_read`. The 5-question token regression drops by `176,804` tokens
+relative to the initial P1 form while preserving score; the 10-question path
+returns to approximately P0 efficiency at the same score.
+
+`task_00059_user_discount_calculator` and
+`task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix` did not
+call `sro_read` in either the P0 or initial P1 scored runs. Their score changes
+therefore are not evidence about this schema adjustment: the P0 `00059` run
+performed additional boundary-test/correction work, while the initial P1 run
+failed multiple automated calculation cases; the P0 `00055` analysis captured
+the enabled-source schema mismatch, while the initial P1 analysis missed that
+evidence. Targeted reruns of these two native controls crashed before producing
+results and again contained no `sro_read` call.
+
+### Adjusted Verdict
+
+The minimal P1 adjustment is accepted for the verified SRO text paths. It
+fixes a schema-advertised value inconsistency and restores the ready-to-write
+behavior without reintroducing the former long tool description or expanding
+the protocol around native-task variance.
+
+## 2026-05-27: P0+C+B Ablation Of Expanded Schema
+
+To isolate the expanded input schema (`A`), two code states were committed on
+the experimental branch `codex/p1-ablation-p0-c-b`:
+
+| Commit | State |
+| --- | --- |
+| `753e46e` | P1 snapshot with expanded schema, terminal cue, and `txt -> text` normalization (`A+B+C`) |
+| `8ec7b7d` | Test state with the expanded schema removed while retaining the terminal cue and normalization (`P0+C+B`) |
+
+At `8ec7b7d`, `sro_read.parameters` is restored to the P0 schema surface; only
+the concise ready-to-write cue and `.txt` suggested-hint normalization remain.
+Local verification passed:
+
+```text
+uv run --with pytest python3.12 -m pytest tests/sparse_reading/ -q
+108 passed
+```
+
+Two sequential DeepSeek-V4-Flash `gate` runs were performed, with three tasks
+parallelized within each run. Raw comparison rows are recorded in
+`SRO_test/qwenclawbench/p0_cb_ablation_flash_20260527.csv`.
+
+| Task | P0 accepted | P0+C+B run 1 | P0+C+B run 2 |
+| --- | ---: | ---: | ---: |
+| `task_00059_user_discount_calculator` | 0.971 / 549,151 / 22 | 0.650 / 555,405 / 24 | 0.620833 / 372,797 / 16 |
+| `task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix` | 0.913 / 609,603 / 23 | 0.360 / 788,075 / 28 | 0.726667 / 514,790 / 24 |
+| `task_loogle_shortdep_fall_of_outremer_5q` | 1.000 / 39,270 / 4 | 1.000 / 118,153 / 8 | 1.000 / 62,784 / 5 |
+
+`00059` and `00055` did not call `sro_read` or `sro_card` in either ablation
+run. Removing `A` therefore does not recover their P0 outcomes: `00059`
+remains consistently below P0, and `00055` remains completion-sensitive with
+large score variance.
+
+The LooGLE traces did exercise SRO. In run 1, `collect` returned ready but the
+model made two additional `sro_read` calls; in run 2, it wrote immediately
+after ready. Removing `A` therefore also does not guarantee better adherence
+or lower token cost on the direct SRO path.
+
+### Ablation Verdict
+
+The expanded schema is not a sufficient explanation for the observed native
+task regression: `P0+C+B` still fails to reproduce P0 on both questioned
+native tasks. This experiment does not justify accepting P1, but it weakens
+the hypothesis that dropping `A` alone resolves the risk. The next useful
+isolation is `P0+C` versus unmodified P0, with repeated native-task runs, to
+test whether the description change (`B`) or ordinary model variance better
+explains the remaining gap.
+
+## 2026-05-27: P0+C Ablation Of Description Change
+
+A further branch `codex/p1-ablation-p0-c` restores the P0 `sro_read`
+description and retains only `.txt` suggested-hint normalization (`C`).
+The test point is commit `b8d34fd`. Relative to P0, its runtime diff is limited
+to `type_hint: "txt" -> "text"` in suggested SRO handoffs plus its unit test.
+Local verification passed:
+
+```text
+uv run --with pytest python3.12 -m pytest tests/sparse_reading/ -q
+107 passed
+```
+
+A single DeepSeek-V4-Flash `gate` run was executed for the two native tasks:
+
+| Task | P0 accepted | P0+C |
+| --- | ---: | ---: |
+| `task_00059_user_discount_calculator` | 0.971 / 549,151 / 22 | 0.708333 / 920,819 / 35 |
+| `task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix` | 0.913 / 609,603 / 23 | 0.678667 / 1,073,123 / 40 |
+
+Neither task called `sro_read` or `sro_card`; both remained on native paths.
+For `00059`, the automated calculation checks failed despite full LLM-judge
+scores. For `00055`, the output applied fixes but missed the schema mismatch
+and incomplete cross-file evidence reduced the score.
+
+### P0+C Verdict
+
+Removing `B` does not recover the originally observed P0 outcomes. Because
+`A` and `B` are absent and `C` is not executed on these native trajectories,
+the current evidence no longer supports attributing these two score drops to
+the P1 changes. The original P0 scores should be treated as single samples;
+repeated unmodified-P0 controls are required before using `00055` or `00059`
+as an acceptance gate for any documentation/interface change.
+
+## 2026-05-27: Repeated P0 Versus P0+C Native Control
+
+The required control was run from isolated fixed-code worktrees: P0 at
+`026d7cf` and P0+C at `b8d34fd`. Each state ran
+`task_00059_user_discount_calculator` and
+`task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix` twice on
+DeepSeek-V4-Flash. Both worktrees used the same runner empty-array fix and the
+same symlinked runtime fixtures.
+
+| Variant | Run | `00059` score / tokens / requests | `00055` score / tokens / requests |
+| --- | --- | ---: | ---: |
+| P0 | r1 | 0.708333 / 338,338 / 16 | 0.846667 / 1,087,113 / 39 |
+| P0 | r2 | 0.708333 / 578,264 / 26 | 0.343333 / 1,188,382 / 40 |
+| P0+C | r1 | 0.844444 / 926,427 / 34 | 0.906667 / 900,072 / 34 |
+| P0+C | r2 | 0.708333 / 262,964 / 13 | 0.889333 / 316,892 / 16 |
+
+| Task | P0 two-run mean | P0+C two-run mean |
+| --- | ---: | ---: |
+| `00059` | 0.708333 / 458,301 / 21.0 | 0.776389 / 594,696 / 23.5 |
+| `00055` | 0.595000 / 1,137,748 / 39.5 | 0.898000 / 608,482 / 25.0 |
+
+All eight trajectories had `sro_read=0` and `sro_card=0`. Consequently, the
+`txt -> text` normalization in C did not execute and cannot explain either
+score increases or score drops on these two tasks. The originally high P0
+samples (`00059=0.971`, `00055=0.913`) are not stable acceptance signals:
+rerun P0 held `00059` at `0.708333` and varied sharply on `00055`.
+
+### Control Verdict
+
+This control removes the remaining evidence that C caused the native-task
+regression. Retaining C remains reasonable as a narrow contract-consistency
+fix, while decisions about SRO protocol-facing changes should be evaluated on
+trajectories that actually invoke SRO, such as LooGLE.
+## 2026-05-30: P1.5 Positive Activation Boundary Check
+
+P1.5 wording was revised to avoid negative suppression and avoid naming a
+specific agent implementation:
+
+```text
+Use this SRO protocol after a tool recommends SRO or returns an SRO handoff.
+If no such signal appears, no SRO action is required: continue with the
+agent's existing native tools and workflow. Once SRO is recommended, follow
+this protocol.
+```
+
+Local regression passed:
+
+```text
+uv run --with pytest --with pytest-asyncio pytest tests/sparse_reading -q
+111 passed
+```
+
+DeepSeek-V4-Pro gate spot check:
+
+| Task | Score | Tokens | Requests | SRO calls | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `task_00058_did_regression_on_simulated_panel_data` | 1.000 | 396,637 | 18 | 0 | Native bypass; much lower than same-day baseline `761,519 / 34` and prior boundary `632,125 / 29`. |
+| `task_loogle_shortdep_fall_of_outremer_5q` | 1.000 | 39,930 | 4 | `sro_read=1` | Clean SRO handoff/read/write path. |
+| `task_00086_command_prefix_security_analysis` | 0.600 | 162,906 | 6 | `sro_read=1` | Judge returned empty response; treated as infrastructure failure, not an SRO trajectory regression. |
+| `task_00086_command_prefix_security_analysis` rerun | 0.931 | 181,212 | 9 | `sro_read=1` | Healthy judge; score matches P0 pattern and lower automated checks are report-format details, not SRO suppression. |
+
+Long `00058` trajectory inspection showed `sro_read=0` and `sro_card=0` across
+the problematic runs. The extended paths were native script/debug loops driven
+by Python/statistics errors such as missing modules, absorbed variables,
+formula evaluation errors, and scalar indexing mistakes. Same-day baseline
+also showed native edit/run loops. The evidence does not support attributing
+the `00058` token spikes to direct SRO execution.
+
+## 2026-05-30: P1.5 Positive Boundary 8-Task Pro Check
+
+DeepSeek-V4-Pro gate was rerun on the eight representative tasks with
+`PARALLEL_JOBS=4` using the positive activation-boundary wording above.
+
+| Task | Score | Tokens | Requests | Route | Notes |
+| --- | ---: | ---: | ---: | --- | --- |
+| `loogle_10q` | 1.000 | 556,420 | 24 | SRO active | Correct answer, but `sro_read=3` was followed by broad native `grep`/`exec`; this is an SRO-active efficiency regression versus P1. |
+| `loogle_5q` | 1.000 | 42,497 | 4 | SRO active | Clean handoff -> `sro_read` -> write path. |
+| `00055` | 0.637 | 624,871 | 29 | Native bypass | No SRO calls; long native read/exec/debug path. |
+| `00058` | 0.885 | 1,056,980 | 35 | Native bypass | No SRO calls; native script/debug loop recurred and score dropped. |
+| `00059` | 0.650 | 349,566 | 16 | Native bypass | No SRO calls; matches P1 score, higher tokens. |
+| `00067` | 0.558 | 95,657 | 6 | Native bypass | No SRO calls; score matches P0 and beats P1 with lower tokens. |
+| `00086` | 0.856 | 149,286 | 6 | SRO active | Lower score came from incomplete/truncated report sections despite low token use. |
+| `00094` | 1.000 | 205,593 | 12 | Native bypass | No SRO calls; healthy result. |
+
+Aggregate: `6.588 / 3,080,870 tokens / 132 requests`, mean score `0.823`.
+This is below P1 (`6.962 / 1,737,851 / 83`) and cannot be accepted as the P1.5
+final state. The main actionable blocker is `loogle_10q`: unlike native-only
+variance cases, it activated SRO but still fell back to broad raw-document
+verification. `00058` remains a native-bypass long-loop risk, but the repeated
+same-day baselines show that this is not uniquely caused by SRO tool execution.
+
+## 2026-05-30: P1.5 Fix4 Final Verification
+
+P1.5 fix4 kept the P0/P1 SRO protocol thin while addressing two observed
+failure modes:
+
+- text SRO collect now resolves the LooGLE inline list/offer slots that caused
+  raw fallback on `loogle_10q`;
+- native low-sparse workspaces keep the sparse-reading skill context, but SRO
+  macro tools remain inactive and `read_file`/`list_dir` only mention SRO when
+  those macros are available;
+- SKILL.md adds two generic native-boundary lines: keep ordinary native
+  code/config/data workflows bounded, and create every requested deliverable
+  before extended debugging.
+
+Local sparse-reading regression:
+
+```text
+uv run --with pytest --with pytest-asyncio pytest tests/sparse_reading -q
+116 passed
+```
+
+DeepSeek-V4-Pro final 8-task gate (`p15_fix3_final_pro_8task_20260530`) plus
+post-fix `00058` confirmation (`p15_fix4_deliverable_pro_00058_20260530`):
+
+| Task | Score | Tokens | Requests | Route | Notes |
+| --- | ---: | ---: | ---: | --- | --- |
+| `loogle_10q` | 1.000 | 48,487 | 4 | SRO active | One `sro_read` then write; no broad raw fallback. |
+| `loogle_5q` | 1.000 | 84,533 | 7 | SRO active | One `sro_read`; still far below baseline tokens. |
+| `00086` | 0.942 | 325,232 | 12 | SRO active | Strong score lift over baseline; no broad SRO fallback. |
+| `00094` | 1.000 | 262,705 | 12 | Native bypass | No SRO calls; healthy native audit. |
+| `00067` | 0.558 | 140,766 | 7 | Native bypass | No SRO calls; above baseline score with lower tokens. |
+| `00059` | 0.708 | 497,561 | 19 | Native bypass | No SRO calls; score above baseline, tokens higher. |
+| `00055` | 0.853 | 431,042 | 20 | Native bypass | No SRO calls; above baseline score and about half baseline tokens. |
+| `00058` | 1.000 | 245,837 | 12 | Native bypass | Fix4 confirmation; both `did_regression.py` and `did_results_summary.md` created. |
+
+The full 8-task run had one pre-fix `00058` miss (`0.802 / 697,715 / 26`)
+because the model debugged the script until iteration exhaustion and failed to
+write `did_results_summary.md`. The subsequent fix4 targeted rerun used the new
+deliverable-first sentence and produced `1.000 / 245,837 / 12` with zero SRO
+tool calls. This closes the blocker as a native deliverable-completeness issue,
+not a direct SRO reader regression.
+
+Follow-up full 8-task rerun with the extra deliverable-first sentence
+(`p15_fix4_final_pro_8task_20260530`) rejected fix4 as the final state:
+
+| Task | Score | Tokens | Requests | Route | Notes |
+| --- | ---: | ---: | ---: | --- | --- |
+| `loogle_10q` | 1.000 | 51,139 | 4 | SRO active | Healthy. |
+| `loogle_5q` | 1.000 | 45,131 | 4 | SRO active | Healthy. |
+| `00086` | 0.988 | 116,158 | 5 | SRO active | Best SRO trajectory observed. |
+| `00067` | 0.558 | 149,790 | 7 | Native bypass | Stable. |
+| `00058` | 1.000 | 903,707 | 33 | Native bypass | Score fixed, but token-heavy native debug path. |
+| `00059` | 0.650 | 714,427 | 23 | Native bypass | Score baseline-level, token-heavy. |
+| `00055` | 0.300 | 940,918 | 33 | Native bypass | Deliverables missing after a long native loop. |
+| `00094` | 0.000 | 45,287 | 5 | Native bypass | Model refused to produce the report after a few reads. |
+
+The failures had zero SRO calls and zero SRO mentions in trajectories. The
+additional deliverable-first sentence improved one `00058` sample but worsened
+the full native-bypass mix, so it was removed. The selected P1.5 state is the
+fix3-style boundary: keep the generic bounded native-workflow cue, keep
+sparse-reading skill context available in low-sparse workspaces, but avoid
+extra deliverable-specific pressure. Further native-task stabilization should
+not be done inside SRO docs without a separate native-agent policy experiment.
+
+## 2026-05-31: P1.5 Fix3 P0-Current Backfill
+
+Backfilled P0-current DeepSeek-V4-Pro and DeepSeek-V4-Flash checks for the two
+extra tasks that were not part of the original P0 Pro set. The P0-current
+worktree was `/Users/captainliu/sparse-reading_bench/p0_repeat_20260527` at
+`026d7cf`; the task fixtures were symlinked from the main workspace.
+
+Results are recorded in
+`SRO_test/qwenclawbench/p15_fix3_vs_p0_current_73_98_20260531.csv`.
+
+| Task | Model | P0 Current | P1.5 Fix3 | Result |
+| --- | --- | ---: | ---: | --- |
+| `00073` | Pro | 1.000 / 373,697 / 13 | 1.000 / 308,489 / 12 | Fix3 keeps score and cuts tokens. |
+| `00098` | Pro | 0.896 / 420,274 / 21 | 0.938 / 359,893 / 16 | Fix3 improves score and cuts tokens. |
+| `00073` | Flash | 1.000 / 379,124 / 11 | not rerun | P0-current control only. |
+| `00098` | Flash | 0.833 / 475,842 / 22 | not rerun | P0-current control only. |
+
+Both P0-current Pro runs had zero SRO macro calls, so the stronger P1.5 fix3
+Pro result on these tasks is not caused by direct reader usage. It is consistent
+with the accepted fix3 direction: reduce SRO schema/tool-description pollution
+in bypass contexts while preserving the light bounded-native cue and the direct
+SRO gains on active sparse-reading tasks.

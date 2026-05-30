@@ -221,8 +221,6 @@ class AgentLoop:
         self.restrict_to_workspace = restrict_to_workspace
         self._sro_disabled_for_workspace = SparseReadingOrchestrator.disabled_for_low_sparse_workspace(workspace)
         effective_disabled_skills = list(disabled_skills or [])
-        if self._sro_disabled_for_workspace and "sparse-reading" not in effective_disabled_skills:
-            effective_disabled_skills.append("sparse-reading")
         self._start_time = time.time()
         self._last_usage: dict[str, int] = {}
         self._extra_hooks: list[AgentHook] = hooks or []

@@ -304,7 +304,7 @@ else
           new_pids+=("$pid")
         fi
       done
-      pids=("${new_pids[@]}")
+      pids=("${new_pids[@]:-}")
       [[ ${#pids[@]} -ge $PARALLEL_JOBS ]] && sleep 1
     done
 

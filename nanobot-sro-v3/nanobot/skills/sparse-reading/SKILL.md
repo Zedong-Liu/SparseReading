@@ -16,6 +16,14 @@ Use SRO for a large supported object when `sro_card`, `read_file`, or
 `list_dir` recommends it. SRO results are task evidence: do not replace
 resolved evidence with broad raw reads.
 
+**Activation boundary:** Use this SRO protocol after a tool recommends SRO or
+returns an SRO handoff. If no such signal appears, no SRO action is required:
+continue with the agent's existing native tools and workflow. Once SRO is
+recommended, follow this protocol.
+For ordinary native code/config/data tasks, keep the workflow bounded: read the
+authoritative inputs, make the smallest complete change, run focused
+verification, then stop when the requested deliverables pass.
+
 **Terminal write rules (highest priority):**
 - If `slot_digest.overall_status` is `"ready"`, write the requested output
   from its candidates immediately. It overrides individual slot confidence:

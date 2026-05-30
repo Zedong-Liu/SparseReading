@@ -45,6 +45,11 @@ class SparseCommandPolicy:
                 "Error: this source is already covered by a ready SRO collection digest. "
                 "Use the digest/slot_digest to write the deliverable; do not dump, grep, or re-read resolved source files."
             )
+        if self._is_text_slot_digest_source_search(cmd, cwd):
+            return (
+                "Error: this text source already has an SRO slot_digest. "
+                "Use the slot candidates or sro_read verify for specific unresolved slots; do not broad grep/exec the source."
+            )
         if self._is_large_dump(cmd, cwd):
             return (
                 "Error: broad shell dump of a large supported object is blocked under SRO. "
@@ -74,6 +79,21 @@ class SparseCommandPolicy:
         if not read_intent:
             return False
         checker = getattr(self._sro, "is_ready_collection_child", None)
+        if checker is None:
+            return False
+        for token in self._candidate_path_tokens(command):
+            target = self._resolve(token, cwd)
+            if target and checker(target):
+                return True
+        return False
+
+    def _is_text_slot_digest_source_search(self, command: str, cwd: str) -> bool:
+        if self._sro is None:
+            return False
+        lower = command.lower()
+        if not re.search(r"\b(?:grep|rg|perl|awk|sed|cat|head|tail)\b", lower):
+            return False
+        checker = getattr(self._sro, "has_text_slot_digest", None)
         if checker is None:
             return False
         for token in self._candidate_path_tokens(command):
@@ -148,6 +168,8 @@ class SparseCommandPolicy:
         )):
             return False
         for target in self._supported_large_files(cwd):
+            if self._is_output_artifact(target):
+                continue
             if not self._sro_should_handoff(target):
                 continue
             name = target.name.lower()
@@ -238,11 +260,13 @@ class SparseCommandPolicy:
             resolved = Path(path)
         generated_names = {
             "answer.txt",
+            "command_classifications.json",
             "final_answer.md",
             "diagnosis_report.md",
             "did_results_summary.md",
             "metrics_summary.json",
             "analysis_results.json",
+            "security_analysis_report.md",
         }
         if resolved.name.lower() in generated_names:
             return True
