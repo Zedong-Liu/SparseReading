@@ -208,32 +208,28 @@ PARALLEL_JOBS=3 \
 - `--dry-run` 先确认路径无误再正式跑
 
 
-## 已验证结果（CSV 全部 20 行）
+## 统一测试集（14 task）
 
-以下为 `figures/sro_experiment_data.csv` 中当前保存的所有验证结果。`SRO win` 表示 SRO reader/closure 路径直接贡献了收益。`Gate/pass` 表示 Benefit Gate 保持或改善了行为（部分通过 native bypass，非 SRO 工具直接收益）。`Boundary` 行保留但附有注意事项。
+以下 14 个任务为 SRO/gate 当前验证通过的统一测试集，供同事对齐。详细分数和 token 数据见 `figures/sro_experiment_data.csv`。
 
-| 模型 | 任务 | 简称 | 判定 | Benchmark | Baseline | SRO/Gate | Token baseline → SRO | 缩减 | 备注 |
-|---|---|---|---|---|---:|---:|---:|---:|---|
-| Qwen | `task_21` | T21 OpenClaw PDF | SRO win | PinchBench/QwenClawBench | 0.944 | 1.0 | 72,865 → 34,154 | 53.1% | slots collect |
-| Qwen | `task_00012` | T12 股票审计 | SRO win | QwenClawBench | 0.358 | 1.0 | 124,843 → 39,085 | 68.7% | audit closure |
-| Qwen | `task_00036` | T36 文件大小 | Gate/pass | QwenClawBench | 0.6875 | 0.6875 | 51,881 → 44,265 | 14.7% | native gate |
-| Qwen | `task_00059` | T59 折扣计算 | SRO win | QwenClawBench | 0.5 | 0.533 | 343,507 → 104,449 | 69.6% | selection+script |
-| Qwen | `task_00067` | T67 SPARQL | Gate/pass | QwenClawBench | 0.75 | 0.875 | 89,871 → 89,999 | −0.1% | gate fix; 接近 baseline |
-| Qwen | `task_00073` | T73 P&L 分析 | Gate/pass | QwenClawBench | 0.883 | 0.904 | 336,436 → 259,955 | 22.7% | gate pass |
-| Qwen | `task_00086` | T86 命令安全 | SRO win | QwenClawBench | 0.309 | 0.954 | 140,514 → 90,695 | 35.5% | command-security closure |
-| Qwen | `task_00098` | T98 书籍推荐 | Boundary | QwenClawBench | 0.917 | 1.0 | 186,005 → 143,502 | 22.9% | closure 辅助 |
-| DeepSeek | `task_21` | T21 OpenClaw PDF | SRO win | PinchBench/QwenClawBench | 1.0 | 1.0 | 714,716 → 349,224 | 51.1% | Phase3 slots collect + native fallback |
-| DeepSeek | `task_00012` | T12 股票审计 | SRO win | QwenClawBench | 0.7917 | 0.9688 | 253,685 → 110,056 | 56.6% | Phase3 audit closure; score +0.177 |
-| DeepSeek | `task_00036` | T36 文件大小 | Gate/pass | QwenClawBench | 0.6875 | 0.6875 | 51,881 → 44,265 | 14.7% | native gate |
-| DeepSeek | `task_00059` | T59 折扣计算 | Gate/pass | QwenClawBench | 0.708 | 0.833 | 575,574 → 173,156 | 69.9% | runtime fix retest |
-| DeepSeek | `task_00067` | T67 SPARQL | Boundary | QwenClawBench | 0.6208 | 0.5583 | 167,609 → 148,837 | 11.2% | native bypass; judge 方差 |
-| DeepSeek | `task_00058` | T58 DID 回归 | Gate/pass | QwenClawBench | 1.0 | 1.0 | 447,300 → 375,432 | 16.1% | native bypass; 非 SRO 工具收益 |
-| DeepSeek | `task_00073` | T73 P&L 分析 | Gate/pass | QwenClawBench | 0.854 | 0.854 | 318,177 → 213,807 | 32.8% | gate pass |
-| DeepSeek | `task_00086` | T86 命令安全 | Gate/pass | QwenClawBench | 0.6 | 0.954 | 1,152,253 → 859,009 | 25.4% | profile gate; no SRO |
-| DeepSeek | `task_00098` | T98 书籍推荐 | Gate/pass | QwenClawBench | 0.896 | 0.867 | 467,170 → 312,598 | 33.1% | gate native; token 降低 |
-| DeepSeek | `task_loogle_shortdep_fall_of_outremer_5q` | LooGLE Outremer 5Q | SRO win | LooGLE/QwenClawBench | 1.0 | 1.0 | 177,141 → 61,285 | 65.4% | readerfix v2; 100k 字符单行文档 |
-| DeepSeek | `task_loogle_shortdep_fall_of_outremer_3q_followup` | LooGLE Outremer 3Q | SRO win | LooGLE/QwenClawBench | 1.0 | 1.0 | 155,688 → 40,300 | 74.1% | readerfix; gate vs 不变 native baseline |
-| Qwen | `task_loogle_shortdep_fall_of_outremer_3q_followup` | LooGLE Outremer 3Q | SRO win | LooGLE/QwenClawBench | 0.0 | 1.0 | 621,281 → 27,511 | 95.6% | readerfix; baseline 耗尽 50 次 tool call |
+| 序号 | Task ID | 简称 | 来源 | 类型 |
+|---:|---|---|---|---|
+| 1 | task_loogle_shortdep_fall_of_outremer | L10Q LooGLE | LooGLE | 长文本问答（10 问） |
+| 2 | task_loogle_shortdep_fall_of_outremer_5q | L5Q LooGLE | LooGLE | 长文本问答（5 问） |
+| 3 | task_loogle_shortdep_fall_of_outremer_3q_followup | L3Q LooGLE | LooGLE | 长文本问答（3 问） |
+| 4 | task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check | T12 stock audit | QwenClawBench | 代码审计 |
+| 5 | task_21_openclaw_comprehension | T21 openclaw | PinchBench | PDF 文档理解 |
+| 6 | task_00036_find_largest_file_in_downloads_directory | T36 file size | QwenClawBench | 文件系统操作 |
+| 7 | task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix | T55 literature bot | QwenClawBench | 配置诊断 |
+| 8 | task_00058_did_regression_on_simulated_panel_data | T58 DiD | QwenClawBench | 计量经济分析 |
+| 9 | task_00059_user_discount_calculator | T59 discount | QwenClawBench | 规则编码 |
+| 10 | task_00067_write_sparql_query_for_product_reviews_containing_iphone | T67 SPARQL | QwenClawBench | 本体查询 |
+| 11 | task_00073_2026_new_issuance_p_l_decomposition_and_year_over_year_analysis | T73 P&L | QwenClawBench | 数据分析 |
+| 12 | task_00086_command_prefix_security_analysis | T86 cmd sec | QwenClawBench | 安全审计 |
+| 13 | task_00094_exam_monitor_system_audit_cron_sync_bug_rate_limit_gap_and_site | T94 exam | QwenClawBench | 系统审计 |
+| 14 | task_00098_diagnose_scheduled_book_recommendation_failure | T98 book rec | QwenClawBench | 故障诊断 |
+
+
 
 ## 仓库目录
 
