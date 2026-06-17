@@ -110,11 +110,25 @@ class BenefitGate:
                 0.9,
                 "native_read",
             )
+        if self._is_discount_calculation_bundle(names, kinds, len(items), total_size):
+            return BenefitDecision(
+                "native",
+                "discount/rules calculation bundle; implement and test local code over authoritative small files",
+                0.9,
+                "native_read",
+            )
         if self._is_full_analysis_forecast_bundle(names, kinds, len(items)):
             return BenefitDecision(
                 "native",
                 "full-analysis forecast bundle; local script over source files is cheaper than SRO negotiation",
                 0.85,
+                "native_read",
+            )
+        if self._is_full_analysis_pnl_bundle(names, kinds, len(items)):
+            return BenefitDecision(
+                "native",
+                "P&L/full-table analysis bundle; local code over complete transaction tables is cheaper than SRO negotiation",
+                0.88,
                 "native_read",
             )
         if self._is_full_analysis_panel_did_bundle(names, kinds, len(items)):
@@ -137,6 +151,20 @@ class BenefitGate:
                 "command-security bundle has compact closure facts; use collection collect once, then write required outputs",
                 0.84,
                 "collect",
+            )
+        if self._is_literature_retrieval_diagnosis_bundle(names, kinds, len(items), total_size):
+            return BenefitDecision(
+                "native",
+                "literature retrieval diagnosis bundle; native reads and local JSON/script checks are cheaper than SRO negotiation",
+                0.86,
+                "native_read",
+            )
+        if self._is_scheduled_notification_diagnosis_bundle(names, kinds, len(items), total_size):
+            return BenefitDecision(
+                "native",
+                "scheduled notification diagnosis bundle; native reads over small log/config/script files are cheaper than SRO negotiation",
+                0.86,
+                "native_read",
             )
         audit_or_diagnosis = self._audit_or_diagnosis_decision(items, names, kinds, total_size)
         if audit_or_diagnosis is not None:
@@ -182,6 +210,16 @@ class BenefitGate:
         )
 
     @staticmethod
+    def _is_discount_calculation_bundle(names: str, kinds: set[str], item_count: int, total_size: int) -> bool:
+        if item_count > 18 or total_size > 80_000:
+            return False
+        has_rules = "discount_rules" in names or ("discount" in names and "rules" in names)
+        has_users = "users" in names or "customer" in names
+        has_policy = "discount_policy" in names or "promotion_schedule" in names or "product_catalog" in names
+        has_code_target = "discount_calculator" in names or "calculator" in names or "py" in kinds
+        return has_rules and has_users and has_policy and has_code_target
+
+    @staticmethod
     def _is_full_analysis_forecast_bundle(names: str, kinds: set[str], item_count: int) -> bool:
         if item_count > 24:
             return False
@@ -191,6 +229,18 @@ class BenefitGate:
         has_baseline = "baseline" in names
         has_context = any(term in names for term in ("metadata", "performance", "changelog", "weather", "config"))
         return has_forecast_actual and has_baseline and has_context
+
+    @staticmethod
+    def _is_full_analysis_pnl_bundle(names: str, kinds: set[str], item_count: int) -> bool:
+        if item_count > 24:
+            return False
+        if kinds & {"log", "py", "sh"}:
+            return False
+        has_transactions = "transactions" in names and bool(kinds & {"csv", "json", "xlsx"})
+        has_pnl = any(term in names for term in ("pnl", "p_l", "p&l", "profit", "loss"))
+        has_new_issuance = "new_issuance" in names or ("issuance" in names and "deal" in names)
+        has_history_or_pipeline = any(term in names for term in ("historical", "pipeline", "client_contacts", "summary"))
+        return has_transactions and has_pnl and has_new_issuance and has_history_or_pipeline
 
     @staticmethod
     def _is_full_analysis_panel_did_bundle(names: str, kinds: set[str], item_count: int) -> bool:
@@ -224,6 +274,26 @@ class BenefitGate:
         has_conflict_sources = any(term in names for term in ("known_injections", "legacy_rules", "security_bulletin", "injection", "legacy", "advisory", "bulletin"))
         has_tests = "test_commands" in names or ("test" in names and "command" in names)
         return has_script and has_policy and has_prefix_guide and has_conflict_sources and has_tests
+
+    @staticmethod
+    def _is_literature_retrieval_diagnosis_bundle(names: str, kinds: set[str], item_count: int, total_size: int) -> bool:
+        if item_count > 24 or total_size > 120_000:
+            return False
+        has_literature = "literature" in names or "rss" in names or "medrxiv" in names
+        has_cron = "cron_config" in names or "cron_logs" in names or "cron_execution" in names
+        has_tracker = "master_progress_tracker" in names or "run_history_summary" in names
+        has_scripts = "stable_literature_retrieval" in names or "verified_rss_sources" in names or "py" in kinds
+        return has_literature and has_cron and has_tracker and has_scripts
+
+    @staticmethod
+    def _is_scheduled_notification_diagnosis_bundle(names: str, kinds: set[str], item_count: int, total_size: int) -> bool:
+        if item_count > 20 or total_size > 80_000:
+            return False
+        has_scheduler = "task_scheduler" in names or "schedule" in names or "cron" in names
+        has_messaging = "messaging" in names or "telegram" in names or "discord" in names
+        has_book_flow = "book_recommendation" in names or ("books" in names and "recommendation" in names)
+        has_small_sources = bool(kinds & {"log", "yaml", "json", "py", "sh", "md"})
+        return has_scheduler and has_messaging and has_book_flow and has_small_sources
 
     def _audit_or_diagnosis_decision(
         self,

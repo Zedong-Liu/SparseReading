@@ -26,11 +26,19 @@ class FakeNanobotAgent:
 def test_runtime_exposes_sparse_read_tools(tmp_path: Path) -> None:
     runtime = SparseRead(workspace=tmp_path)
 
-    assert runtime.tool_names == ["sro_card", "sro_read"]
+    assert runtime.tool_names == ["sro_preview", "sro_raw", "sro_card", "sro_read"]
     assert [schema["function"]["name"] for schema in runtime.tool_schemas()] == [
+        "sro_preview",
+        "sro_raw",
         "sro_card",
         "sro_read",
     ]
+
+
+def test_bench_protocol_keeps_original_tool_path(tmp_path: Path) -> None:
+    runtime = SparseRead(SparseReadConfig(mode="bench_protocol", workspace=tmp_path))
+
+    assert runtime.tool_names == ["sro_card", "sro_read"]
 
 
 def test_config_force_mode_overrides_benefit_gate(tmp_path: Path) -> None:
@@ -61,6 +69,8 @@ def test_nanobot_adapter_installs_tools_and_guards(tmp_path: Path) -> None:
     runtime = install(agent, workspace=tmp_path)
 
     assert agent.tools.has("sro_card")
+    assert agent.tools.has("sro_preview")
+    assert agent.tools.has("sro_raw")
     assert agent.tools.has("sro_read")
     assert agent.tools.get("read_file")._sro is runtime.orchestrator  # type: ignore[union-attr]
     assert agent.tools.get("list_dir")._sro is runtime.orchestrator  # type: ignore[union-attr]
@@ -74,6 +84,8 @@ def test_wrapper_autodetects_nanobot_registry(tmp_path: Path) -> None:
 
     wrapped = wrap(agent, workspace=tmp_path)
 
+    assert "sro_preview" in wrapped.installed
+    assert "sro_raw" in wrapped.installed
     assert "sro_card" in wrapped.installed
     assert "sro_read" in wrapped.installed
     assert "read_file:guard" in wrapped.installed

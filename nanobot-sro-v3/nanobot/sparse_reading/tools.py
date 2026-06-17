@@ -61,6 +61,103 @@ class SroCardTool(Tool):
         return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+class SroPreviewTool(Tool):
+    def __init__(self, orchestrator: SparseReadingOrchestrator):
+        self.orchestrator = orchestrator
+
+    @property
+    def name(self) -> str:
+        return "sro_preview"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Production SparseRead entrypoint. Return a deterministic no-HintSpec L0 preview "
+            "for a supported file or collection, with embedded minimal card metadata, samples, "
+            "signals, raw_ref, and next-step guidance."
+        )
+
+    @property
+    def read_only(self) -> bool:
+        return True
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "target": {
+                    "description": "Path string or object with path/artifact_id.",
+                    "oneOf": [
+                        {"type": "string"},
+                        {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string"},
+                                "artifact_id": {"type": "string"},
+                            },
+                            "additionalProperties": False,
+                        },
+                    ],
+                },
+                "path": {"type": "string", "description": "Compatibility shortcut for target.path"},
+                "artifact_id": {"type": "string", "description": "Compatibility shortcut for target.artifact_id"},
+            },
+        }
+
+    async def execute(self, target: Any = None, path: str = "", artifact_id: str = "", **kwargs: Any) -> str:
+        if target is None:
+            target = {"artifact_id": artifact_id} if artifact_id else {"path": path}
+        pack = self.orchestrator.preview(target)
+        return json.dumps({"preview_pack": pack.to_dict()}, ensure_ascii=False, indent=2)
+
+
+class SroRawTool(Tool):
+    def __init__(self, orchestrator: SparseReadingOrchestrator):
+        self.orchestrator = orchestrator
+
+    @property
+    def name(self) -> str:
+        return "sro_raw"
+
+    @property
+    def description(self) -> str:
+        return "Retrieve original content behind a raw_ref returned by sro_preview, optionally by byte range or text selector."
+
+    @property
+    def read_only(self) -> bool:
+        return True
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "raw_ref": {"type": "string"},
+                "range": {
+                    "type": "object",
+                    "properties": {
+                        "start": {"type": "integer"},
+                        "end": {"type": "integer"},
+                    },
+                    "additionalProperties": False,
+                },
+                "selector": {"type": "string"},
+            },
+            "required": ["raw_ref"],
+        }
+
+    async def execute(
+        self,
+        raw_ref: str,
+        range: dict[str, Any] | None = None,
+        selector: str | None = None,
+        **kwargs: Any,
+    ) -> str:
+        result = self.orchestrator.raw(raw_ref, range=range, selector=selector)
+        return json.dumps({"raw": result}, ensure_ascii=False, indent=2)
+
+
 class SroReadTool(Tool):
     def __init__(self, orchestrator: SparseReadingOrchestrator):
         self.orchestrator = orchestrator

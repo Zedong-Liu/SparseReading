@@ -7,7 +7,17 @@ from pathlib import Path
 from typing import Literal
 
 
-SparseReadMode = Literal["auto", "force", "force_sro", "native", "advisory"]
+SparseReadMode = Literal[
+    "auto",
+    "bench_protocol",
+    "force",
+    "force_sro",
+    "native",
+    "advisory",
+    "observe",
+    "nudge",
+    "enforce",
+]
 
 
 @dataclass(slots=True)
@@ -19,8 +29,12 @@ class SparseReadConfig:
     benefit_gate: bool = True
 
     def benefit_gate_override(self) -> str | None:
-        if self.mode == "auto":
+        if self.mode in {"auto", "bench_protocol"}:
             return None
+        if self.mode in {"observe", "nudge"}:
+            return "advisory"
+        if self.mode == "enforce":
+            return "force_sro"
         if self.mode == "force":
             return "force_sro"
         if self.mode in {"force_sro", "native", "advisory"}:

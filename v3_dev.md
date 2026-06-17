@@ -3251,3 +3251,71 @@ This replaced older Pro gate/force-SRO rows, added the previously missing
 `00055` and LooGLE 10Q rows, and regenerated `figures/README_v2.md` plus the
 three v2 chart outputs. Boundary rows remain explicit where P1.5 fix3 improves
 over P0-current but is not a clean win against the same-model baseline.
+
+## 2026-06-18: P2 Auto Preview And Shared Framework Bridge
+
+Implemented the production `auto` path proposed in
+`docs/sr_auto_l0_preview_plan.md`.
+
+Core changes:
+
+- Added `sro_preview` as the production no-HintSpec L0 entrypoint. It returns a
+  `PreviewPack` with embedded minimal card metadata, structure, samples,
+  signals, compression recipe metadata, `artifact_id`, `raw_ref`, and
+  next-step guidance.
+- Added `sro_raw(raw_ref)` as the explicit original-content fallback after
+  preview.
+- Kept `sro_read` HintSpec-based for targeted evidence. `bench_protocol`
+  exposes the historical `sro_card`, `sro_read` tool pair for benchmark reruns.
+- Carried forward adapter-relevant core fixes from the previous dirty worktree:
+  slot mapping/question-string normalization, invalid-slot retry guidance,
+  OpenClaw bootstrap-file filtering, generated-output native pass-through, and
+  native-fit bundle boundaries.
+
+Framework integration:
+
+- Added shared `sparseread.bridge.server.SparseReadBridgeServer` with
+  `preview`, `raw`, `card`, `read`, `decide`, `native_event`, `usage_event`,
+  `trace`, and `shutdown`.
+- Rebuilt OpenCode/OpenClaw Python bridges as thin classifiers over the shared
+  server. OpenCode keeps one bounded text verify pass after ready; OpenClaw
+  stops repeated reads immediately with a compact write-now guard.
+- Ported OpenCode/OpenClaw pilot source files from the dirty worktree without
+  copying `node_modules`, `dist`, logs, or benchmark outputs. Plugin prompts and
+  block messages now point to `sro_preview`; `sro_card` is compatibility/debug.
+
+Validation:
+
+```text
+uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio pytest nanobot-sro-v3/tests/sparse_reading/test_sparseread_public_api.py -q
+6 passed
+```
+
+```text
+uv run --project nanobot-sro-v3 --with pytest pytest nanobot-sro-v3/tests/sparse_reading -q
+132 passed, 1 pytest config warning
+```
+
+```text
+cd openclaw_pilot/plugin
+npm install --ignore-scripts
+npm run build
+passed
+```
+
+The TypeScript build generated `node_modules` and `dist` only for validation;
+both were removed afterward.
+
+Post-review fixes:
+
+- Changed CSV preview to stream row counting while only retaining the first 200
+  sampled rows.
+- Bounded raw refs and bridge adapter artifact state to avoid unbounded growth
+  in long agent sessions.
+- Replaced preview/read control-flow assertions with structured error returns.
+- Made the refine/verify missing-artifact recovery hint compatible with both
+  production `sro_preview` and `bench_protocol`/debug `sro_card`.
+
+Remote OpenCode/OpenClaw benchmark validation is intentionally deferred for this
+phase; local API/regression tests and plugin build are the current acceptance
+bar.

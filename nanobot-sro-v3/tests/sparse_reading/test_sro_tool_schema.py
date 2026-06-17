@@ -10,7 +10,7 @@ from nanobot.sparse_reading.models import (
     VALID_WANTS,
 )
 from nanobot.sparse_reading.orchestrator import SparseReadingOrchestrator
-from nanobot.sparse_reading.tools import SroCardTool, SroReadTool
+from nanobot.sparse_reading.tools import SroCardTool, SroPreviewTool, SroRawTool, SroReadTool
 
 
 def _schema(tmp_path: Path) -> dict:
@@ -27,6 +27,22 @@ def test_sro_read_description_retains_p0_guidance(tmp_path: Path) -> None:
     assert "candidate filenames and not facts" in description
     assert "slot_digest" in description
     assert "calc_ready" in description
+
+
+def test_sro_preview_schema_is_hintless_production_entry(tmp_path: Path) -> None:
+    tool = SroPreviewTool(SparseReadingOrchestrator(tmp_path))
+
+    assert "Production SparseRead entrypoint" in tool.description
+    assert "HintSpec" in tool.description
+    assert "target" in tool.parameters["properties"]
+    assert "hint" not in tool.parameters["properties"]
+
+
+def test_sro_raw_schema_uses_raw_ref(tmp_path: Path) -> None:
+    tool = SroRawTool(SparseReadingOrchestrator(tmp_path))
+
+    assert tool.parameters["required"] == ["raw_ref"]
+    assert set(tool.parameters["properties"]) == {"raw_ref", "range", "selector"}
 
 
 def test_sro_read_schema_exposes_standard_target_shape(tmp_path: Path) -> None:

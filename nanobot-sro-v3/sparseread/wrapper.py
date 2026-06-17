@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from nanobot.sparse_reading.orchestrator import SparseReadingOrchestrator
-from nanobot.sparse_reading.tools import SroCardTool, SroReadTool
+from nanobot.sparse_reading.tools import SroCardTool, SroPreviewTool, SroRawTool, SroReadTool
 
 from sparseread.config import SparseReadConfig, SparseReadMode
 
@@ -34,7 +34,14 @@ class SparseRead:
     def tools(self) -> list[Any]:
         """Return SparseRead tool objects for frameworks that accept Python tools."""
 
-        return [SroCardTool(self.orchestrator), SroReadTool(self.orchestrator)]
+        if self.config.mode == "bench_protocol":
+            return [SroCardTool(self.orchestrator), SroReadTool(self.orchestrator)]
+        return [
+            SroPreviewTool(self.orchestrator),
+            SroRawTool(self.orchestrator),
+            SroCardTool(self.orchestrator),
+            SroReadTool(self.orchestrator),
+        ]
 
     def tool_schemas(self) -> list[dict[str, Any]]:
         """Return OpenAI-style tool schemas for frameworks that need schemas."""

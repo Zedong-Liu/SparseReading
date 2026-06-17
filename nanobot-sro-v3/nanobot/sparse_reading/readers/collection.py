@@ -40,7 +40,11 @@ class CollectionReader:
         "find", "search", "email", "emails", "folder", "everything", "related",
         "all", "about", "create", "summary", "summarize", "report",
     }
-    _SKIP_DIRS = {".git", ".nanobot", "__pycache__", ".pytest_cache", ".ruff_cache", "memory", "sessions", "bootstrap", "skills"}
+    _SKIP_DIRS = {
+        ".git", ".nanobot", ".openclaw", "__pycache__", ".pytest_cache",
+        ".ruff_cache", "memory", "sessions", "bootstrap", "skills",
+    }
+    _SKIP_FILES = {"AGENTS.md", "BOOTSTRAP.md", "HEARTBEAT.md", "IDENTITY.md", "SOUL.md", "TOOLS.md", "USER.md"}
 
     def card_details(self, path: Path, *, limit: int = 20) -> dict:
         items = self._items(path)
@@ -310,6 +314,8 @@ class CollectionReader:
         out: list[CollectionItem] = []
         for entry in sorted(path.rglob("*")):
             if not entry.is_file():
+                continue
+            if entry.name in self._SKIP_FILES:
                 continue
             rel = entry.relative_to(path)
             if any(part in self._SKIP_DIRS for part in rel.parts[:-1]):

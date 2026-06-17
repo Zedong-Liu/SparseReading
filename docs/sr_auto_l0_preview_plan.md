@@ -198,6 +198,6 @@ Validation scenarios:
 - Native-fit: T36/T58/T59/T67/T94 do not get forced into SR beyond optional
   preview of genuinely large sources.
 
-Remote validation should follow `runbook.md`: sync local `nanobot-sro-v3` to
-`/data1/lzd/nanobot-sro-v3`, use the Paratera endpoint, and validate both
-OpenCode and OpenClaw with DeepSeek-V4-Flash or DeepSeek-V4-Pro.
+Current acceptance uses the local API/regression commands in `runbook.md` plus
+the OpenClaw plugin TypeScript build. Remote OpenCode/OpenClaw benchmark
+validation is deferred until a later production-hardening pass.

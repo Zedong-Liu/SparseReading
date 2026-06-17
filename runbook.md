@@ -386,8 +386,29 @@ Use single quotes around outer `ssh` commands to avoid local shell expansion.
 SRO tools:
 
 ```text id="e8h6gr"
+sro_preview(target | path | artifact_id)
+sro_raw(raw_ref, range?, selector?)
 sro_card(path)
 sro_read(target, mode, hint)
+```
+
+Production `auto` should start with `sro_preview`; `sro_card -> sro_read` is
+kept for compatibility/debugging and `SR_PROFILE=bench_protocol`.
+
+Local Auto/L0 regression:
+
+```bash id="sr-auto-l0-local-tests"
+cd /Users/captainliu/sparse-reading-sr-auto-l0-preview
+uv run --project nanobot-sro-v3 --with pytest pytest nanobot-sro-v3/tests/sparse_reading -q
+```
+
+OpenClaw plugin TypeScript validation:
+
+```bash id="sr-openclaw-plugin-build"
+cd /Users/captainliu/sparse-reading-sr-auto-l0-preview/openclaw_pilot/plugin
+npm install --ignore-scripts
+npm run build
+rm -rf node_modules dist
 ```
 
 Verification:
