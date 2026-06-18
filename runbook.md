@@ -1039,3 +1039,72 @@ local_agent_comp/run_qcb_trusted_batch.sh \
 
 The comparison with P1.5 fix3 Pro is recorded in
 `SRO_test/qwenclawbench/p15_fix3_vs_p0_current_73_98_20260531.csv`.
+
+---
+
+## P2 Auto L0 Preview Local Validation
+
+Use these local checks for the `sro_preview` production path. Remote validation
+is not required for this phase.
+
+Core regression:
+
+```bash id="p2-auto-l0-core-tests"
+cd /Users/captainliu/sparse-reading-sr-auto-l0-preview
+uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
+  pytest nanobot-sro-v3/tests/sparse_reading/test_sparseread_public_api.py -q
+uv run --project nanobot-sro-v3 --with pytest \
+  pytest nanobot-sro-v3/tests/sparse_reading -q
+```
+
+OpenClaw plugin build:
+
+```bash id="p2-openclaw-plugin-build"
+cd /Users/captainliu/sparse-reading-sr-auto-l0-preview/openclaw_pilot/plugin
+npm install --ignore-scripts
+npm run build
+```
+
+OpenCode offline bridge harness:
+
+```bash id="p2-opencode-offline-preview"
+cd /Users/captainliu/sparse-reading-sr-auto-l0-preview
+python3 opencode_pilot/run_pilot.py \
+  --offline \
+  --runset sr_auto_l0_preview_offline_final_$(date +%Y%m%dT%H%M%S) \
+  --modes native_truncation plugin_observe plugin_nudge plugin_replace_truncation_experimental \
+  --tasks \
+    task_loogle_shortdep_fall_of_outremer_5q \
+    task_loogle_shortdep_fall_of_outremer_3q_followup \
+    task_21_openclaw_comprehension \
+    task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check \
+  --force
+```
+
+OpenClaw local API smoke with the linked plugin profile:
+
+```bash id="p2-openclaw-local-preview"
+cd /Users/captainliu/sparse-reading-sr-auto-l0-preview
+export API_BASE_URL="https://llmapi.paratera.com/v1"
+export API_KEY="$DEEPSEEK_API_KEY"
+export DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY"
+
+python3 openclaw_pilot/run_openclaw_unified14.py \
+  --profile sr-auto-l0 \
+  --model paratera/DeepSeek-V4-Flash \
+  --modes sr \
+  --tasks task_21_openclaw_comprehension \
+  --timeout-multiplier 1 \
+  --run-root SRO_test/qwenclawbench/openclaw_auto_l0_rawguard_t21_$(date +%Y%m%dT%H%M%S)
+```
+
+Expected production trajectory for long-document tasks is:
+
+```text
+sro_preview -> sro_read(collect) -> write
+```
+
+`sro_raw` is allowed as an explicit fallback before ready. After a collect result
+is ready, the shared bridge returns `protocol_next=write_file_now` for further
+`sro_read` or `sro_raw` calls so the framework path converges instead of
+looping on verification.

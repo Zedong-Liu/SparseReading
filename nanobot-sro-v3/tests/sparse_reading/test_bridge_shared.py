@@ -142,8 +142,9 @@ def test_openclaw_ready_guard_stops_repeat_reads_immediately(tmp_path: Path) -> 
     )
     bridge = OpenClawBridge(workspace=tmp_path, mode="force")
 
-    card = bridge.handle({"method": "card", "params": {"path": str(target)}})
-    artifact_id = card["file_card"]["artifact_id"]
+    preview = bridge.handle({"method": "preview", "params": {"path": str(target)}})
+    artifact_id = preview["preview_pack"]["artifact_id"]
+    raw_ref = preview["preview_pack"]["raw_ref"]
     first = bridge.handle(
         {
             "method": "read",
@@ -171,12 +172,14 @@ def test_openclaw_ready_guard_stops_repeat_reads_immediately(tmp_path: Path) -> 
             },
         }
     )
+    raw = bridge.handle({"method": "raw", "params": {"raw_ref": raw_ref, "selector": "registry"}})
     trace = bridge.handle({"method": "trace", "params": {}})
 
     assert first["evidence_pack"]["slot_digest"]["overall_status"] == "ready"
-    assert second["evidence_pack"]["next_action"]["guard"] == "openclaw_adapter_closure_once"
+    assert raw["raw"]["next_action"]["guard"] == "openclaw_adapter_closure_once"
+    assert raw["raw"]["protocol_next"] == "write_file_now"
     assert second["evidence_pack"]["protocol_next"] == "write_file_now"
-    assert trace["summary"]["adapter_guard_hits"] == 1
+    assert trace["summary"]["adapter_guard_hits"] == 2
 
 
 def test_adapter_gates_preserve_t86_advisory_and_audit_enforce(tmp_path: Path) -> None:

@@ -277,7 +277,7 @@ class SparseReadingOrchestrator:
         return self.preview_builder.build(info, card, raw_ref)
 
     def raw(self, raw_ref: str, *, range: dict[str, Any] | None = None, selector: str | None = None) -> dict[str, Any]:
-        path = self._raw_refs.get(str(raw_ref or ""))
+        resolved_ref, path = self._resolve_raw_ref(str(raw_ref or ""))
         if path is None:
             return {
                 "raw_ref": raw_ref,
@@ -286,13 +286,20 @@ class SparseReadingOrchestrator:
         if path.is_dir():
             entries = [str(entry.relative_to(path)) for entry in sorted(path.rglob("*")) if entry.is_file()]
             return {
-                "raw_ref": raw_ref,
+                "raw_ref": resolved_ref,
                 "path": str(path),
                 "type": "collection",
                 "entries": entries[:500],
                 "truncated": len(entries) > 500,
             }
-        text = path.read_text(encoding="utf-8", errors="replace")
+        try:
+            text, raw_view = self._raw_text_view(path)
+        except Exception as exc:
+            return {
+                "raw_ref": resolved_ref,
+                "path": str(path),
+                "error": f"could not read raw content: {exc}",
+            }
         start, end = self._raw_range_bounds(text, range)
         if selector:
             lines = text.splitlines()
@@ -302,15 +309,17 @@ class SparseReadingOrchestrator:
                 if selector.lower() in line.lower()
             ]
             return {
-                "raw_ref": raw_ref,
+                "raw_ref": resolved_ref,
                 "path": str(path),
+                "view": raw_view,
                 "selector": selector,
                 "matches": matched[:200],
                 "truncated": len(matched) > 200,
             }
         return {
-            "raw_ref": raw_ref,
+            "raw_ref": resolved_ref,
             "path": str(path),
+            "view": raw_view,
             "range": {"start": start, "end": end},
             "content": text[start:end],
             "truncated": end < len(text),
@@ -508,6 +517,37 @@ class SparseReadingOrchestrator:
         while len(self._raw_refs) > self._MAX_RAW_REFS:
             self._raw_refs.pop(next(iter(self._raw_refs)))
         return key
+
+    def _resolve_raw_ref(self, raw_ref: str) -> tuple[str, Path | None]:
+        path = self._raw_refs.get(raw_ref)
+        if path is not None:
+            return raw_ref, path
+        artifact_id = self._raw_ref_artifact_id(raw_ref)
+        if artifact_id:
+            prefix = f"raw:{artifact_id}:"
+            matches = [key for key in self._raw_refs if key.startswith(prefix)]
+            if len(matches) == 1:
+                key = matches[0]
+                return key, self._raw_refs[key]
+        return raw_ref, None
+
+    def _raw_text_view(self, path: Path) -> tuple[str, str]:
+        if path.suffix.lower() == ".pdf":
+            units, _, _ = self.text_reader._load_units(path)
+            lines = []
+            for unit in units:
+                text = " ".join(unit.text.split())
+                if text:
+                    lines.append(f"{unit.anchor} {text}")
+            return "\n".join(lines), "extracted_text"
+        return path.read_text(encoding="utf-8", errors="replace"), "original_text"
+
+    @staticmethod
+    def _raw_ref_artifact_id(raw_ref: str) -> str:
+        parts = raw_ref.split(":")
+        if len(parts) < 2 or parts[0] != "raw" or not parts[1].startswith("sro_"):
+            return ""
+        return parts[1]
 
     @staticmethod
     def _raw_range_bounds(text: str, range_obj: dict[str, Any] | None) -> tuple[int, int]:

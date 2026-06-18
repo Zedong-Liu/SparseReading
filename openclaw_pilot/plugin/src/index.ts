@@ -182,20 +182,16 @@ function splitCommand(raw: string, fallback: string): string[] {
   return raw.trim().split(/\s+/)
 }
 
-function sessionKey(ctx: Json): string {
-  const obj = asObject(ctx)
-  return stringValue(obj.sessionKey ?? obj.sessionId ?? obj.runId, "default")
-}
-
 function bridgeFor(ctx: Json, cfg: SparseReadConfig): SparseReadBridge {
-  const key = sessionKey(ctx)
+  const workspace = workspaceOf(ctx, cfg)
+  const key = `${workspace}:${cfg.bridgeModule}:${cfg.mode}`
   const existing = bridges.get(key)
   if (existing) return existing
   const prefix = splitCommand(cfg.bridgeCommand || "", cfg.python)
   const [command, ...argsPrefix] = prefix
   const bridge = new SparseReadBridge(
     command,
-    [...argsPrefix, "-m", cfg.bridgeModule, "--workspace", workspaceOf(ctx, cfg), "--mode", cfg.mode],
+    [...argsPrefix, "-m", cfg.bridgeModule, "--workspace", workspace, "--mode", cfg.mode],
     cfg.projectRoot,
   )
   bridges.set(key, bridge)
@@ -235,6 +231,18 @@ function absolutePath(candidate: string, ctx: Json, cfg?: SparseReadConfig): str
 }
 
 function normalizeTarget(target: Json, ctx: Json, cfg: SparseReadConfig): JsonObject {
+  if (typeof target === "string" && target.trim()) {
+    const value = target.trim()
+    if (value.startsWith("{")) {
+      try {
+        return normalizeTarget(JSON.parse(value), ctx, cfg)
+      } catch {
+        // Fall through to path handling for non-JSON strings.
+      }
+    }
+    if (value.startsWith("sro_")) return { artifact_id: value }
+    return { path: absolutePath(value, ctx, cfg) }
+  }
   const obj = asObject(target)
   if (typeof obj.path === "string" && obj.path.trim()) {
     return { ...obj, path: absolutePath(obj.path, ctx, cfg) }
@@ -410,7 +418,10 @@ const sparseReadPlugin: any = definePluginEntry({
       name: "sro_read",
       description: "Read sparse evidence with mode scout/focus/collect/refine/verify. hint.want must be one of fact/list/count/schema/table/verbatim. If collect returns ready, write the deliverable instead of rereading.",
       parameters: Type.Object({
-        target: Type.Record(Type.String(), Type.Unknown(), { description: "Use {path} first or {artifact_id} for follow-up." }),
+        target: Type.Union([
+          Type.Record(Type.String(), Type.Unknown(), { description: "Use {path} first or {artifact_id} for follow-up." }),
+          Type.String({ description: "Compatibility shortcut: artifact_id such as sro_... or a path." }),
+        ]),
         mode: Type.Union([
           Type.Literal("scout"),
           Type.Literal("focus"),
@@ -493,7 +504,7 @@ const sparseReadPlugin: any = definePluginEntry({
         if (gate?.block_native_search === true) {
           return {
             block: true,
-            blockReason: `SparseRead enforce: use sro_card/sro_read for sparse evidence instead of broad grep on this target.`,
+            blockReason: `SparseRead enforce: use sro_preview first and sro_read only for targeted evidence instead of broad grep on this target.`,
           }
         }
       }

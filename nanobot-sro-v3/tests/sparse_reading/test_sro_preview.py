@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from nanobot.sparse_reading.orchestrator import SparseReadingOrchestrator
+from nanobot.sparse_reading.readers.text import TextUnit
 
 
 def test_preview_csv_without_hintspec_returns_l0_card_and_raw_ref(tmp_path: Path) -> None:
@@ -30,6 +31,14 @@ def test_preview_csv_without_hintspec_returns_l0_card_and_raw_ref(tmp_path: Path
 
     raw = sro.raw(preview.raw_ref)
     assert "status,latency" in raw["content"]
+
+    prefix_raw = sro.raw(":".join(preview.raw_ref.split(":")[:2]), selector="error")
+    assert prefix_raw["raw_ref"] == preview.raw_ref
+    assert prefix_raw["matches"][0]["text"] == "3,error,-1"
+
+    stale_hash_raw = sro.raw(":".join(preview.raw_ref.split(":")[:2] + ["stalehash"]), selector="error")
+    assert stale_hash_raw["raw_ref"] == preview.raw_ref
+    assert stale_hash_raw["matches"][0]["text"] == "3,error,-1"
 
 
 def test_preview_csv_counts_large_files_without_expanding_all_rows(tmp_path: Path) -> None:
@@ -61,6 +70,26 @@ def test_preview_raw_refs_are_bounded(tmp_path: Path) -> None:
     assert len(sro._raw_refs) == 3
     assert sro.raw(refs[0])["error"] == "unknown or stale raw_ref; call sro_preview again"
     assert sro.raw(refs[-1])["content"].startswith("content 4")
+
+
+def test_raw_pdf_returns_extracted_text_view(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "report.pdf"
+    path.write_bytes(b"%PDF fake")
+    sro = SparseReadingOrchestrator(tmp_path)
+
+    def fake_units(_path: Path):
+        return [
+            TextUnit(anchor="p1:L1-L1", text="Registry data was collected on February 7, 2026."),
+            TextUnit(anchor="p2:L1-L1", text="The paper proposes 6 new benchmark tasks."),
+        ], [], "pdf"
+
+    monkeypatch.setattr(sro.text_reader, "_load_units", fake_units)
+
+    preview = sro.preview({"path": str(path)})
+    raw = sro.raw(preview.raw_ref, selector="February 7")
+
+    assert raw["view"] == "extracted_text"
+    assert raw["matches"][0]["text"] == "p1:L1-L1 Registry data was collected on February 7, 2026."
 
 
 def test_preview_json_array_exposes_schema_and_interesting_signal(tmp_path: Path) -> None:

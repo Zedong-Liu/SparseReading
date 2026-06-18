@@ -187,7 +187,7 @@ def sparse_read_protocol_prompt(runtime: Path, task: str, *, diagnostic_hints: b
                 "## SparseRead Protocol",
                 "",
                 "SparseRead is available, but this workspace shape is likely cheaper with native reads in OpenCode.",
-                "Use native `read`/`grep`/`bash` for the authoritative files. Use `sro_card`/`sro_read` only if a native output is large, truncated, or the evidence becomes a multi-file closure.",
+                "Use native `read`/`grep`/`bash` for the authoritative files. Use `sro_preview` first only if a native output is large, truncated, or the evidence becomes a multi-file closure; call `sro_read` only when targeted evidence is needed.",
                 "",
                 f"OpenCode gate: {gate.get('mode', 'native')} - {gate.get('reason', 'native path is acceptable')}",
             ]
@@ -202,8 +202,8 @@ def sparse_read_protocol_prompt(runtime: Path, task: str, *, diagnostic_hints: b
                 f"OpenCode gate: {gate.get('mode', 'advisory')} - {gate.get('reason', 'SRO is optional')}",
                 "",
             ] + ([
-                "Optional sro_card path and sro_read hint:",
-                json.dumps({"sro_card_path": str(sro_target(runtime, task)), "sro_read_hint": hint}, ensure_ascii=False, indent=2),
+                "Optional sro_preview target and sro_read hint:",
+                json.dumps({"sro_preview_target": str(sro_target(runtime, task)), "sro_read_hint": hint}, ensure_ascii=False, indent=2),
             ] if diagnostic_hints else [])
         )
     if prompt_style == "closure_once":
@@ -214,16 +214,16 @@ def sparse_read_protocol_prompt(runtime: Path, task: str, *, diagnostic_hints: b
                 "SparseRead is the preferred path for this compact evidence-closure workspace.",
                 "",
                 "Protocol:",
-                "1. Call `sro_card(path=...)` on the suggested collection.",
-                "2. Call exactly one `sro_read(mode=\"collect\")` with the returned `artifact_id` and the explicit slots below.",
+                "1. Call `sro_preview(path=...)` on the suggested collection.",
+                "2. Call exactly one `sro_read(mode=\"collect\")` with the returned `artifact_id` and the explicit slots below if preview alone is insufficient.",
                 "3. If `evidence_pack.slot_digest.overall_status` is `ready`, write the requested deliverable files immediately.",
                 "4. Do not call `sro_read` again after ready. Do not broadly list or read the collection after ready. Use native reads only for named unresolved slots.",
                 "",
                 f"OpenCode gate: {gate.get('mode', 'enforce')} - {gate.get('reason', 'compact closure')}",
             ] + ([
                 "",
-                "Suggested sro_card path and one-collect sro_read hint:",
-                json.dumps({"sro_card_path": str(sro_target(runtime, task)), "sro_read_hint": hint}, ensure_ascii=False, indent=2),
+                "Suggested sro_preview target and one-collect sro_read hint:",
+                json.dumps({"sro_preview_target": str(sro_target(runtime, task)), "sro_read_hint": hint}, ensure_ascii=False, indent=2),
             ] if diagnostic_hints else [])
         )
     return "\n".join(
@@ -233,13 +233,13 @@ def sparse_read_protocol_prompt(runtime: Path, task: str, *, diagnostic_hints: b
             "SparseRead is available for long documents, PDFs, and multi-file evidence bundles. Small native discovery reads are allowed.",
             "",
             "Protocol:",
-            "1. For the suggested large artifact below, call `sro_card(path=...)`, then `sro_read` with the returned `artifact_id`.",
+            "1. For the suggested large artifact below, call `sro_preview(path=...)`, then call `sro_read` with the returned `artifact_id` only when targeted evidence is needed.",
             "2. Build a `HintSpec` from the task: include `goal`, `type_hint`, and explicit `slots` for every required fact or deliverable component.",
             "3. If `evidence_pack.slot_digest.overall_status` is `ready` or `next_action.allowed_next` permits writing, write the requested deliverable. Avoid repeated broad reads after ready.",
             "4. Use native `read`/`grep`/`bash` for small setup files, path discovery, unsupported objects, or named unresolved facts.",
             "",
-            "Suggested sro_card path and sro_read hint for this task:",
-            json.dumps({"sro_card_path": str(sro_target(runtime, task)), "sro_read_hint": hint}, ensure_ascii=False, indent=2),
+            "Suggested sro_preview target and sro_read hint for this task:",
+            json.dumps({"sro_preview_target": str(sro_target(runtime, task)), "sro_read_hint": hint}, ensure_ascii=False, indent=2),
         ]
     )
 
@@ -429,9 +429,9 @@ def simulate_sro(runtime: Path, task: str, trace: dict[str, Any], args: argparse
         stderr=subprocess.PIPE,
     )
     try:
-        card = bridge_request(proc, "card", {"path": str(target)})
-        trace["sro_events"].append({"tool": "sro_card", "result": summarize_payload(card)})
-        artifact_id = card["file_card"]["artifact_id"]
+        preview = bridge_request(proc, "preview", {"path": str(target)})
+        trace["sro_events"].append({"tool": "sro_preview", "result": summarize_payload(preview)})
+        artifact_id = preview["preview_pack"]["artifact_id"]
         read = bridge_request(
             proc,
             "read",
@@ -747,7 +747,7 @@ def collect_filesystem_trace(run_dir: Path) -> dict[str, Any]:
     return {
         "tokens": None,
         "native_truncations": sum(combined.count(marker) for marker in truncation_markers),
-        "sro_calls": combined.count("sro_card") + combined.count("sro_read"),
+        "sro_calls": combined.count("sro_preview") + combined.count("sro_raw") + combined.count("sro_card") + combined.count("sro_read"),
         "tool_calls": sum(1 for line in combined.splitlines() if "✱" in line or "⚙" in line or "✗" in line),
         "requests": combined.count("> build") or None,
         "ready_after_reads": 0,

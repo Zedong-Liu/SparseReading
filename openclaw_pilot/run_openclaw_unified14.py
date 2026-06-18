@@ -261,6 +261,20 @@ def fixed_reference_dates(prompt: str) -> list[str]:
     return dates[:3]
 
 
+def sro_collect_call_example(hint: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "target": {"artifact_id": "<artifact_id from sro_preview>"},
+        "mode": str(hint.get("mode") or "collect"),
+        "hint": {
+            "goal": str(hint.get("goal") or "answer the task from the target artifact"),
+            "want": str(hint.get("want") or "fact"),
+            "scope": str(hint.get("scope") or "new"),
+            "type_hint": str(hint.get("type_hint") or "auto"),
+            "slots": hint.get("slots") or [],
+        },
+    }
+
+
 def feature_guidance(task: LoadedTask, task_spec_text: str) -> str:
     text = task_spec_text.lower()
     guidance = ""
@@ -280,7 +294,7 @@ def feature_guidance(task: LoadedTask, task_spec_text: str) -> str:
     if "scheduled" in text and "notification" in text and "diagnosis_report.md" in text:
         guidance += (
             "- For scheduled notification diagnosis bundles, use native reads/grep/Python over the "
-            "small log/config/script/template files. Do not call sro_card/sro_read unless a native "
+            "small log/config/script/template files. Do not call sro_preview/sro_read unless a native "
             "tool result is actually truncated; this task should normally be one native evidence "
             "pass followed by writing `diagnosis_report.md` and `book_recommendation.sh`. The skill "
             "deliverable is optional; skip `skill_workshop` when it would add another exploration loop.\n"
@@ -315,6 +329,23 @@ def feature_guidance(task: LoadedTask, task_spec_text: str) -> str:
 def validation_prompt(task: LoadedTask, mode: str, *, diagnostic_hints: bool = False) -> str:
     if mode == "native":
         return task.prompt
+    slots = numbered_question_slots(task.prompt)
+    slot_hint = ""
+    if slots:
+        hint = {
+            "mode": "collect",
+            "goal": "answer the numbered questions from the target artifact",
+            "want": "fact",
+            "scope": "new",
+            "type_hint": "auto",
+            "slots": slots,
+        }
+        slot_hint = (
+            "For numbered question-answer tasks, build the first targeted read exactly like this after sro_preview; "
+            "replace the artifact_id placeholder with the value returned by preview:\n"
+            + json.dumps(sro_collect_call_example(hint), ensure_ascii=False)
+            + "\n"
+        )
     if not diagnostic_hints:
         task_spec_text = task.task_md.read_text(encoding="utf-8", errors="replace")
         feature_hint = feature_guidance(task, task_spec_text)
@@ -322,17 +353,19 @@ def validation_prompt(task: LoadedTask, mode: str, *, diagnostic_hints: bool = F
             return (
                 task.prompt
                 + "\n\nSparseRead is available, but this workspace shape is native-fit. "
-                + "Follow the native guidance below and use sro_card/sro_read only if a native result is actually truncated.\n"
+                + "Follow the native guidance below and use sro_preview/sro_read only if a native result is actually truncated.\n"
                 + feature_hint
             )
         return (
             task.prompt
             + "\n\nSparseRead is available for long documents, PDFs, and multi-file evidence bundles. "
             + "Use native reads for small files, config edits, scripts, calculations, and full-table work. "
-            + "For long documents or compact evidence collections, call sro_card first, then sro_read(mode=\"collect\") "
-            + "with the returned artifact_id. Build your own HintSpec from the task: include goal, type_hint, and slots "
-            + "for every required fact. When evidence_pack.slot_digest.overall_status is ready, write the deliverable "
-            + "immediately. Do not call sro_read with list-of-string slots."
+            + "For long documents or compact evidence collections, call sro_preview first, then sro_read(mode=\"collect\") "
+            + "with the returned artifact_id only when targeted evidence is needed. In HintSpec, `want` must be fact/list/count/schema/table/verbatim, "
+            + "`scope` must be new/narrow/expand/verify, and `slots` must be objects with id and question, never strings. "
+            + slot_hint
+            + "When evidence_pack.slot_digest.overall_status is ready, write the deliverable immediately. "
+            + "If the task asks for one answer per line, write raw answers only: no numbering, bullets, labels, or prefixes."
         )
     task_spec_text = task.task_md.read_text(encoding="utf-8", errors="replace")
     code_hint = ""
@@ -359,38 +392,23 @@ def validation_prompt(task: LoadedTask, mode: str, *, diagnostic_hints: bool = F
                 "`discount_pct`/`final_discount_pct`.\n"
             )
     explicit_hint = BENCH_COLLECT_HINTS.get(task.task_id)
-    slots = numbered_question_slots(task.prompt)
-    slot_hint = ""
     feature_hint = feature_guidance(task, task_spec_text)
     if explicit_hint:
         prefix = (
             "SparseRead validation protocol (benchmark only, not a product gate):\n"
-            f"- First action: call sro_card(path='{explicit_hint['target']}') before native reads, directory listing, grep, or exec inspection.\n"
-            "- Then call exactly one sro_read(mode=collect) with this hint shape; keep `want` at the top level and do not put `want` inside each slot:\n"
-            + json.dumps(explicit_hint, ensure_ascii=False)
+            f"- First action: call sro_preview(path='{explicit_hint['target']}') before native reads, directory listing, grep, or exec inspection.\n"
+            "- Then call exactly one sro_read with the returned artifact_id and this shape if targeted evidence is needed; keep `want` inside `hint` and do not put `want` inside each slot:\n"
+            + json.dumps(sro_collect_call_example(explicit_hint), ensure_ascii=False)
             + "\n"
             "- When the collect result is ready or allowed_next includes write_file/write, write the requested deliverable immediately. Do not verify/refine resolved slots.\n\n"
         )
         return prefix + task.prompt
-    elif slots:
-        hint = {
-            "target": target_hint(task),
-            "mode": "collect",
-            "want": "fact",
-            "type_hint": "text",
-            "slots": slots,
-        }
-        slot_hint = (
-            "- For numbered question-answer tasks, use this exact collect hint shape; keep `want` at the top level and do not put `want` inside each slot:\n"
-            + json.dumps(hint, ensure_ascii=False)
-            + "\n"
-        )
     return (
         task.prompt
         + "\n\nSparseRead validation hint (benchmark only, not a product gate):\n"
         + f"- Candidate evidence target: `{target_hint(task)}`.\n"
         + "- Use native reads for small files, config edits, scripts, calculations, and full-table work.\n"
-        + "- For long documents, PDFs, reports, or compact evidence closures, call sro_card first. If the OpenClaw gate recommends SparseRead, call exactly one sro_read(mode=collect), then write the requested deliverable immediately when ready.\n"
+        + "- For long documents, PDFs, reports, or compact evidence closures, call sro_preview first. If the OpenClaw gate recommends SparseRead and preview is insufficient, call exactly one sro_read(mode=collect), then write the requested deliverable immediately when ready.\n"
         + slot_hint
         + feature_hint
         + code_hint
@@ -622,7 +640,7 @@ def write_report(run_root: Path, results: list[dict[str, Any]]) -> None:
         lines.append("- **Diagnostic hints: disabled** — fair product evaluation path.")
     lines += [
         "",
-        "| # | task | mode | score | est tokens | assistant req | tools | SR card/read | nanobot SR score/tokens/req | close? | notes |",
+        "| # | task | mode | score | est tokens | assistant req | tools | SR preview/card/read | nanobot SR score/tokens/req | close? | notes |",
         "|---:|---|---|---:|---:|---:|---:|---:|---:|---|---|",
     ]
     for idx, task_id in enumerate(UNIFIED14_TASK_IDS, 1):
@@ -641,7 +659,7 @@ def write_report(run_root: Path, results: list[dict[str, Any]]) -> None:
                 else ""
             )
             lines.append(
-                "| {idx} | {task} | {mode} | {score:.3f} | {tokens} | {req} | {tools} | {card}/{read} | {ref} | {close} | {notes} |".format(
+                "| {idx} | {task} | {mode} | {score:.3f} | {tokens} | {req} | {tools} | {preview}/{card}/{read} | {ref} | {close} | {notes} |".format(
                     idx=idx,
                     task=task_id,
                     mode=mode,
@@ -649,6 +667,7 @@ def write_report(run_root: Path, results: list[dict[str, Any]]) -> None:
                     tokens=metrics.get("estimated_total_tokens", 0),
                     req=metrics.get("assistant_messages", 0),
                     tools=metrics.get("tool_calls", 0),
+                    preview=metrics.get("sro_preview_calls", 0),
                     card=metrics.get("sro_card_calls", 0),
                     read=metrics.get("sro_read_calls", 0),
                     ref=ref_cell,

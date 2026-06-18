@@ -185,21 +185,31 @@ def ensure_plugin_available(profile: str) -> None:
     )
 
 
+def sro_collect_call_example(task: TaskSpec) -> dict[str, Any]:
+    return {
+        "preview_path": task.artifact_path,
+        "sro_read": {
+            "target": {"artifact_id": "<artifact_id from sro_preview>"},
+            "mode": "collect",
+            "hint": {
+                "goal": "answer the task from the target artifact",
+                "want": "fact",
+                "scope": "new",
+                "type_hint": "auto",
+                "slots": task.slots,
+            },
+        },
+    }
+
+
 def validation_prompt(task: TaskSpec, prompt: str, mode: str) -> str:
     if mode == "native":
         return prompt
-    hint = {
-        "target": task.artifact_path,
-        "mode": "collect",
-        "want": "fact",
-        "slots": task.slots,
-        "rule": "Call exactly one sro_read with hint.want='fact' and the slots below. Do not invent other want values. After sro_read returns overall_status=ready or allowed_next includes write_file/write, write the deliverable immediately. Do not refine or reread resolved slots.",
-    }
     return (
         prompt
         + "\n\nSparseRead validation hint (benchmark only, not a product gate):\n"
-        + "Use sro_card on the target, then one sro_read(mode=collect) with these slots before writing the deliverable.\n"
-        + json.dumps(hint, ensure_ascii=False, indent=2)
+        + "Use sro_preview on preview_path first. If preview alone is insufficient, call exactly one sro_read using the returned artifact_id and the sro_read shape below before writing the deliverable. Do not invent other want values. Do not refine or reread resolved slots.\n"
+        + json.dumps(sro_collect_call_example(task), ensure_ascii=False, indent=2)
     )
 
 
@@ -283,6 +293,18 @@ def content_chars(content: Any) -> int:
     return len(json.dumps(content, ensure_ascii=False, sort_keys=True))
 
 
+def content_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+        return "\n".join(parts)
+    return json.dumps(content, ensure_ascii=False, sort_keys=True)
+
+
 def estimate_transcript_tokens(events: list[dict[str, Any]], result: dict[str, Any]) -> dict[str, int]:
     """Estimate cumulative model tokens when provider usage is unavailable.
 
@@ -328,6 +350,8 @@ def estimate_transcript_tokens(events: list[dict[str, Any]], result: dict[str, A
 
 def session_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
     tool_calls = 0
+    sro_preview = 0
+    sro_raw = 0
     sro_card = 0
     sro_read = 0
     sro_trace = 0
@@ -350,7 +374,11 @@ def session_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
                         tool_calls += 1
                         name = str(item.get("name", ""))
                         tool_names.append(name)
-                        if name == "sro_card":
+                        if name == "sro_preview":
+                            sro_preview += 1
+                        elif name == "sro_raw":
+                            sro_raw += 1
+                        elif name == "sro_card":
                             sro_card += 1
                         elif name == "sro_read":
                             sro_read += 1
@@ -358,12 +386,23 @@ def session_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
                                 ready_after_reads += 1
                         elif name == "sro_trace":
                             sro_trace += 1
+            elif isinstance(message, dict) and message.get("role") == "toolResult":
+                name = str(message.get("toolName", ""))
+                output = content_text(message.get("content"))
+                if name == "sro_read" and re.search(r'"overall_status"\s*:\s*"ready"|ready_for_write|write_file_now', output):
+                    seen_ready = True
+                if name not in {"sro_preview", "sro_raw", "sro_card", "sro_read", "sro_trace"} and re.search(
+                    r"Full output saved to:|Original size:|Output capped|Results truncated|Showing .* of .*|Use offset=|truncated",
+                    output,
+                    re.I,
+                ):
+                    native_truncations += 1
         elif event.get("type") == "tool_call":
             name = str(event.get("name", ""))
             output = str(event.get("output", ""))
             if name == "sro_read" and re.search(r'"overall_status"\s*:\s*"ready"|ready_for_write', output):
                 seen_ready = True
-            if name not in {"sro_card", "sro_read", "sro_trace"} and re.search(
+            if name not in {"sro_preview", "sro_raw", "sro_card", "sro_read", "sro_trace"} and re.search(
                 r"Full output saved to:|Original size:|Output capped|Results truncated|Showing .* of .*|Use offset=|truncated",
                 output,
                 re.I,
@@ -375,6 +414,8 @@ def session_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
         "tool_calls": tool_calls,
         "tool_names": tool_names,
         "native_truncations": native_truncations,
+        "sro_preview_calls": sro_preview,
+        "sro_raw_calls": sro_raw,
         "sro_card_calls": sro_card,
         "sro_read_calls": sro_read,
         "sro_trace_calls": sro_trace,
@@ -644,6 +685,7 @@ def compare(native: dict[str, Any], sr: dict[str, Any]) -> dict[str, Any]:
         "delta_estimated_total_tokens": delta("estimated_total_tokens"),
         "estimated_total_tokens_improved": (s.get("estimated_total_tokens") or 10**18) < (n.get("estimated_total_tokens") or 10**18),
         "tool_calls_improved": s.get("tool_calls", 0) < n.get("tool_calls", 0),
+        "sr_sro_preview_calls": s.get("sro_preview_calls", 0),
         "sr_sro_card_calls": s.get("sro_card_calls", 0),
         "sr_sro_read_calls": s.get("sro_read_calls", 0),
         "sr_ready_after_read_calls": s.get("ready_after_read_calls", 0),
@@ -711,7 +753,7 @@ def write_report(run_root: Path, results: list[dict[str, Any]]) -> None:
         f"- Run root: `{run_root}`",
         f"- Tasks: {len(by_task)}",
         "",
-        "| task | native score | sr score | positive | native est tokens | sr est tokens | native tools | sr tools | native trunc | sr trunc | sr sro_card/read | ready-after-read |",
+        "| task | native score | sr score | positive | native est tokens | sr est tokens | native tools | sr tools | native trunc | sr trunc | sr sro_preview/card/read | ready-after-read |",
         "|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for task_id, modes in by_task.items():
@@ -721,7 +763,7 @@ def write_report(run_root: Path, results: list[dict[str, Any]]) -> None:
         n_metrics = native.get("metrics", {})
         s_metrics = sr.get("metrics", {})
         lines.append(
-            "| {task} | {ns:.2f} | {ss:.2f} | {pos} | {net} | {set} | {nt} | {st} | {ntr} | {strunc} | {sc}/{srread} | {rar} |".format(
+            "| {task} | {ns:.2f} | {ss:.2f} | {pos} | {net} | {set} | {nt} | {st} | {ntr} | {strunc} | {sp}/{sc}/{srread} | {rar} |".format(
                 task=task_id,
                 ns=native.get("grade", {}).get("score", 0.0),
                 ss=sr.get("grade", {}).get("score", 0.0),
@@ -732,6 +774,7 @@ def write_report(run_root: Path, results: list[dict[str, Any]]) -> None:
                 st=s_metrics.get("tool_calls", 0),
                 ntr=n_metrics.get("native_truncations", 0),
                 strunc=s_metrics.get("native_truncations", 0),
+                sp=s_metrics.get("sro_preview_calls", 0),
                 sc=s_metrics.get("sro_card_calls", 0),
                 srread=s_metrics.get("sro_read_calls", 0),
                 rar=s_metrics.get("ready_after_read_calls", 0),

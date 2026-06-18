@@ -89,6 +89,11 @@ class SparseReadBridgeServer:
 
     def raw(self, params: dict[str, Any]) -> dict[str, Any]:
         raw_ref = self._require_str(params, "raw_ref")
+        ready_artifact = self._adapter_ready_artifact_for_raw_ref(raw_ref)
+        if ready_artifact:
+            result = {"raw": self._adapter_already_ready_raw(ready_artifact, raw_ref)}
+            self._record("sro_raw", {"raw_ref": raw_ref}, result)
+            return result
         result = {
             "raw": self.runtime.orchestrator.raw(
                 raw_ref,
@@ -384,6 +389,13 @@ class SparseReadBridgeServer:
                 return artifact_id
         return ""
 
+    def _adapter_ready_artifact_for_raw_ref(self, raw_ref: str) -> str:
+        parts = raw_ref.split(":")
+        if len(parts) < 2 or parts[0] != "raw":
+            return ""
+        artifact_id = parts[1]
+        return artifact_id if artifact_id in self._adapter_ready_artifacts else ""
+
     def _allow_bounded_ready_verify(self, artifact_id: str, mode: str) -> bool:
         if not self.policy.allow_bounded_text_verify:
             return False
@@ -458,6 +470,24 @@ class SparseReadBridgeServer:
             "next_action": pack_next_action,
             "next_hint": None,
             "error": "",
+            "protocol_next": "write_file_now",
+        }
+
+    def _adapter_already_ready_raw(self, artifact_id: str, raw_ref: str) -> dict[str, Any]:
+        self._adapter_guard_hits += 1
+        return {
+            "raw_ref": raw_ref,
+            "artifact_id": artifact_id,
+            "adapter_guard": "ready_for_write: do not call sro_raw after resolved evidence",
+            "summary": "adapter ready guard: evidence is already ready from the prior read; write the deliverable now",
+            "matches": [],
+            "truncated": False,
+            "next_action": {
+                "allowed_next": ["write_file"],
+                "instruction": self._ready_instruction(artifact_id),
+                "guard": self.policy.ready_guard,
+                "prior_evidence_artifact": artifact_id,
+            },
             "protocol_next": "write_file_now",
         }
 

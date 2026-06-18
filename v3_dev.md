@@ -3319,3 +3319,87 @@ Post-review fixes:
 Remote OpenCode/OpenClaw benchmark validation is intentionally deferred for this
 phase; local API/regression tests and plugin build are the current acceptance
 bar.
+
+## 2026-06-18: Auto Preview Framework Convergence Validation
+
+Follow-up fixes after the initial P2 implementation tightened the production
+framework path around one visible entrypoint:
+
+- OpenCode/OpenClaw runner prompts and reports now count `sro_preview`,
+  `sro_raw`, `sro_card`, and `sro_read` separately. Production prompts start
+  from `sro_preview`; `sro_card` remains compatibility/debug and
+  `bench_protocol` keeps the historical benchmark path.
+- OpenClaw bridge instances are keyed by workspace/module/mode rather than a
+  volatile session id, so `sro_preview`, `sro_raw`, and `sro_read` share state
+  across tool calls in one workspace.
+- OpenClaw `sro_read.target` accepts an artifact id string, a path string, an
+  object, or a JSON-stringified target object. This absorbs common model/tool
+  argument shape drift without changing the core protocol.
+- `sro_raw` resolves unique short or stale-hash refs by `artifact_id`.
+- PDF `sro_raw` returns an extracted text view instead of binary PDF bytes.
+- The shared bridge guards `sro_raw` after a ready collect result. Without this,
+  readable PDF raw output became a new verification loop. After ready, raw now
+  returns `protocol_next=write_file_now`.
+
+Local validation:
+
+```text
+uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio pytest nanobot-sro-v3/tests/sparse_reading/test_sparseread_public_api.py -q
+6 passed
+```
+
+```text
+uv run --project nanobot-sro-v3 --with pytest pytest nanobot-sro-v3/tests/sparse_reading -q
+133 passed, 1 pytest config warning
+```
+
+```text
+cd openclaw_pilot/plugin
+npm run build
+passed
+```
+
+```text
+python3 -m py_compile openclaw_pilot/run_openclaw_validation.py openclaw_pilot/run_openclaw_unified14.py opencode_pilot/run_pilot.py
+passed
+```
+
+OpenCode offline bridge harness:
+
+```text
+SRO_test/qwenclawbench/sr_auto_l0_preview_offline_final_20260618T093346/opencode_pilot_report.md
+16/16 offline rows passed
+Plugin rows exercised sro_preview -> sro_read; native rows used no SR calls.
+```
+
+OpenClaw local API validation used profile `sr-auto-l0` with the linked local
+plugin and DeepSeek-V4-Flash. No remote validation was run.
+
+Focused 3-task comparison:
+
+```text
+SRO_test/qwenclawbench/openclaw_auto_l0_preview_flash_20260618T034134/openclaw_sr_validation_report.md
+
+task_00012: native 0.67 / 148775 est tokens -> SR 1.00 / 124705, SR calls 1 preview / 0 card / 3 read
+task_21:    native 0.89 / 70017  est tokens -> SR 1.00 / 65962,  SR calls 1 preview / 0 card / 2 read
+loogle_5q:  native 1.00 / 159677 est tokens -> SR 1.00 / 51398,  SR calls 1 preview / 0 card / 1 read
+```
+
+Final OpenClaw T21 smoke after raw guard:
+
+```text
+SRO_test/qwenclawbench/openclaw_auto_l0_rawguard_t21_20260618T171448/openclaw_unified14_report.md
+
+score: 1.000
+estimated tokens: 84,958
+assistant requests: 6
+tool sequence: sro_preview, sro_read, sro_read, sro_raw, write
+SR preview/card/read: 1/0/2
+raw behavior: the single post-ready sro_raw returned adapter_guard + protocol_next=write_file_now
+```
+
+One malformed `sro_read` call in the final OpenClaw smoke came from model JSON
+argument drift in the benchmark prompt. The next tool call recovered and
+completed. This is runner/prompt noise, not a core SR failure, but future
+OpenClaw prompt tuning should avoid embedding very large exact JSON examples
+with quoted questions.
