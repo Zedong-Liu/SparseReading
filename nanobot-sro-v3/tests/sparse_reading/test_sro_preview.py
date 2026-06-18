@@ -134,6 +134,29 @@ def test_preview_log_deduplicates_levels_without_hint(tmp_path: Path) -> None:
     assert any(sample["severity"] == "ERROR" for sample in preview.samples)
 
 
+def test_preview_long_markdown_returns_skeleton_without_hint(tmp_path: Path) -> None:
+    path = tmp_path / "research.md"
+    path.write_text(
+        "# Executive Summary\n\n"
+        "Sparse reading should expose structure before goals.\n\n"
+        "## Registry Findings\n\n"
+        + "The registry contains repeated operational notes.\n" * 180
+        + "\n## Proposed Tasks\n\n"
+        + "The benchmark proposes concrete agent tasks.\n" * 120,
+        encoding="utf-8",
+    )
+    sro = SparseReadingOrchestrator(tmp_path)
+
+    preview = sro.preview({"path": str(path)})
+
+    assert preview.error == ""
+    assert preview.card["type"] == "text"
+    assert preview.summary.startswith("text object")
+    assert preview.structure["unit_count"] >= 3
+    assert any("Executive Summary" in item for item in preview.structure["skeleton"])
+    assert preview.samples
+
+
 def test_preview_collection_uses_grouped_file_card(tmp_path: Path) -> None:
     root = tmp_path / "bundle"
     root.mkdir()
@@ -149,6 +172,11 @@ def test_preview_collection_uses_grouped_file_card(tmp_path: Path) -> None:
     assert preview.structure["file_count"] == 3
     assert preview.structure["kind_counts"]["log"] == 1
     assert any(signal["kind"] == "notable_files" for signal in preview.signals)
+
+    raw = sro.raw(preview.raw_ref, selector="config.yaml")
+    assert raw["type"] == "collection_child"
+    assert raw["path"].endswith("config.yaml")
+    assert "enabled: true" in raw["content"]
 
 
 def test_collect_still_requires_hintspec_after_preview(tmp_path: Path) -> None:

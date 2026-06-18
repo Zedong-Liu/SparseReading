@@ -301,6 +301,10 @@ function looksLikeRawDump(command: string): boolean {
     || /Path\([^)]*\)\.read_text\s*\(/.test(command)
 }
 
+function looksLikeRawCopy(command: string): boolean {
+  return /\b(cp|install|rsync)\b/.test(command)
+}
+
 function commandPaths(command: string): string[] {
   const suffix = String.raw`(?:pdf|txt|md|csv|tsv|xlsx|json|yaml|yml|xml|log|py|sh)`
   const quoted = new RegExp(String.raw`["']([^"']+\.${suffix})["']`, "gi")
@@ -337,6 +341,15 @@ async function decideGate(bridge: SparseReadBridge, candidate: string | undefine
   if (!candidate) return undefined
   const result = await bridge.request("decide", { path: absolutePath(candidate, ctx, cfg) })
   return asObject(result.openclaw_gate)
+}
+
+function sparseReadBlockReason(gate: JsonObject | undefined, path: string | undefined, action: string): string {
+  const handoffPath = typeof gate?.handoff_path === "string" ? gate.handoff_path : path
+  if (gate?.already_ready === true || gate?.protocol_next === "write_file_now") {
+    const instruction = typeof gate.ready_instruction === "string" ? gate.ready_instruction : "write the deliverable now"
+    return `SparseRead enforce: evidence for ${handoffPath ?? "this source"} is already ready; ${instruction}. Do not ${action} source files.`
+  }
+  return `SparseRead enforce: use sro_preview(path=${handoffPath}) first; call sro_read with the returned artifact_id only if targeted evidence is needed.`
 }
 
 async function recordNative(
@@ -482,7 +495,7 @@ const sparseReadPlugin: any = definePluginEntry({
           const handoffPath = typeof gate.handoff_path === "string" ? gate.handoff_path : paramsPath(params)
           return {
             block: true,
-            blockReason: `SparseRead enforce: use sro_preview(path=${handoffPath}) first; call sro_read with the returned artifact_id only if targeted evidence is needed.`,
+            blockReason: sparseReadBlockReason(gate, handoffPath, "reread"),
           }
         }
       }
@@ -511,13 +524,15 @@ const sparseReadPlugin: any = definePluginEntry({
 
       if (toolName === "exec" || toolName === "bash" || toolName === "shell") {
         const command = String(params.command ?? params.cmd ?? "")
-        if (!looksLikeRawDump(command)) return
+        const rawDump = looksLikeRawDump(command)
+        const rawCopy = looksLikeRawCopy(command)
+        if (!rawDump && !rawCopy) return
         for (const candidate of commandPaths(command)) {
           const gate = await decideGate(bridge, candidate, runCtx, cfg)
           if (gate?.block_native_exec_dump === true) {
             return {
               block: true,
-              blockReason: `SparseRead enforce: this command appears to dump ${candidate}. Use sro_preview first.`,
+              blockReason: sparseReadBlockReason(gate, candidate, rawCopy ? "copy" : "dump"),
             }
           }
         }

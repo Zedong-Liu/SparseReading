@@ -182,6 +182,58 @@ def test_openclaw_ready_guard_stops_repeat_reads_immediately(tmp_path: Path) -> 
     assert trace["summary"]["adapter_guard_hits"] == 2
 
 
+def test_openclaw_preview_collection_ready_guard_stops_repeat_reads(tmp_path: Path) -> None:
+    assets = _write_command_security_bundle(tmp_path / "command")
+    bridge = OpenClawBridge(workspace=tmp_path, mode="auto")
+
+    preview = bridge.handle({"method": "preview", "params": {"path": str(assets)}})
+    artifact_id = preview["preview_pack"]["artifact_id"]
+    raw_ref = preview["preview_pack"]["raw_ref"]
+    raw = bridge.handle({"method": "raw", "params": {"raw_ref": raw_ref, "selector": "security_policy.yaml"}})
+    first = bridge.handle(
+        {
+            "method": "read",
+            "params": {
+                "target": {"artifact_id": artifact_id},
+                "mode": "collect",
+                "hint": {
+                    "goal": "command prefix security analysis",
+                    "want": "fact",
+                    "type_hint": "collection",
+                    "slots": [
+                        {"id": "pipeline_commands", "question": "unsafe commands"},
+                        {"id": "policy_conflicts", "question": "policy conflicts"},
+                        {"id": "deliverables", "question": "required deliverables"},
+                    ],
+                },
+            },
+        }
+    )
+    decision = bridge.handle({"method": "decide", "params": {"path": str(assets / "security_policy.yaml")}})
+    second = bridge.handle(
+        {
+            "method": "read",
+            "params": {
+                "target": {"artifact_id": artifact_id},
+                "mode": "collect",
+                "hint": {
+                    "goal": "repeat command prefix security analysis",
+                    "want": "fact",
+                    "type_hint": "collection",
+                },
+            },
+        }
+    )
+    trace = bridge.handle({"method": "trace", "params": {}})
+
+    assert raw["raw"]["type"] == "collection_child"
+    assert "deny_patterns" in raw["raw"]["content"]
+    assert first["evidence_pack"]["next_action"]["overall_status"] == "ready"
+    assert decision["openclaw_gate"]["protocol_next"] == "write_file_now"
+    assert second["evidence_pack"]["protocol_next"] == "write_file_now"
+    assert trace["summary"]["adapter_guard_hits"] == 1
+
+
 def test_adapter_gates_preserve_t86_advisory_and_audit_enforce(tmp_path: Path) -> None:
     command_assets = _write_command_security_bundle(tmp_path / "command")
     audit_assets = _write_audit_bundle(tmp_path / "audit")

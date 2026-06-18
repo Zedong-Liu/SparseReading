@@ -3403,3 +3403,93 @@ argument drift in the benchmark prompt. The next tool call recovered and
 completed. This is runner/prompt noise, not a core SR failure, but future
 OpenClaw prompt tuning should avoid embedding very large exact JSON examples
 with quoted questions.
+
+## 2026-06-18: Validation Scenarios Completion Pass
+
+This pass closed the explicit Validation scenarios from
+`docs/sr_auto_l0_preview_plan.md` after auditing the previous evidence gap.
+
+Implementation fixes:
+
+- Registered `sro_preview` artifacts in the shared bridge adapter state. This
+  makes preview-originated collection artifacts first-class for ready guards
+  instead of relying on the legacy `sro_card` path.
+- Added `sro_raw(raw_ref, selector=...)` support for collection raw refs. A
+  selector can now resolve a child file and return its raw text view instead of
+  only returning the collection listing.
+- Added a ready-aware `decide` result for collection children after a ready
+  collect result: `protocol_next=write_file_now`, `already_ready=true`, and
+  native read/search/exec-dump blocking remain active.
+- Updated the OpenClaw hook to block raw-copy escapes such as `cp source /tmp/x`
+  for protected collection children, and to tell the model to write the
+  deliverable once evidence is ready.
+
+Core validation:
+
+```text
+uv run --offline --project nanobot-sro-v3 --with pytest pytest nanobot-sro-v3/tests/sparse_reading/test_bridge_shared.py nanobot-sro-v3/tests/sparse_reading/test_sro_preview.py -q
+16 passed, 1 pytest config warning
+```
+
+```text
+uv run --offline --project nanobot-sro-v3 --with pytest pytest nanobot-sro-v3/tests/sparse_reading -q
+135 passed, 1 pytest config warning
+```
+
+```text
+cd openclaw_pilot/plugin
+npm run build
+passed
+```
+
+OpenClaw local API validation used profile `sr-auto-l0`,
+`paratera/DeepSeek-V4-Flash`, and the local linked plugin. No remote validation
+was run.
+
+Positive SR scenarios:
+
+```text
+SRO_test/qwenclawbench/openclaw_auto_l0_t12_after_escape_guard_20260618T194615/openclaw_unified14_report.md
+task_00012: score 1.000, est tokens 133151, requests 9, SR preview/card/read/raw = 1/0/1/1
+
+SRO_test/qwenclawbench/openclaw_auto_l0_validation_remaining_flash_20260618T194827/openclaw_unified14_report.md
+task_21:   score 1.000, est tokens 67704, requests 5, SR preview/card/read/raw = 1/0/1/1
+loogle_3q: score 1.000, est tokens 51058, requests 4, SR preview/card/read/raw = 1/0/1/0
+```
+
+The T12 rerun no longer repeats SR expansion: `sro_preview` is the production
+entrypoint, `sro_card` remains unused, and `sro_read` is called once. The model
+still made blocked native read attempts before adopting SR, so T12 is
+functionally converged but not yet as token-tight as the nanobot reference.
+
+Boundary and native-fit scenarios:
+
+```text
+SRO_test/qwenclawbench/openclaw_auto_l0_validation_remaining_flash_20260618T194827/openclaw_unified14_report.md
+task_00086: score 1.000, SR preview/card/read/raw = 0/0/0/0
+task_00036: score 0.667, SR preview/card/read/raw = 0/0/0/0
+task_00058: score 1.000, SR preview/card/read/raw = 0/0/0/0
+task_00059: score 0.400, SR preview/card/read/raw = 0/0/0/0
+task_00067: score 0.867, SR preview/card/read/raw = 0/0/0/0
+
+SRO_test/qwenclawbench/openclaw_auto_l0_t94_nativefit_flash_20260618T200608/openclaw_unified14_report.md
+task_00094: score 1.000, SR preview/card/read/raw = 0/0/0/0
+```
+
+For native-fit rows, lower scores on T36/T59 are OpenClaw native trajectory
+quality issues; the relevant SR validation criterion is that production auto did
+not force these tasks into SR. T94 initially hit an OpenClaw `config patch`
+timeout before any tool call; the isolated rerun passed.
+
+OpenCode offline bridge validation:
+
+```text
+SRO_test/qwenclawbench/sr_auto_l0_validation_scenarios_offline_20260618T201043/opencode_pilot_report.md
+36/36 offline rows passed across native_truncation, plugin_observe, plugin_nudge, and plugin_replace_truncation_experimental.
+27/27 plugin traces used sro_preview -> sro_read, with sro_card_calls=0.
+```
+
+The OpenCode offline harness exercises the same shared bridge but is not a live
+agent trajectory substitute. It is used here only to confirm the unified
+OpenCode/OpenClaw bridge contract remains preview-first and does not require
+`sro_card`.

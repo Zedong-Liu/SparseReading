@@ -84,6 +84,16 @@ class SparseReadBridgeServer:
             target = {"artifact_id": params.get("artifact_id")} if params.get("artifact_id") else {"path": params.get("path")}
         pack = self.runtime.orchestrator.preview(target).to_dict()
         result = {"preview_pack": pack}
+        card = pack.get("card") if isinstance(pack.get("card"), dict) else {}
+        artifact_id = str(pack.get("artifact_id") or card.get("artifact_id") or "")
+        card_path = str(card.get("path") or (target.get("path") if isinstance(target, dict) else "") or "")
+        if artifact_id and card_path and not pack.get("error"):
+            self._remember_adapter_card(
+                artifact_id,
+                {"file_card": copy.deepcopy(card)} if card else result,
+                Path(card_path),
+                once=str(card.get("type") or "") == "collection",
+            )
         self._record("sro_preview", {"target": target}, result)
         return result
 
@@ -204,6 +214,21 @@ class SparseReadBridgeServer:
             parent_gate = self._force_collection_parent_gate(Path(path))
             if parent_gate:
                 gate = parent_gate
+        ready_artifact = self._adapter_ready_artifact_for_path(Path(path))
+        if ready_artifact:
+            gate = copy.deepcopy(gate)
+            gate.update(
+                {
+                    "already_ready": True,
+                    "protocol_next": "write_file_now",
+                    "block_native_read": True,
+                    "block_native_search": True,
+                    "block_native_exec_dump": True,
+                    "handoff_path": str(self._adapter_artifact_roots.get(ready_artifact) or path),
+                    "ready_instruction": self._ready_instruction(ready_artifact),
+                    "reason": "adapter closure already ready; write the deliverable instead of rereading source files",
+                }
+            )
         result = {
             "path": str(info.path),
             "type": info.type,

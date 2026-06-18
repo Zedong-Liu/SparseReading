@@ -1108,3 +1108,55 @@ sro_preview -> sro_read(collect) -> write
 is ready, the shared bridge returns `protocol_next=write_file_now` for further
 `sro_read` or `sro_raw` calls so the framework path converges instead of
 looping on verification.
+
+Validation scenarios sweep:
+
+```bash id="p2-openclaw-validation-scenarios"
+cd /Users/captainliu/sparse-reading-sr-auto-l0-preview
+export API_BASE_URL="https://llmapi.paratera.com/v1"
+export API_KEY="$DEEPSEEK_API_KEY"
+export DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY"
+
+python3 openclaw_pilot/run_openclaw_unified14.py \
+  --profile sr-auto-l0 \
+  --model paratera/DeepSeek-V4-Flash \
+  --modes sr \
+  --tasks task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check,task_21_openclaw_comprehension,task_loogle_shortdep_fall_of_outremer_3q_followup,task_00086_command_prefix_security_analysis,task_00036_find_largest_file_in_downloads_directory,task_00058_did_regression_on_simulated_panel_data,task_00059_user_discount_calculator,task_00067_write_sparql_query_for_product_reviews_containing_iphone,task_00094_exam_monitor_system_audit_cron_sync_bug_rate_limit_gap_and_site \
+  --timeout-multiplier 1 \
+  --run-root SRO_test/qwenclawbench/openclaw_auto_l0_validation_scenarios_$(date +%Y%m%dT%H%M%S)
+```
+
+Expected readout:
+
+- Positive SR rows T12/T21/LooGLE 3q keep score with `sro_preview` first,
+  `sro_card=0`, and no repeated `sro_read` expansion after ready.
+- Boundary T86 stays native/advisory in production auto; SR calls should remain
+  zero in the live OpenClaw run.
+- Native-fit rows T36/T58/T59/T67/T94 should not be forced into SR. Their task
+  scores may vary with the OpenClaw model trajectory; the SR criterion is
+  `sro_preview/card/read/raw = 0/0/0/0` unless a genuinely large source is
+  explicitly previewed.
+
+OpenCode offline bridge contract sweep:
+
+```bash id="p2-opencode-validation-scenarios-offline"
+cd /Users/captainliu/sparse-reading-sr-auto-l0-preview
+python3 opencode_pilot/run_pilot.py \
+  --offline \
+  --runset sr_auto_l0_validation_scenarios_offline_$(date +%Y%m%dT%H%M%S) \
+  --modes native_truncation plugin_observe plugin_nudge plugin_replace_truncation_experimental \
+  --tasks \
+    task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check \
+    task_21_openclaw_comprehension \
+    task_loogle_shortdep_fall_of_outremer_3q_followup \
+    task_00086_command_prefix_security_analysis \
+    task_00036_find_largest_file_in_downloads_directory \
+    task_00058_did_regression_on_simulated_panel_data \
+    task_00059_user_discount_calculator \
+    task_00067_write_sparql_query_for_product_reviews_containing_iphone \
+    task_00094_exam_monitor_system_audit_cron_sync_bug_rate_limit_gap_and_site \
+  --force
+```
+
+OpenCode offline is a bridge-contract harness, not a live agent substitute.
+Plugin traces should use `sro_preview -> sro_read` with `sro_card=0`.

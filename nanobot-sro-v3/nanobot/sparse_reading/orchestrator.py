@@ -285,13 +285,58 @@ class SparseReadingOrchestrator:
             }
         if path.is_dir():
             entries = [str(entry.relative_to(path)) for entry in sorted(path.rglob("*")) if entry.is_file()]
-            return {
+            if selector:
+                query = selector.strip().strip("\"'")
+                if query.startswith("./"):
+                    query = query[2:]
+                selected = None
+                root = path.resolve(strict=False)
+                direct = (path / query).resolve(strict=False)
+                if direct.is_file():
+                    try:
+                        direct.relative_to(root)
+                    except ValueError:
+                        direct = None
+                    else:
+                        selected = direct
+                if selected is None:
+                    files = [entry for entry in sorted(path.rglob("*")) if entry.is_file()]
+                    selected = next((entry for entry in files if str(entry.relative_to(path)) == query), None)
+                    if selected is None:
+                        selected = next((entry for entry in files if entry.name == query), None)
+                    if selected is None:
+                        selected = next((entry for entry in files if query.lower() in str(entry.relative_to(path)).lower()), None)
+                if selected is not None:
+                    try:
+                        text, raw_view = self._raw_text_view(selected)
+                    except Exception as exc:
+                        return {
+                            "raw_ref": resolved_ref,
+                            "path": str(selected),
+                            "selector": selector,
+                            "error": f"could not read raw content: {exc}",
+                        }
+                    start, end = self._raw_range_bounds(text, range)
+                    return {
+                        "raw_ref": resolved_ref,
+                        "path": str(selected),
+                        "type": "collection_child",
+                        "view": raw_view,
+                        "selector": selector,
+                        "range": {"start": start, "end": end},
+                        "content": text[start:end],
+                        "truncated": end < len(text),
+                    }
+            result = {
                 "raw_ref": resolved_ref,
                 "path": str(path),
                 "type": "collection",
                 "entries": entries[:500],
                 "truncated": len(entries) > 500,
             }
+            if selector:
+                result["error"] = f"selector did not match a file in collection: {selector}"
+            return result
         try:
             text, raw_view = self._raw_text_view(path)
         except Exception as exc:
