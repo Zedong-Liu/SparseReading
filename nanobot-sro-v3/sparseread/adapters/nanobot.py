@@ -6,8 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from nanobot.sparse_reading.policy import SparseCommandPolicy
-from nanobot.sparse_reading.tools import SroCardTool, SroReadTool
-
 from sparseread.config import SparseReadConfig, SparseReadMode
 from sparseread.wrapper import SparseRead
 
@@ -28,12 +26,10 @@ class NanobotAdapter:
         installed: list[str] = []
         orchestrator = sparseread.orchestrator
 
-        if not tools.has("sro_card"):
-            tools.register(SroCardTool(orchestrator))
-            installed.append("sro_card")
-        if not tools.has("sro_read"):
-            tools.register(SroReadTool(orchestrator))
-            installed.append("sro_read")
+        for tool in sparseread.tools():
+            if not tools.has(tool.name):
+                tools.register(tool)
+                installed.append(tool.name)
         orchestrator.mark_macro_available()
 
         for name in ("read_file", "list_dir", "grep"):

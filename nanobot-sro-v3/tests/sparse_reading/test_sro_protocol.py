@@ -744,16 +744,23 @@ def test_collection_collect_adds_diagnostic_closure(tmp_path, monkeypatch):
     )
     sro = SparseReadingOrchestrator(tmp_path)
     card = sro.card(tmp_path)
-
-    pack = sro.read(
-        {"artifact_id": card.artifact_id},
-        "collect",
+    hint, errors = HintSpec.from_obj(
         {
             "goal": "Diagnose why scheduled notification failed",
             "needles": ["retry_after", "fallback", "rate_limit"],
             "want": "fact",
             "type_hint": "collection",
         },
+    )
+    assert hint is not None
+    assert not errors
+
+    pack = sro.collection_reader.read(
+        tmp_path,
+        card.artifact_id,
+        "collect",
+        hint,
+        budget=20_000,
     )
 
     closure = next(block.text for block in pack.evidence if block.anchor == "collection_diagnosis_closure")

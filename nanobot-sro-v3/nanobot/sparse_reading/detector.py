@@ -26,7 +26,11 @@ COLLECTION_EXTS = SUPPORTED_EXTS | {".eml"}
 DEFAULT_LARGE_BYTES = int(os.environ.get("SRO_LARGE_BYTES", "4096"))
 DEFAULT_STRUCTURED_LARGE_BYTES = int(os.environ.get("SRO_STRUCTURED_LARGE_BYTES", "1024"))
 DEFAULT_COLLECTION_FILES = int(os.environ.get("SRO_COLLECTION_FILES", "3"))
-SKIP_DIRS = {".git", ".nanobot", "__pycache__", ".pytest_cache", ".ruff_cache", "memory", "sessions", "bootstrap", "skills"}
+SKIP_DIRS = {
+    ".git", ".nanobot", ".openclaw", "__pycache__", ".pytest_cache",
+    ".ruff_cache", "memory", "sessions", "bootstrap", "skills",
+}
+SKIP_FILES = {"AGENTS.md", "BOOTSTRAP.md", "HEARTBEAT.md", "IDENTITY.md", "SOUL.md", "TOOLS.md", "USER.md"}
 
 
 @dataclass(slots=True)
@@ -62,6 +66,7 @@ def inspect_file(path: str | Path, *, large_bytes: int | None = None) -> FileInf
         files = [
             entry for entry in p.rglob("*")
             if entry.is_file()
+            and entry.name not in SKIP_FILES
             and not any(part in SKIP_DIRS for part in entry.relative_to(p).parts[:-1])
             and (entry.suffix.lower() in COLLECTION_EXTS or entry.name.lower().startswith("readme"))
         ]

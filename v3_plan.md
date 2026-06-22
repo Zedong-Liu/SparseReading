@@ -218,6 +218,45 @@ Acceptance criteria:
   `HintSpec` or malformed target/mode trajectory and does not reveal an
   avoidable correctness regression.
 
+## P2: Auto Preview And Shared Framework Bridge
+
+Objective:
+
+- Make production SparseRead converge on one `auto` workflow where the first
+  broad read of a large supported source uses `sro_preview` without requiring a
+  HintSpec.
+- Keep `sro_card -> sro_read` available only as compatibility/debug flow and
+  as `bench_protocol` for historical benchmark reruns.
+- Unify OpenCode and OpenClaw integration behind one Python bridge server so
+  preview, raw refs, artifact state, ready guards, trace, and native/usage
+  events do not fork by framework.
+
+Scope:
+
+- Add deterministic L0 preview recipes for structured files, logs/text/PDFs,
+  and collections.
+- Add explicit `sro_raw(raw_ref)` fallback for original content.
+- Keep `sro_read` goal-driven and HintSpec-based for `collect`, `focus`,
+  `refine`, and `verify`.
+- Keep framework-specific code limited to adapter gate classification and
+  plugin hook wiring.
+- Defer MCP.
+
+Acceptance criteria:
+
+- `SparseRead(mode="auto")` exposes `sro_preview`, `sro_raw`, `sro_card`, and
+  `sro_read`; `SparseRead(mode="bench_protocol")` exposes the original
+  `sro_card`, `sro_read` path.
+- `sro_preview` works without HintSpec for CSV/TSV/XLSX, JSON/YAML/XML,
+  log/text/PDF, and collection inputs, returning embedded minimal card data,
+  stable `artifact_id`, deterministic recipe metadata, and `raw_ref`.
+- OpenCode and OpenClaw bridge tests both exercise the shared server for
+  preview/raw/read/trace, ready guards, generated-output native pass-through,
+  T86-style command-security advisory, and audit-bundle enforce behavior.
+- Sparse-reading local API/regression tests pass via `runbook.md`.
+- OpenClaw plugin TypeScript build passes after installing plugin dependencies.
+- Remote OpenCode/OpenClaw benchmark validation is deferred for this phase.
+
 ## P1.5: Native Bypass Neutrality
 
 Objective:

@@ -18,7 +18,9 @@ from nanobot.sparse_reading.models import (
     EvidencePack,
     FileCard,
     HintSpec,
+    PreviewPack,
 )
+from nanobot.sparse_reading.preview import PreviewBuilder
 from nanobot.sparse_reading.readers.structured import StructuredReader
 from nanobot.sparse_reading.readers.collection import CollectionReader
 from nanobot.sparse_reading.readers.text import TextReader
@@ -29,6 +31,7 @@ class SparseReadingOrchestrator:
 
     _STRUCTURED = {"csv", "xlsx", "json", "yaml", "xml"}
     _TEXT = {"pdf", "text", "txt", "md", "markdown", "rst"}
+    _MAX_RAW_REFS = 512
 
     def __init__(
         self,
@@ -45,6 +48,7 @@ class SparseReadingOrchestrator:
         self.collection_reader = CollectionReader()
         self.benefit_gate = BenefitGate(self.collection_reader, override=benefit_gate_override)
         self.text_reader = TextReader()
+        self.preview_builder = PreviewBuilder(self.collection_reader, self.text_reader)
         self._slot_digests: dict[str, dict[str, Any]] = {}
         self._collection_child_guards: dict[str, str] = {}
         self._ready_collection_child_guards: dict[str, str] = {}
@@ -57,6 +61,7 @@ class SparseReadingOrchestrator:
         self._written_outputs_by_artifact: dict[str, set[str]] = {}
         self._native_collection_roots: set[str] = set()
         self._diagnostic_sections: dict[str, dict[str, str]] = {}
+        self._raw_refs: dict[str, Path] = {}
         self._macro_activation_callback = macro_activation_callback
         self._macro_available = macro_available
         self._macro_requested = False
@@ -117,12 +122,19 @@ class SparseReadingOrchestrator:
         generated_names = {
             "answer.txt",
             "command_classifications.json",
+            "fetch-audit.md",
             "final_answer.md",
             "diagnosis_report.md",
             "did_results_summary.md",
             "metrics_summary.json",
+            "monitoring-status.md",
             "analysis_results.json",
             "security_analysis_report.md",
+            "solution_report.md",
+            "eviction_analysis.json",
+            "bug_fixes.json",
+            "query_output.sparql",
+            "filtered_query.sparql",
         }
         if resolved.name.lower() in generated_names:
             return True
@@ -242,6 +254,122 @@ class SparseReadingOrchestrator:
             details=details,
         )
 
+    def preview(self, target: Any) -> PreviewPack:
+        artifact_id, info, err = self._resolve_preview_target(target)
+        if err:
+            return PreviewPack(
+                artifact_id=artifact_id or "",
+                card={},
+                summary="preview target error",
+                raw_ref="",
+                error=err,
+            )
+        if info is None:
+            return PreviewPack(
+                artifact_id=artifact_id or "",
+                card={},
+                summary="preview target error",
+                raw_ref="",
+                error="preview target could not be resolved",
+            )
+        card = self.card(info.path)
+        raw_ref = self._raw_ref_for(card.artifact_id, info.path)
+        return self.preview_builder.build(info, card, raw_ref)
+
+    def raw(self, raw_ref: str, *, range: dict[str, Any] | None = None, selector: str | None = None) -> dict[str, Any]:
+        resolved_ref, path = self._resolve_raw_ref(str(raw_ref or ""))
+        if path is None:
+            return {
+                "raw_ref": raw_ref,
+                "error": "unknown or stale raw_ref; call sro_preview again",
+            }
+        if path.is_dir():
+            entries = [str(entry.relative_to(path)) for entry in sorted(path.rglob("*")) if entry.is_file()]
+            if selector:
+                query = selector.strip().strip("\"'")
+                if query.startswith("./"):
+                    query = query[2:]
+                selected = None
+                root = path.resolve(strict=False)
+                direct = (path / query).resolve(strict=False)
+                if direct.is_file():
+                    try:
+                        direct.relative_to(root)
+                    except ValueError:
+                        direct = None
+                    else:
+                        selected = direct
+                if selected is None:
+                    files = [entry for entry in sorted(path.rglob("*")) if entry.is_file()]
+                    selected = next((entry for entry in files if str(entry.relative_to(path)) == query), None)
+                    if selected is None:
+                        selected = next((entry for entry in files if entry.name == query), None)
+                    if selected is None:
+                        selected = next((entry for entry in files if query.lower() in str(entry.relative_to(path)).lower()), None)
+                if selected is not None:
+                    try:
+                        text, raw_view = self._raw_text_view(selected)
+                    except Exception as exc:
+                        return {
+                            "raw_ref": resolved_ref,
+                            "path": str(selected),
+                            "selector": selector,
+                            "error": f"could not read raw content: {exc}",
+                        }
+                    start, end = self._raw_range_bounds(text, range)
+                    return {
+                        "raw_ref": resolved_ref,
+                        "path": str(selected),
+                        "type": "collection_child",
+                        "view": raw_view,
+                        "selector": selector,
+                        "range": {"start": start, "end": end},
+                        "content": text[start:end],
+                        "truncated": end < len(text),
+                    }
+            result = {
+                "raw_ref": resolved_ref,
+                "path": str(path),
+                "type": "collection",
+                "entries": entries[:500],
+                "truncated": len(entries) > 500,
+            }
+            if selector:
+                result["error"] = f"selector did not match a file in collection: {selector}"
+            return result
+        try:
+            text, raw_view = self._raw_text_view(path)
+        except Exception as exc:
+            return {
+                "raw_ref": resolved_ref,
+                "path": str(path),
+                "error": f"could not read raw content: {exc}",
+            }
+        start, end = self._raw_range_bounds(text, range)
+        if selector:
+            lines = text.splitlines()
+            matched = [
+                {"line": idx + 1, "text": line}
+                for idx, line in enumerate(lines)
+                if selector.lower() in line.lower()
+            ]
+            return {
+                "raw_ref": resolved_ref,
+                "path": str(path),
+                "view": raw_view,
+                "selector": selector,
+                "matches": matched[:200],
+                "truncated": len(matched) > 200,
+            }
+        return {
+            "raw_ref": resolved_ref,
+            "path": str(path),
+            "view": raw_view,
+            "range": {"start": start, "end": end},
+            "content": text[start:end],
+            "truncated": end < len(text),
+        }
+
     def handoff_message(self, path: str | Path) -> str:
         self.request_macro_activation()
         child_guard = self._collection_child_guard(path)
@@ -352,13 +480,18 @@ class SparseReadingOrchestrator:
                 "protocol error",
                 error="refine and verify require target.artifact_id or hint.artifact",
                 next_hint={
-                    "action": "call sro_card(path) or sro_read({'path': path}, mode='scout', hint=...) first"
+                    "action": (
+                        "call the available discovery tool first "
+                        "(sro_preview in auto, sro_card in bench_protocol/debug), "
+                        "then use the returned artifact_id with a concrete HintSpec"
+                    )
                 },
             )
         artifact_id, info, err = self._resolve_target(target, hint)
         if err:
             return EvidencePack(artifact_id or "", mode, "unknown", "protocol error", error=err)
-        assert info is not None
+        if info is None:
+            return EvidencePack(artifact_id or "", mode, "unknown", "protocol error", error="target could not be resolved")
         if info.type in self._TEXT or info.path.suffix.lower() in {".txt", ".md", ".markdown", ".rst", ".pdf"}:
             gated = self._text_readiness_gate(artifact_id, info.type, mode, hint)
             if gated:
@@ -404,6 +537,78 @@ class SparseReadingOrchestrator:
             return pack
         return EvidencePack(artifact_id, mode, info.type, "unsupported type", error=f"SRO does not support {info.path}")
 
+    def _resolve_preview_target(self, target: Any) -> tuple[str, FileInfo | None, str]:
+        if isinstance(target, str):
+            target = {"path": target}
+        if not isinstance(target, dict):
+            return "", None, "target must be a path string or object with path/artifact_id"
+        artifact_id = str(target.get("artifact_id") or "").strip()
+        if artifact_id:
+            info = self._artifacts.get(artifact_id)
+            if info:
+                return artifact_id, info, ""
+            return artifact_id, None, f"unknown artifact_id {artifact_id!r}; call sro_preview with path first"
+        path = str(target.get("path") or "").strip()
+        if not path:
+            return "", None, "target.path is required"
+        info = self.inspect(path)
+        artifact_id = self._artifact_for(info)
+        return artifact_id, info, ""
+
+    def _raw_ref_for(self, artifact_id: str, path: Path) -> str:
+        key = f"raw:{artifact_id}:{hashlib.sha1(str(path).encode('utf-8')).hexdigest()[:10]}"
+        self._raw_refs.pop(key, None)
+        self._raw_refs[key] = path
+        while len(self._raw_refs) > self._MAX_RAW_REFS:
+            self._raw_refs.pop(next(iter(self._raw_refs)))
+        return key
+
+    def _resolve_raw_ref(self, raw_ref: str) -> tuple[str, Path | None]:
+        path = self._raw_refs.get(raw_ref)
+        if path is not None:
+            return raw_ref, path
+        artifact_id = self._raw_ref_artifact_id(raw_ref)
+        if artifact_id:
+            prefix = f"raw:{artifact_id}:"
+            matches = [key for key in self._raw_refs if key.startswith(prefix)]
+            if len(matches) == 1:
+                key = matches[0]
+                return key, self._raw_refs[key]
+        return raw_ref, None
+
+    def _raw_text_view(self, path: Path) -> tuple[str, str]:
+        if path.suffix.lower() == ".pdf":
+            units, _, _ = self.text_reader._load_units(path)
+            lines = []
+            for unit in units:
+                text = " ".join(unit.text.split())
+                if text:
+                    lines.append(f"{unit.anchor} {text}")
+            return "\n".join(lines), "extracted_text"
+        return path.read_text(encoding="utf-8", errors="replace"), "original_text"
+
+    @staticmethod
+    def _raw_ref_artifact_id(raw_ref: str) -> str:
+        parts = raw_ref.split(":")
+        if len(parts) < 2 or parts[0] != "raw" or not parts[1].startswith("sro_"):
+            return ""
+        return parts[1]
+
+    @staticmethod
+    def _raw_range_bounds(text: str, range_obj: dict[str, Any] | None) -> tuple[int, int]:
+        if not range_obj:
+            return 0, min(len(text), 50_000)
+        try:
+            start = max(0, int(range_obj.get("start", 0)))
+        except (TypeError, ValueError):
+            start = 0
+        try:
+            end = int(range_obj.get("end", start + 50_000))
+        except (TypeError, ValueError):
+            end = start + 50_000
+        end = max(start, min(len(text), end))
+        return start, end
+
 
     @staticmethod
     def _invalid_hint_pack(
@@ -414,7 +619,7 @@ class SparseReadingOrchestrator:
         errors: list[str],
     ) -> EvidencePack:
         next_action = None
-        if hint.slots and any("hint.slots" in error for error in errors):
+        if any("hint.slots" in error for error in errors):
             next_action = {
                 "allowed_next": ["retry_sro_read"],
                 "tool": "sro_read",
