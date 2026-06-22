@@ -202,33 +202,7 @@ class SparseReadBridgeServer:
 
     def decide(self, params: dict[str, Any]) -> dict[str, Any]:
         path = self._require_str(params, "path")
-        info = inspect_file(Path(path))
-        decision = self.runtime.orchestrator.benefit_gate.decide(info)
-        gate = self.classifier(info, decision)
-        if self._native_passthrough_path(Path(path)):
-            gate = native_passthrough_gate(
-                f"{self.policy.platform} native pass-through: generated/runtime artifacts should not re-enter SparseRead",
-                include_search=self.policy.gate_key == "openclaw_gate",
-            )
-        else:
-            parent_gate = self._force_collection_parent_gate(Path(path))
-            if parent_gate:
-                gate = parent_gate
-        ready_artifact = self._adapter_ready_artifact_for_path(Path(path))
-        if ready_artifact:
-            gate = copy.deepcopy(gate)
-            gate.update(
-                {
-                    "already_ready": True,
-                    "protocol_next": "write_file_now",
-                    "block_native_read": True,
-                    "block_native_search": True,
-                    "block_native_exec_dump": True,
-                    "handoff_path": str(self._adapter_artifact_roots.get(ready_artifact) or path),
-                    "ready_instruction": self._ready_instruction(ready_artifact),
-                    "reason": "adapter closure already ready; write the deliverable instead of rereading source files",
-                }
-            )
+        info, decision, gate = self._classified_gate_for_path(Path(path))
         result = {
             "path": str(info.path),
             "type": info.type,
@@ -248,6 +222,51 @@ class SparseReadBridgeServer:
         }
         self._record("sro_decide", {"path": path}, result)
         self._record_gate(path, info, decision, gate)
+        return result
+
+    def preflight(self, params: dict[str, Any]) -> dict[str, Any]:
+        workspace = Path(str(params.get("workspace") or self.workspace or ".")).resolve(strict=False)
+        max_candidates = self._bounded_int(params.get("max_candidates"), default=24, lower=1, upper=64)
+        max_results = self._bounded_int(params.get("max_results"), default=3, lower=1, upper=5)
+        handoffs: list[dict[str, Any]] = []
+        for candidate in self._preflight_candidates(workspace, max_candidates=max_candidates):
+            info, decision, gate = self._classified_gate_for_path(candidate)
+            if (
+                gate.get("mode") != "enforce"
+                or gate.get("trajectory") != "sro_first"
+                or gate.get("block_native_read") is not True
+            ):
+                continue
+            handoff_path = Path(str(gate.get("handoff_path") or info.path)).resolve(strict=False)
+            handoffs.append(
+                {
+                    "path": str(handoff_path),
+                    "relative_path": self._relative_path(handoff_path, workspace),
+                    "type": info.type,
+                    "reason": str(gate.get("reason") or decision.reason),
+                    "decision_mode": decision.mode,
+                    "gate_mode": gate.get("mode"),
+                    "trajectory": gate.get("trajectory"),
+                }
+            )
+            if len(handoffs) >= max_results:
+                break
+        result: dict[str, Any] = {
+            "workspace": str(workspace),
+            "handoffs": handoffs,
+            "handoff_count": len(handoffs),
+        }
+        if handoffs:
+            first = handoffs[0]["relative_path"]
+            result["first_action"] = {
+                "tool": "sro_preview",
+                "path": first,
+                "instruction": (
+                    f"Call sro_preview(path={first!r}) before native reads/listing/search "
+                    "for this high-confidence evidence target."
+                ),
+            }
+        self._record("sro_preflight", {"workspace": str(workspace)}, result)
         return result
 
     def native_event(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -325,6 +344,8 @@ class SparseReadBridgeServer:
             return self.read(params)
         if method == "decide":
             return self.decide(params)
+        if method == "preflight":
+            return self.preflight(params)
         if method == "native_event":
             return self.native_event(params)
         if method == "usage_event":
@@ -586,6 +607,63 @@ class SparseReadBridgeServer:
         )
         return gate
 
+    def _classified_gate_for_path(self, path: Path) -> tuple[FileInfo, BenefitDecision, dict[str, Any]]:
+        info = inspect_file(path)
+        decision = self.runtime.orchestrator.benefit_gate.decide(info)
+        gate = self.classifier(info, decision)
+        if self._native_passthrough_path(path):
+            gate = native_passthrough_gate(
+                f"{self.policy.platform} native pass-through: generated/runtime artifacts should not re-enter SparseRead",
+                include_search=self.policy.gate_key == "openclaw_gate",
+            )
+        else:
+            parent_gate = self._force_collection_parent_gate(path)
+            if parent_gate:
+                gate = parent_gate
+        ready_artifact = self._adapter_ready_artifact_for_path(path)
+        if ready_artifact:
+            gate = copy.deepcopy(gate)
+            gate.update(
+                {
+                    "already_ready": True,
+                    "protocol_next": "write_file_now",
+                    "block_native_read": True,
+                    "block_native_search": True,
+                    "block_native_exec_dump": True,
+                    "handoff_path": str(self._adapter_artifact_roots.get(ready_artifact) or path),
+                    "ready_instruction": self._ready_instruction(ready_artifact),
+                    "reason": "adapter closure already ready; write the deliverable instead of rereading source files",
+                }
+            )
+        return info, decision, gate
+
+    def _preflight_candidates(self, workspace: Path, *, max_candidates: int) -> list[Path]:
+        candidates: list[Path] = []
+        skip_names = {"node_modules", "__pycache__", ".git", ".pytest_cache"}
+        if workspace.exists() and workspace.is_dir():
+            for child in sorted(workspace.iterdir(), key=lambda item: item.name.lower()):
+                if child.name in skip_names or child.name.startswith("."):
+                    continue
+                candidates.append(child)
+                if len(candidates) >= max_candidates:
+                    break
+        return candidates or [workspace]
+
+    @staticmethod
+    def _relative_path(path: Path, root: Path) -> str:
+        try:
+            return str(path.relative_to(root))
+        except ValueError:
+            return str(path)
+
+    @staticmethod
+    def _bounded_int(value: Any, *, default: int, lower: int, upper: int) -> int:
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            number = default
+        return min(max(number, lower), upper)
+
     def _record(self, kind: str, params: dict[str, Any], result: dict[str, Any]) -> None:
         self.events.append(
             {
@@ -717,6 +795,11 @@ class SparseReadBridgeServer:
                 "action": decision.get("action"),
                 "reason": decision.get("reason"),
                 "should_handoff_read": result.get("should_handoff_read"),
+            }
+        if kind == "sro_preflight":
+            return {
+                "handoff_count": result.get("handoff_count"),
+                "first_action": result.get("first_action"),
             }
         return {}
 

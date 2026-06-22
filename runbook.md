@@ -405,7 +405,7 @@ uv run --project nanobot-sro-v3 --with pytest pytest nanobot-sro-v3/tests/sparse
 OpenClaw plugin TypeScript validation:
 
 ```bash id="sr-openclaw-plugin-build"
-cd /Users/captainliu/sparse-reading-sr-auto-l0-preview/openclaw_pilot/plugin
+cd /Users/captainliu/sparse-reading-sr-auto-l0-preview/integrations/openclaw/plugin
 npm install --ignore-scripts
 npm run build
 rm -rf node_modules dist
@@ -1060,7 +1060,7 @@ uv run --project nanobot-sro-v3 --with pytest \
 OpenClaw plugin build:
 
 ```bash id="p2-openclaw-plugin-build"
-cd /Users/captainliu/sparse-reading-sr-auto-l0-preview/openclaw_pilot/plugin
+cd /Users/captainliu/sparse-reading-sr-auto-l0-preview/integrations/openclaw/plugin
 npm install --ignore-scripts
 npm run build
 ```
@@ -1069,7 +1069,7 @@ OpenCode offline bridge harness:
 
 ```bash id="p2-opencode-offline-preview"
 cd /Users/captainliu/sparse-reading-sr-auto-l0-preview
-python3 opencode_pilot/run_pilot.py \
+python3 integrations/opencode/run_pilot.py \
   --offline \
   --runset sr_auto_l0_preview_offline_final_$(date +%Y%m%dT%H%M%S) \
   --modes native_truncation plugin_observe plugin_nudge plugin_replace_truncation_experimental \
@@ -1089,7 +1089,7 @@ export API_BASE_URL="https://llmapi.paratera.com/v1"
 export API_KEY="$DEEPSEEK_API_KEY"
 export DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY"
 
-python3 openclaw_pilot/run_openclaw_unified14.py \
+python3 integrations/openclaw/run_openclaw_unified14.py \
   --profile sr-auto-l0 \
   --model paratera/DeepSeek-V4-Flash \
   --modes sr \
@@ -1117,7 +1117,7 @@ export API_BASE_URL="https://llmapi.paratera.com/v1"
 export API_KEY="$DEEPSEEK_API_KEY"
 export DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY"
 
-python3 openclaw_pilot/run_openclaw_unified14.py \
+python3 integrations/openclaw/run_openclaw_unified14.py \
   --profile sr-auto-l0 \
   --model paratera/DeepSeek-V4-Flash \
   --modes sr \
@@ -1141,7 +1141,7 @@ OpenCode offline bridge contract sweep:
 
 ```bash id="p2-opencode-validation-scenarios-offline"
 cd /Users/captainliu/sparse-reading-sr-auto-l0-preview
-python3 opencode_pilot/run_pilot.py \
+python3 integrations/opencode/run_pilot.py \
   --offline \
   --runset sr_auto_l0_validation_scenarios_offline_$(date +%Y%m%dT%H%M%S) \
   --modes native_truncation plugin_observe plugin_nudge plugin_replace_truncation_experimental \

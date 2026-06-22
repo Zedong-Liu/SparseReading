@@ -3489,7 +3489,121 @@ SRO_test/qwenclawbench/sr_auto_l0_validation_scenarios_offline_20260618T201043/o
 27/27 plugin traces used sro_preview -> sro_read, with sro_card_calls=0.
 ```
 
+## 2026-06-20: T12 Preflight Handoff Tightening
+
+Implemented the two T12 framework-layer tightening steps without changing SR
+core readers or closure logic:
+
+- Added shared bridge `preflight` support. It scans bounded top-level workspace
+  candidates, reuses the existing adapter gate/classifier, and returns only
+  high-confidence `enforce` + `sro_first` handoff targets.
+- OpenClaw now consumes `preflight` during `before_prompt_build` and appends a
+  short first-action hint such as `sro_preview(path="a_stock_announcements")`.
+- OpenClaw native block reasons now use short relative paths and omit repeated
+  absolute paths/details. Ready blocks also collapse to a short
+  write-now instruction.
+
+Validation:
+
+```text
+uv run --offline --project nanobot-sro-v3 --with pytest pytest nanobot-sro-v3/tests/sparse_reading/test_bridge_shared.py -q
+8 passed, 1 pytest config warning
+
+uv run --offline --project nanobot-sro-v3 --with pytest pytest nanobot-sro-v3/tests/sparse_reading -q
+136 passed, 1 pytest config warning
+
+cd openclaw_pilot/plugin
+npm install --ignore-scripts
+npm run build
+passed
+
+python3 -m py_compile openclaw_pilot/run_openclaw_validation.py openclaw_pilot/run_openclaw_unified14.py opencode_pilot/run_pilot.py
+passed
+```
+
+T12 local OpenClaw API validation:
+
+```text
+SRO_test/qwenclawbench/openclaw_auto_l0_t12_preflight_20260620T235624/openclaw_unified14_report.md
+task_00012: score 1.000, est tokens 89389, requests 6, SR preview/card/read/raw = 1/0/1/0
+reference DeepSeek-V4-Flash nanobot SR: 1.000 / 89103 / 5
+previous auto-l0 T12: 1.000 / 133151 / 9, SR preview/card/read/raw = 1/0/1/1
+```
+
+Interpretation:
+
+- T12 is now token/request-close to the Flash nanobot SR reference and passes
+  the local convergence target (`<=100k` estimated tokens, `<=6` assistant
+  requests, full score).
+- The model still attempted native reads/execs in the first assistant turn, but
+  the shortened block reason made it switch to `sro_preview` in the next turn.
+  Therefore the stage is production-converged on score/tokens/requests, but not
+  perfectly first-action-clean.
+- Further reducing T12 below this point likely requires stronger framework
+  tool-call rewrite/replacement support, not more SR reader/core changes or
+  benchmark-specific prompt hints.
+
 The OpenCode offline harness exercises the same shared bridge but is not a live
 agent trajectory substitute. It is used here only to confirm the unified
 OpenCode/OpenClaw bridge contract remains preview-first and does not require
 `sro_card`.
+
+## 2026-06-21: Single-Repository Integration Layout
+
+Restructured the framework adapters into a single repository layout without
+changing SparseRead core behavior:
+
+```text
+nanobot-sro-v3/          SparseRead core, public facade, shared bridge
+integrations/openclaw/   OpenClaw plugin and local/API runners
+integrations/opencode/   OpenCode plugin and offline/real runner
+openclaw_pilot/          compatibility symlinks only
+opencode_pilot/          compatibility symlinks only
+```
+
+The old `openclaw_pilot/` and `opencode_pilot/` paths remain as symlink
+compatibility entries so older runbook commands and historical reports do not
+break immediately. New development and current runbook commands should use
+`integrations/openclaw` and `integrations/opencode`.
+
+Runner root resolution was updated so executing either the new path or the
+legacy symlink path still resolves the repository root, plugin source, and
+shared `nanobot-sro-v3` bridge correctly.
+
+Validation:
+
+```text
+uv run --offline --project nanobot-sro-v3 --with pytest pytest nanobot-sro-v3/tests/sparse_reading -q
+136 passed, 1 pytest config warning
+
+python3 -m py_compile integrations/openclaw/run_openclaw_validation.py integrations/openclaw/run_openclaw_unified14.py integrations/opencode/run_pilot.py openclaw_pilot/run_openclaw_validation.py openclaw_pilot/run_openclaw_unified14.py opencode_pilot/run_pilot.py
+passed
+
+python3 integrations/opencode/run_pilot.py --help
+passed
+
+python3 integrations/openclaw/run_openclaw_unified14.py --help
+passed
+
+python3 opencode_pilot/run_pilot.py --help
+passed
+
+python3 openclaw_pilot/run_openclaw_unified14.py --help
+passed
+
+cd integrations/openclaw/plugin
+npm install --ignore-scripts
+npm run build
+passed
+```
+
+OpenCode offline bridge smoke:
+
+```text
+python3 integrations/opencode/run_pilot.py --offline --runset sr_repo_layout_smoke_20260621T203459 --modes plugin_observe plugin_replace_truncation_experimental --tasks task_21_openclaw_comprehension --force
+ok: task_21_openclaw_comprehension plugin_observe
+ok: task_21_openclaw_comprehension plugin_replace_truncation_experimental
+```
+
+The smoke runset was removed after recording the result so generated benchmark
+artifacts do not pollute the migration diff.

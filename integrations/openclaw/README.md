@@ -1,6 +1,6 @@
 # OpenClaw SparseRead Pilot
 
-This directory contains the OpenClaw SparseRead integration pilot.  It is based
+This directory contains the OpenClaw SparseRead integration.  It is based
 on OpenClaw's real extension surface: plugin-registered tools, typed tool-call
 hooks, plugin-provided skills, and per-session bridge state.
 
@@ -43,7 +43,7 @@ ready, and allow small template or named unresolved-slot native reads.
 Install or link the plugin with an OpenClaw CLI that supports native plugins:
 
 ```bash
-cd /Users/captainliu/sparse-reading/openclaw_pilot/plugin
+cd /Users/captainliu/sparse-reading-sr-auto-l0-preview/integrations/openclaw/plugin
 npm install
 npm run build
 openclaw plugins install --link .
@@ -55,10 +55,13 @@ openclaw gateway restart
 Useful environment overrides:
 
 ```bash
-export SPARSEREAD_PROJECT_ROOT=/Users/captainliu/sparse-reading
-export SPARSEREAD_PYTHON="uv --project /Users/captainliu/sparse-reading/nanobot-sro-v3 run --with pymupdf python"
+export SPARSEREAD_PROJECT_ROOT=/Users/captainliu/sparse-reading-sr-auto-l0-preview
+export SPARSEREAD_PYTHON="uv --project /Users/captainliu/sparse-reading-sr-auto-l0-preview/nanobot-sro-v3 run --with pymupdf python"
 export SPARSEREAD_POLICY=advisory
 ```
 
 Use `SPARSEREAD_POLICY=enforce` only for controlled tests of high-confidence
 long document/PDF or compact audit-closure cases.
+
+Legacy path compatibility remains available through `openclaw_pilot/` symlinks,
+but new development should use `integrations/openclaw/`.

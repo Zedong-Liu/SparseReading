@@ -17,6 +17,20 @@ SparseRead production behavior should converge on one default profile: `auto`.
 - `bench_protocol` is retained as a non-production profile for historical
   benchmark comparability.
 
+Repository layout is single-trunk and framework adapters are directories, not
+long-lived branches:
+
+```text
+nanobot-sro-v3/          SparseRead core, public facade, shared bridge
+integrations/openclaw/   OpenClaw plugin and local/API runners
+integrations/opencode/   OpenCode plugin and offline/real runner
+openclaw_pilot/          compatibility symlinks only
+opencode_pilot/          compatibility symlinks only
+```
+
+New development should happen under `integrations/*`. The pilot paths remain as
+temporary compatibility aliases for old commands and historical reports.
+
 ## Production API
 
 New production tools:
