@@ -21,9 +21,9 @@ from pathlib import Path
 from typing import Any
 
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 BASELINE = REPO / "SRO_test" / "qwenclawbench" / "baseline"
-PLUGIN_DIR = REPO / "openclaw_pilot" / "plugin"
+PLUGIN_DIR = REPO / "integrations" / "openclaw" / "plugin"
 CORE_DIR = REPO / "nanobot-sro-v3"
 DEFAULT_PROFILE = "srotest"
 DEFAULT_MODEL = "paratera/DeepSeek-V4-Flash"
@@ -181,7 +181,7 @@ def ensure_plugin_available(profile: str) -> None:
         return
     raise RuntimeError(
         "OpenClaw SparseRead plugin is not installed for this profile. "
-        f"Build/install {PLUGIN_DIR} first, or run the setup steps in openclaw_pilot/README.md.\n{proc.stderr}"
+        f"Build/install {PLUGIN_DIR} first, or run the setup steps in integrations/openclaw/README.md.\n{proc.stderr}"
     )
 
 

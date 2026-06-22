@@ -1,8 +1,7 @@
-# OpenCode SparseRead Pilot
+# OpenCode SparseRead Integration
 
-This directory contains the local OpenCode plugin, bridge harness, and pilot
-runner for comparing OpenCode native truncation against SparseRead on the three
-positive tasks selected for the first OpenCode trial.
+This directory contains the OpenCode plugin, bridge harness, and local runner
+for comparing OpenCode native truncation against SparseRead.
 
 The plugin keeps SparseRead core behavior in `nanobot-sro-v3` unchanged. It
 calls `python -m sparseread.bridge.opencode` through a stdio JSONL bridge.
@@ -39,8 +38,11 @@ reads while preserving native reads for small templates.
 ## Runner
 
 ```bash
-uv run --project nanobot-sro-v3 python opencode_pilot/run_pilot.py --offline
+uv run --project nanobot-sro-v3 python integrations/opencode/run_pilot.py --offline
 ```
 
 Use `npx -y opencode-ai` or `--opencode-cmd opencode` after installing
 OpenCode to run real agent trajectories.
+
+Legacy path compatibility remains available through `opencode_pilot/` symlinks,
+but new development should use `integrations/opencode/`.

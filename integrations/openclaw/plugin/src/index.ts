@@ -343,13 +343,59 @@ async function decideGate(bridge: SparseReadBridge, candidate: string | undefine
   return asObject(result.openclaw_gate)
 }
 
-function sparseReadBlockReason(gate: JsonObject | undefined, path: string | undefined, action: string): string {
-  const handoffPath = typeof gate?.handoff_path === "string" ? gate.handoff_path : path
-  if (gate?.already_ready === true || gate?.protocol_next === "write_file_now") {
-    const instruction = typeof gate.ready_instruction === "string" ? gate.ready_instruction : "write the deliverable now"
-    return `SparseRead enforce: evidence for ${handoffPath ?? "this source"} is already ready; ${instruction}. Do not ${action} source files.`
+function displayPath(candidate: string | undefined, ctx: Json, cfg: SparseReadConfig): string {
+  if (!candidate) return "this source"
+  const workspace = workspaceOf(ctx, cfg)
+  try {
+    const relative = path.relative(workspace, candidate)
+    if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) return relative
+  } catch {
+    // Fall back to the candidate path below.
   }
-  return `SparseRead enforce: use sro_preview(path=${handoffPath}) first; call sro_read with the returned artifact_id only if targeted evidence is needed.`
+  return candidate
+}
+
+function previewCall(candidate: string): string {
+  return `sro_preview(path=${JSON.stringify(candidate)})`
+}
+
+function shortInstruction(value: Json): string {
+  const instruction = typeof value === "string" ? value.trim() : ""
+  if (instruction && instruction.length <= 140) return instruction
+  return "write the deliverable now"
+}
+
+function sparseReadBlockReason(
+  gate: JsonObject | undefined,
+  candidate: string | undefined,
+  action: string,
+  ctx: Json,
+  cfg: SparseReadConfig,
+): string {
+  const handoffPath = typeof gate?.handoff_path === "string" ? gate.handoff_path : candidate
+  const target = displayPath(handoffPath, ctx, cfg)
+  if (gate?.already_ready === true || gate?.protocol_next === "write_file_now") {
+    return `SparseRead enforce: evidence ready for ${JSON.stringify(target)}; ${shortInstruction(gate?.ready_instruction)}. Do not ${action}.`
+  }
+  return `SparseRead enforce: call ${previewCall(target)} first; then follow preview.next_action.`
+}
+
+function preflightPrompt(result: JsonObject): string {
+  const handoffs = Array.isArray(result.handoffs) ? result.handoffs.filter(isObject) : []
+  if (handoffs.length === 0) return ""
+  const first = handoffs[0]
+  const firstPath = String(first.relative_path || first.path || "").trim()
+  if (!firstPath) return ""
+  if (handoffs.length === 1) {
+    return ` SparseRead preflight: high-confidence evidence target ${JSON.stringify(firstPath)} detected. First action for broad audit/QA: call ${previewCall(firstPath)} before native reads, listing, grep, or exec inspection.`
+  }
+  const targets = handoffs
+    .map((item) => String(item.relative_path || item.path || "").trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .map((item) => JSON.stringify(item))
+    .join(", ")
+  return ` SparseRead preflight: high-confidence evidence targets detected: ${targets}. First preview the target matching the task before native reads, listing, grep, or exec inspection.`
 }
 
 async function recordNative(
@@ -495,7 +541,7 @@ const sparseReadPlugin: any = definePluginEntry({
           const handoffPath = typeof gate.handoff_path === "string" ? gate.handoff_path : paramsPath(params)
           return {
             block: true,
-            blockReason: sparseReadBlockReason(gate, handoffPath, "reread"),
+            blockReason: sparseReadBlockReason(gate, handoffPath, "reread", runCtx, cfg),
           }
         }
       }
@@ -507,7 +553,7 @@ const sparseReadPlugin: any = definePluginEntry({
           const handoffPath = typeof gate.handoff_path === "string" ? gate.handoff_path : paramsPath(params)
           return {
             block: true,
-            blockReason: `SparseRead enforce: use sro_preview(path=${handoffPath}) for this evidence collection before broad listing.`,
+            blockReason: sparseReadBlockReason(gate, handoffPath, "list", runCtx, cfg),
           }
         }
       }
@@ -532,7 +578,7 @@ const sparseReadPlugin: any = definePluginEntry({
           if (gate?.block_native_exec_dump === true) {
             return {
               block: true,
-              blockReason: sparseReadBlockReason(gate, candidate, rawCopy ? "copy" : "dump"),
+              blockReason: sparseReadBlockReason(gate, candidate, rawCopy ? "copy" : "dump", runCtx, cfg),
             }
           }
         }
@@ -565,11 +611,17 @@ const sparseReadPlugin: any = definePluginEntry({
       const runCtx = runtimeContext(event, ctx)
       const cfg = pluginConfig(runCtx, registeredConfig)
       if (cfg.policy === "native") return
+      let preflight = ""
+      try {
+        preflight = preflightPrompt(await bridgeFor(runCtx, cfg).request("preflight", { max_candidates: 24, max_results: 3 }))
+      } catch {
+        preflight = ""
+      }
       return {
         appendSystemContext:
-          "SparseRead is available for long documents, PDFs, and compact evidence closures. Production SparseRead starts with sro_preview(path), which returns the minimal card, structure, samples, signals, raw_ref, and next action. Use native reads for small files, small logs, config edits, scripts, calculations, and full-table work. Call sro_read only after preview when targeted evidence is needed and provide a concrete HintSpec. For evidence collections: preview first, then at most one sro_read(mode=collect) when slots are explicit. Once slots are ready, write the deliverable immediately. Do not verify, refine, or re-read resolved slots. sro_card remains a compatibility/debug path, and bench_protocol keeps the older sro_card -> sro_read flow.",
+          "SparseRead is available for long documents, PDFs, and compact evidence closures. Production SparseRead starts with sro_preview(path), which returns the minimal card, structure, samples, signals, raw_ref, and next action. Use native reads for small files, small logs, config edits, scripts, calculations, and full-table work. Call sro_read only after preview when targeted evidence is needed and provide a concrete HintSpec. For evidence collections: preview first, then at most one sro_read(mode=collect) when slots are explicit. Once slots are ready, write the deliverable immediately. Do not verify, refine, or re-read resolved slots. sro_card remains a compatibility/debug path, and bench_protocol keeps the older sro_card -> sro_read flow." + preflight,
       }
-    }, { priority: -20, timeoutMs: 5000 })
+    }, { priority: -20, timeoutMs: 10000 })
 
     api.on("agent_end", async () => {
       for (const bridge of bridges.values()) bridge.shutdown()

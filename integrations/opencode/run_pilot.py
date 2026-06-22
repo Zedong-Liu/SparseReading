@@ -26,9 +26,9 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 QCB_ROOT = ROOT / "SRO_test" / "qwenclawbench"
-PLUGIN_SOURCE = ROOT / "opencode_pilot" / "plugin" / "sparseread.ts"
+PLUGIN_SOURCE = ROOT / "integrations" / "opencode" / "plugin" / "sparseread.ts"
 SR_PROJECT = ROOT / "nanobot-sro-v3"
 TASKS = [
     "task_loogle_shortdep_fall_of_outremer",

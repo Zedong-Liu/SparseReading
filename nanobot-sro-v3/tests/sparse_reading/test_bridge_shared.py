@@ -257,6 +257,27 @@ def test_adapter_gates_preserve_t86_advisory_and_audit_enforce(tmp_path: Path) -
         assert child_decision[gate_key]["handoff_path"] == str(audit_assets)
 
 
+def test_bridge_preflight_reports_force_sro_first_action(tmp_path: Path) -> None:
+    audit = tmp_path / "a_stock_announcements"
+    audit.mkdir()
+    (audit / "fetcher.py").write_text("def deduplicate(seen):\n    return list(seen)[-5000:]\n", encoding="utf-8")
+    (audit / "fetch_state.json").write_text('{"seen_ids":["a","b"]}\n', encoding="utf-8")
+    (audit / "announcements_2026-02-09.json").write_text('[{"id":"b","important":true}]\n', encoding="utf-8")
+    (audit / "config.yaml").write_text("summary_csv: true\n", encoding="utf-8")
+    (tmp_path / "fetch-audit.md").write_text("generated output\n", encoding="utf-8")
+
+    for bridge_cls in (OpenCodeBridge, OpenClawBridge):
+        bridge = bridge_cls(workspace=tmp_path, mode="auto")
+        preflight = bridge.handle({"method": "preflight", "params": {"max_candidates": 8}})
+
+        assert preflight["handoff_count"] == 1
+        assert preflight["handoffs"][0]["relative_path"] == "a_stock_announcements"
+        assert preflight["handoffs"][0]["gate_mode"] == "enforce"
+        assert preflight["handoffs"][0]["trajectory"] == "sro_first"
+        assert preflight["first_action"]["tool"] == "sro_preview"
+        assert preflight["first_action"]["path"] == "a_stock_announcements"
+
+
 def test_generated_outputs_stay_native_in_both_bridges(tmp_path: Path) -> None:
     output = tmp_path / "fetch-audit.md"
     output.write_text("audit report\n" * 600, encoding="utf-8")
