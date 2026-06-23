@@ -1,4 +1,32 @@
-# SparseReading
+# SparseRead
+
+**你的 Agent 正在用「读取一切」的方式燃烧 token。**
+
+现代 Agent 能浏览文件、审查仓库、分析 PDF，甚至操作整个工作区。但在需要信息时，很多 Agent 依然遵循同一种原始策略：
+
+```text
+先全部读一遍，再慢慢想
+```
+
+在 workspace 还小的时候，这能工作。
+
+但 workspace 一膨胀，问题就来了：
+
+每个 PDF 都是一个 token 黑洞。
+每张表格都是一次膨胀观察。
+每个仓库都是反复的文件扫描。
+每次失败搜索都是另一笔昂贵的工具调用。
+
+长上下文帮 agent 塞进更多文本。
+SparseRead 帮 agent 避开那些它本不需要的文本。
+
+SparseRead 是面向工具调用型 agent 的证据引导式阅读层。它拦截昂贵的文件读取，构建轻量级的文件卡片，让 agent 按需索取任务相关证据，并返回有据可循的 EvidencePack——而不是把整份文件倒进上下文。
+
+目标很简单：
+
+**读得更少，token 更省，证据不变。**
+
+---
 
 SparseRead（SRO v3）是一个面向工具调用型 agent 的 sparse-reading 协议。通过确定性的 Benefit Gate 和按类型分派的 reader，将大文件、长文本、PDF 以及审计类文件集合路由为紧凑的 evidence pack，替代反复的 broad read。
 
