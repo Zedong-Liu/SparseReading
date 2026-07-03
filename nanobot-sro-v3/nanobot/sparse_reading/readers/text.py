@@ -53,7 +53,7 @@ class TextReader:
         if mode == "collect" or hint.slots:
             return self.collect(path, artifact_id, mode, hint, budget, units=units, skeleton=skeleton, kind=kind)
 
-        if mode == "scout":
+        if mode == "scout" and not hint.needles and not hint.must_keep:
             evidence = self._scout_evidence(units, budget)
             unresolved = list(hint.needles)
             return EvidencePack(
@@ -267,10 +267,16 @@ class TextReader:
     def _score_slot_units(self, units: list[TextUnit], slot: SlotSpec) -> list[EvidenceBlock]:
         terms = self._slot_terms(slot)
         aliases = [alias.lower() for alias in slot.aliases]
+        field_keys = self._slot_field_keys(slot)
         blocks: list[EvidenceBlock] = []
         for unit in units:
             hay = f"{unit.heading}\n{unit.text}".lower()
             score = 0.0
+            for key in field_keys:
+                if self._has_field_line(unit.text, key):
+                    score += 24.0
+                elif key and key in hay:
+                    score += 6.0
             for alias in aliases:
                 if alias and alias in hay:
                     score += 12.0
@@ -304,6 +310,9 @@ class TextReader:
         text = best.text.strip()
         expected = slot.expected.lower()
         question = slot.question.lower()
+        field_candidate = self._extract_field_value(text, self._slot_field_keys(slot))
+        if field_candidate:
+            return field_candidate
         if self._slot_wants_list(slot):
             section_anchor = self._section_anchor_for_slot(slot, units) or best.anchor
             labels = (
@@ -624,6 +633,31 @@ class TextReader:
         first = re.sub(r"\s+", " ", first).strip()
         return first[:220]
 
+    @classmethod
+    def _extract_field_value(cls, text: str, keys: list[str]) -> str:
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            for key in keys:
+                match = cls._field_line_match(stripped, key)
+                if match:
+                    value = re.sub(r"\s+", " ", match.group(1)).strip(" -")
+                    return value or stripped
+        return ""
+
+    @classmethod
+    def _has_field_line(cls, text: str, key: str) -> bool:
+        return any(cls._field_line_match(line.strip(), key) for line in text.splitlines() if line.strip())
+
+    @staticmethod
+    def _field_line_match(line: str, key: str) -> re.Match[str] | None:
+        normalized = re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_")
+        if not normalized:
+            return None
+        key_pattern = re.escape(normalized).replace("_", r"[_\s-]+")
+        return re.match(rf"^\s*{key_pattern}\s*[:=]\s*(.*)$", line, re.IGNORECASE)
+
     @staticmethod
     def _mark_suspicious_duplicate_candidates(slot_results: list[dict[str, Any]]) -> None:
         if len(slot_results) < 3:
@@ -647,11 +681,23 @@ class TextReader:
                 item["needs_verify_reason"] = "same short candidate reused for multiple slots"
 
     def _slot_terms(self, slot: SlotSpec) -> list[str]:
-        raw = " ".join([slot.question, slot.expected, *slot.aliases]).lower()
+        raw = " ".join([slot.id, slot.question, slot.expected, *slot.aliases]).lower()
         return [
             token for token in re.findall(r"[a-z0-9_.:/-]{3,}", raw)
             if token not in self._STOPWORDS
         ][:12]
+
+    @staticmethod
+    def _slot_field_keys(slot: SlotSpec) -> list[str]:
+        raw_values = [slot.id, *slot.aliases]
+        for text in (slot.question, slot.expected):
+            raw_values.extend(re.findall(r"\b[A-Z][A-Z0-9_]{2,}\b", text))
+        keys: list[str] = []
+        for value in raw_values:
+            normalized = re.sub(r"[^a-z0-9]+", "_", str(value).lower()).strip("_")
+            if len(normalized) >= 3 and normalized not in keys:
+                keys.append(normalized)
+        return keys[:8]
 
     @staticmethod
     def _best_sentence_overlap(text: str, terms: list[str]) -> int:

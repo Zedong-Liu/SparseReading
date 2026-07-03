@@ -43,20 +43,22 @@ ready, and allow small template or named unresolved-slot native reads.
 Install or link the plugin with an OpenClaw CLI that supports native plugins:
 
 ```bash
-cd /Users/captainliu/sparse-reading-sr-auto-l0-preview/integrations/openclaw/plugin
+REPO=/path/to/sparse-reading
+cd "$REPO/integrations/openclaw/plugin"
 npm install
 npm run build
 openclaw plugins install --link .
 openclaw plugins enable sparseread-openclaw
 openclaw plugins inspect sparseread-openclaw --runtime --json
 openclaw gateway restart
+cd "$REPO"
 ```
 
 Useful environment overrides:
 
 ```bash
-export SPARSEREAD_PROJECT_ROOT=/Users/captainliu/sparse-reading-sr-auto-l0-preview
-export SPARSEREAD_PYTHON="uv --project /Users/captainliu/sparse-reading-sr-auto-l0-preview/nanobot-sro-v3 run --with pymupdf python"
+export SPARSEREAD_PROJECT_ROOT="$PWD"
+export SPARSEREAD_PYTHON="uv --project $PWD/nanobot-sro-v3 run --with pymupdf python"
 export SPARSEREAD_POLICY=advisory
 ```
 

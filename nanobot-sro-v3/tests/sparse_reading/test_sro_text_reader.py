@@ -275,6 +275,76 @@ def test_collect_returns_compact_slot_digest(tmp_path):
     assert slots["total_skills"]["verify_ref"]
 
 
+def test_collect_prefers_field_key_lines_over_title_distractors(tmp_path):
+    path = tmp_path / "incident-report.md"
+    sections = ["# Incident Report\n\n"]
+    for idx in range(1, 220):
+        sections.append(f"## Section {idx}\n")
+        sections.append("Routine telemetry stayed normal in this section.\n")
+        if idx == 37:
+            sections.append("ROOT_CAUSE: cache invalidation used customer_id instead of tenant_id during nightly reconciliation.\n")
+        if idx == 91:
+            sections.append("MITIGATION_OWNER: Mira Chen, Data Platform on-call.\n")
+        if idx == 177:
+            sections.append("FINAL_DEADLINE: 2026-07-18 09:30 UTC.\n")
+        sections.append("\n")
+    path.write_text("".join(sections), encoding="utf-8")
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(path)
+
+    pack = sro.read(
+        {"artifact_id": card.artifact_id},
+        "collect",
+        {
+            "goal": "Extract ROOT_CAUSE, MITIGATION_OWNER, and FINAL_DEADLINE from the incident report",
+            "artifact": card.artifact_id,
+            "type_hint": "text",
+            "slots": [
+                {"id": "root_cause", "question": "What is the ROOT_CAUSE of the incident?"},
+                {"id": "owner", "question": "Who is the MITIGATION_OWNER?"},
+                {"id": "deadline", "question": "What is the FINAL_DEADLINE?"},
+            ],
+        },
+    )
+
+    assert pack.slot_digest is not None
+    slots = {slot["id"]: slot for slot in pack.slot_digest["slots"]}
+    assert slots["root_cause"]["candidate"] == (
+        "cache invalidation used customer_id instead of tenant_id during nightly reconciliation."
+    )
+    assert slots["root_cause"]["anchor"] != "L1-L1"
+    assert slots["owner"]["candidate"] == "Mira Chen, Data Platform on-call."
+    assert slots["deadline"]["candidate"] == "2026-07-18 09:30 UTC."
+
+
+def test_scout_with_needles_uses_targeted_evidence(tmp_path):
+    path = tmp_path / "incident-report.md"
+    path.write_text(
+        "# Incident Report\n\n"
+        + "\n".join(f"## Section {idx}\nRoutine telemetry stayed normal." for idx in range(1, 80))
+        + "\n\nROOT_CAUSE: cache invalidation used customer_id instead of tenant_id.\n",
+        encoding="utf-8",
+    )
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(path)
+
+    pack = sro.read(
+        {"artifact_id": card.artifact_id},
+        "scout",
+        {
+            "goal": "Find ROOT_CAUSE value",
+            "needles": ["ROOT_CAUSE"],
+            "want": "fact",
+            "scope": "narrow",
+            "artifact": card.artifact_id,
+            "type_hint": "text",
+        },
+    )
+
+    text = "\n".join(block.text for block in pack.evidence)
+    assert "ROOT_CAUSE: cache invalidation" in text
+
+
 def test_collect_infers_count_slots_and_avoids_small_distractor_counts(tmp_path):
     path = tmp_path / "report.md"
     path.write_text(

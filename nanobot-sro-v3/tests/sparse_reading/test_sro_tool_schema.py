@@ -22,6 +22,7 @@ def test_sro_read_description_retains_p0_guidance(tmp_path: Path) -> None:
 
     assert "Read sparse evidence" in description
     assert "overall_status=ready" in description
+    assert "after sro_preview" in description
     assert "mode=collect with hint.slots" in description
     assert "For directory collections" in description
     assert "candidate filenames and not facts" in description
@@ -93,5 +94,8 @@ def test_text_initial_hints_use_schema_type_hint(tmp_path: Path, monkeypatch) ->
     handoff = json.loads(orchestrator.handoff_message(text_path))
 
     assert direct["file_card"]["type"] == "txt"
+    assert direct["compatibility_note"]
     assert direct["next_action"]["hint"]["type_hint"] == "text"
+    assert direct["next_action"]["mode"] == "scout"
+    assert direct["next_action"]["hint"]["slots"] == []
     assert handoff["next_action"]["hint"]["type_hint"] == "text"

@@ -3607,3 +3607,207 @@ ok: task_21_openclaw_comprehension plugin_replace_truncation_experimental
 
 The smoke runset was removed after recording the result so generated benchmark
 artifacts do not pollute the migration diff.
+
+## 2026-07-03: Selective Preview-First Migration To `codex/sr-single-repo-integrations`
+
+Only the previous preview-first production integration fixes were carried into
+the single-repo integration branch. The older branch's less complete core
+`preview()` implementation was not copied because this branch already has the
+better `PreviewPack`/`raw_ref`/`sro_raw` design.
+
+Changes kept:
+
+- nanobot `AgentLoop` now registers `sro_preview`, `sro_raw`, `sro_card`, and
+  `sro_read` so nanobot gets the same core tool surface as OpenCode/OpenClaw.
+- legacy `sro_card` is explicitly compatibility/benchmark-only and no longer
+  points normal text/report artifacts to `collect` without concrete
+  `hint.slots`; it exposes a separate collect template for bench/debug use.
+- nanobot sparse-reading skill now teaches `sro_preview(path)` as the production
+  first step; `sro_card` remains legacy/benchmark compatibility.
+- OpenCode plugin got a minimal `package.json`, `package-lock.json`, and
+  `tsconfig.json` so users can install dependencies and run a local typecheck.
+- OpenClaw plugin marks the `openclaw` peer dependency optional and uses a local
+  type shim for `openclaw/plugin-sdk/plugin-entry`, avoiding installation of the
+  full OpenClaw package as a plugin dependency.
+- Added `docs/sparseread_installation.md` for nanobot/OpenCode/OpenClaw setup
+  using the preview-first entrypoint.
+
+Validation:
+
+```text
+uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio pytest nanobot-sro-v3/tests/sparse_reading -q
+137 passed
+
+cd integrations/opencode/plugin
+npm install --ignore-scripts
+npm run build
+npm audit --omit=dev --json
+passed, 0 vulnerabilities
+
+cd integrations/openclaw/plugin
+npm install --ignore-scripts
+npm run build
+npm audit --omit=dev --json
+passed, 0 vulnerabilities
+
+uv run --project nanobot-sro-v3 nanobot --help
+passed
+
+uv run --project nanobot-sro-v3 python -m sparseread.bridge.opencode --workspace . --mode force
+preview/trace/shutdown JSONL smoke passed
+
+uv run --project nanobot-sro-v3 python -m sparseread.bridge.openclaw --workspace . --mode force
+preview/trace/shutdown JSONL smoke passed
+```
+
+Host CLI checks:
+
+```text
+npx -y opencode-ai --help
+passed
+
+npx -y openclaw --help
+passed, with local Node v24.14.1 warning because the latest OpenClaw dependency
+declares ^22.22.2 || ^24.15.0 || >=26.0.0
+
+npx -y openclaw --profile sparseread-test plugins install --link integrations/openclaw/plugin
+passed after npm install && npm run build
+
+npx -y openclaw --profile sparseread-test plugins inspect sparseread-openclaw --runtime --json
+loaded, registered sro_preview/sro_raw/sro_card/sro_read/sro_decide/sro_trace
+```
+
+OpenCode real CLI/API smoke:
+
+```text
+uv run --project nanobot-sro-v3 python integrations/opencode/run_pilot.py \
+  --runset opencode_cli_smoke_20260703 \
+  --tasks task_loogle_shortdep_fall_of_outremer_3q_followup \
+  --modes plugin_observe \
+  --opencode-cmd "npx -y opencode-ai" \
+  --model paratera/DeepSeek-V4-Flash \
+  --api-base-url https://llmapi.paratera.com/v1 \
+  --timeout 240 --force
+
+ok: task_loogle_shortdep_fall_of_outremer_3q_followup plugin_observe
+tokens=188453, requests=12, tool_calls=19, native_truncations=6,
+sro_calls=3, deliverable_written=true
+```
+
+OpenClaw live agent probe did not reach SparseRead because OpenClaw did not
+recognize `paratera/DeepSeek-V4-Flash` as a configured model in the isolated
+profile:
+
+```text
+FailoverError: Unknown model: paratera/DeepSeek-V4-Flash
+```
+
+The OpenClaw plugin itself installs and loads correctly; full online OpenClaw
+agent validation still requires a configured OpenClaw provider/model route for
+the Paratera endpoint.
+
+## 2026-07-03: Local Online Integration Convergence For nanobot/OpenCode/OpenClaw
+
+Objective:
+
+- Verify the preview-first SparseRead integration on the three current
+  production surfaces without moving unrelated branch changes.
+- Use a locally generated 575 KB long markdown incident report so the test is
+  not benchmark-specific and does not require external document fixtures.
+
+Fixes from real OpenClaw/OpenCode traces:
+
+- Changed the shared bridge ready guard from artifact-wide blocking to
+  slot-aware blocking. A ready read for `root_cause` no longer blocks later
+  reads for `owner` or `deadline`, while repeated reads of the same resolved
+  slot are still guarded.
+- Hardened text slot extraction for field-style lines such as
+  `ROOT_CAUSE: value`, `MITIGATION_OWNER: value`, and
+  `FINAL_DEADLINE: value`. The text reader now prioritizes exact field-key
+  lines over title/heading distractors and returns the value after `:`/`=`.
+- Made `mode=scout` with `needles` behave as targeted evidence selection
+  instead of default L0 sampling. No-HintSpec scout remains the default preview
+  style.
+- Added bridge-only normalization for common agent-produced HintSpec variants
+  such as `scope="entire file"`, `scope="targeted"`,
+  `want="The value assigned to ..."`, and `type_hint="key-value assignment"`.
+
+Validation:
+
+```text
+uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio pytest nanobot-sro-v3/tests/sparse_reading -q
+141 passed
+
+cd integrations/opencode/plugin
+npm install --ignore-scripts
+npm run build
+npm audit --omit=dev --json
+passed, 0 vulnerabilities; local Node v24.14.1 emitted an upstream engine warning
+
+cd integrations/openclaw/plugin
+npm run build
+npm audit --omit=dev --json
+passed, 0 vulnerabilities
+```
+
+nanobot local smoke:
+
+```text
+uv run --project nanobot-sro-v3 nanobot --help
+passed
+
+SroPreviewTool/SroRawTool/SroReadTool/SroCardTool async smoke:
+tools = sro_preview, sro_raw, sro_read, sro_card
+candidate = "cache invalidation used customer_id instead of tenant_id."
+```
+
+OpenClaw real CLI/API smoke:
+
+```text
+workspace: /tmp/sr_cli_real_user_openclaw2
+profile: sparseread-test
+model: paratera/DeepSeek-V4-Flash through https://llmapi.paratera.com/v1
+
+plugin inspect:
+status=loaded
+tools=sro_preview,sro_raw,sro_card,sro_read,sro_decide,sro_trace
+hookCount=5
+diagnostics=null
+
+result:
+answer.md written with ROOT_CAUSE, MITIGATION_OWNER, FINAL_DEADLINE
+requests_estimated=5
+tokens_transcript_estimate=62653
+tool_calls=4
+tools=sro_preview,sro_read,sro_read,write
+native_tool_calls=0
+invalid_hintspec_results=0
+ready_guard_results=0
+```
+
+OpenCode real CLI/API smoke:
+
+```text
+workspace: /tmp/sr_cli_real_user_opencode2
+model: paratera/DeepSeek-V4-Flash through https://llmapi.paratera.com/v1
+
+result:
+answer.md written with ROOT_CAUSE, MITIGATION_OWNER, FINAL_DEADLINE
+requests=4
+tokens_total_sum=35642
+tool_calls=5
+tools=sro_preview,sro_read,sro_read,sro_read,write
+native_tool_calls=0
+invalid_hintspec_calls=0
+```
+
+Interpretation:
+
+- The three platforms now expose the same production core surface:
+  `sro_preview`, `sro_raw`, `sro_read`, and legacy/benchmark `sro_card`.
+- The OpenCode/OpenClaw bridge behavior has converged for the long markdown
+  field-retrieval scenario: preview-first, no native read/search fallback, no
+  invalid HintSpec retry, and correct deliverable writing.
+- The OpenClaw provider route is locally validated in the isolated profile; the
+  earlier `Unknown model: paratera/DeepSeek-V4-Flash` blocker is no longer the
+  current state for this profile.

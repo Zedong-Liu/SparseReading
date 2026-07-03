@@ -100,7 +100,8 @@ class SparseReadBridgeServer:
     def raw(self, params: dict[str, Any]) -> dict[str, Any]:
         raw_ref = self._require_str(params, "raw_ref")
         ready_artifact = self._adapter_ready_artifact_for_raw_ref(raw_ref)
-        if ready_artifact:
+        selector = str(params.get("selector") or "") or None
+        if ready_artifact and self._adapter_ready_guard_covers_selector(ready_artifact, selector):
             result = {"raw": self._adapter_already_ready_raw(ready_artifact, raw_ref)}
             self._record("sro_raw", {"raw_ref": raw_ref}, result)
             return result
@@ -108,7 +109,7 @@ class SparseReadBridgeServer:
             "raw": self.runtime.orchestrator.raw(
                 raw_ref,
                 range=params.get("range") if isinstance(params.get("range"), dict) else None,
-                selector=str(params.get("selector") or "") or None,
+                selector=selector,
             )
         }
         self._record("sro_raw", {"raw_ref": raw_ref}, result)
@@ -186,6 +187,7 @@ class SparseReadBridgeServer:
             raise ValueError("mode must be a string")
         if not isinstance(hint, dict):
             raise ValueError("hint must be an object")
+        hint = self._normalize_bridge_hint(hint)
         ready_artifact = self._adapter_ready_artifact_for_target(target, hint)
         if ready_artifact and self._allow_bounded_ready_verify(ready_artifact, mode):
             ready_artifact = ""
@@ -195,7 +197,7 @@ class SparseReadBridgeServer:
             return result
         pack = self.runtime.orchestrator.read(target, mode, hint)
         packed = self._adapter_pack(pack.to_dict())
-        self._remember_adapter_ready_pack(packed)
+        self._remember_adapter_ready_pack(packed, hint)
         result = {"evidence_pack": packed}
         self._record("sro_read", {"target": target, "mode": mode, "hint": hint}, result)
         return result
@@ -363,11 +365,14 @@ class SparseReadBridgeServer:
         for slot in slot_digest.get("slots") or []:
             if isinstance(slot, dict):
                 slot.pop("verify_ref", None)
+        resolved_slots = self._resolved_slots(slot_digest)
+        if resolved_slots["ids"]:
+            slot_digest["resolved_slot_ids"] = sorted(resolved_slots["ids"])
         slot_digest["adapter_guard"] = "ready_for_write: do not call sro_read verify/refine for resolved slots"
         pack["protocol_next"] = "write_file_now"
         return pack
 
-    def _remember_adapter_ready_pack(self, pack: dict[str, Any]) -> None:
+    def _remember_adapter_ready_pack(self, pack: dict[str, Any], hint: dict[str, Any] | None = None) -> None:
         artifact_id = str(pack.get("artifact_id") or "")
         if not artifact_id:
             return
@@ -381,16 +386,28 @@ class SparseReadBridgeServer:
             return
         if pack_type not in {"collection", "pdf", "text", "txt", "md", "markdown", "rst"}:
             return
+        resolved_slots = self._resolved_slots(slot_digest)
+        requested_terms = self._requested_slot_terms(hint or {})
+        existing = self._adapter_ready_artifacts.get(artifact_id) or {}
+        merged_ids = set(str(item).lower() for item in existing.get("resolved_slot_ids") or []) | resolved_slots["ids"]
+        merged_text = set(str(item).lower() for item in existing.get("resolved_slot_text") or []) | resolved_slots["text"] | requested_terms
+        compact_digest = self._compact_slot_digest(slot_digest)
+        if merged_ids:
+            compact_digest["resolved_slot_ids"] = sorted(merged_ids)
+            compact_digest["resolved_slot_count"] = len(merged_ids)
         self._adapter_ready_artifacts[artifact_id] = {
             "summary": pack.get("summary") or "evidence ready",
             "type": pack_type,
             "next_action": copy.deepcopy(next_action),
-            "slot_digest": self._compact_slot_digest(slot_digest),
+            "slot_digest": compact_digest,
+            "resolved_slot_ids": sorted(merged_ids),
+            "resolved_slot_text": sorted(merged_text),
             "evidence_anchors": [
                 str(block.get("anchor"))
                 for block in pack.get("evidence") or []
                 if isinstance(block, dict) and block.get("anchor")
-            ],
+            ]
+            or list(existing.get("evidence_anchors") or []),
         }
         self._prune_adapter_artifacts()
 
@@ -414,10 +431,15 @@ class SparseReadBridgeServer:
 
     def _adapter_ready_artifact_for_target(self, target: dict[str, Any], hint: dict[str, Any]) -> str:
         artifact_id = str(target.get("artifact_id") or hint.get("artifact") or "").strip()
-        if artifact_id in self._adapter_ready_artifacts:
+        if artifact_id in self._adapter_ready_artifacts and self._adapter_ready_guard_covers_hint(artifact_id, hint):
             return artifact_id
         path = str(target.get("path") or "").strip()
-        return self._adapter_ready_artifact_for_path(path) if path else ""
+        if not path:
+            return ""
+        path_artifact = self._adapter_ready_artifact_for_path(path)
+        if path_artifact and self._adapter_ready_guard_covers_hint(path_artifact, hint):
+            return path_artifact
+        return ""
 
     def _adapter_ready_artifact_for_path(self, path: str | Path) -> str:
         if not path:
@@ -441,6 +463,22 @@ class SparseReadBridgeServer:
             return ""
         artifact_id = parts[1]
         return artifact_id if artifact_id in self._adapter_ready_artifacts else ""
+
+    def _adapter_ready_guard_covers_hint(self, artifact_id: str, hint: dict[str, Any]) -> bool:
+        requested = self._requested_slot_terms(hint)
+        if not requested:
+            return True
+        ready = self._adapter_ready_artifacts.get(artifact_id) or {}
+        resolved_ids = {str(item).lower() for item in ready.get("resolved_slot_ids") or []}
+        resolved_text = " ".join(str(item).lower() for item in ready.get("resolved_slot_text") or [])
+        return all(term in resolved_ids or term in resolved_text for term in requested)
+
+    def _adapter_ready_guard_covers_selector(self, artifact_id: str, selector: str | None) -> bool:
+        if not selector:
+            return True
+        ready = self._adapter_ready_artifacts.get(artifact_id) or {}
+        text = " ".join(str(item).lower() for item in ready.get("resolved_slot_text") or [])
+        return selector.lower() in text
 
     def _allow_bounded_ready_verify(self, artifact_id: str, mode: str) -> bool:
         if not self.policy.allow_bounded_text_verify:
@@ -549,21 +587,92 @@ class SparseReadBridgeServer:
     def _compact_slot_digest(slot_digest: dict[str, Any]) -> dict[str, Any]:
         if not slot_digest:
             return {}
+        resolved_slot_ids = [
+            str(slot.get("id"))
+            for slot in slot_digest.get("slots") or []
+            if isinstance(slot, dict) and slot.get("status") == "resolved" and slot.get("id")
+        ]
         compact = {
             "overall_status": slot_digest.get("overall_status"),
             "adapter_guard": "ready_for_write: do not call sro_read verify/refine for resolved slots",
-            "resolved_slot_count": len(
-                [
-                    slot
-                    for slot in slot_digest.get("slots") or []
-                    if isinstance(slot, dict) and slot.get("status") == "resolved"
-                ]
-            ),
+            "resolved_slot_count": len(resolved_slot_ids),
+            "resolved_slot_ids": resolved_slot_ids,
         }
         unresolved = slot_digest.get("unresolved_slots")
         if unresolved:
             compact["unresolved_slots"] = unresolved
         return compact
+
+    @staticmethod
+    def _resolved_slots(slot_digest: dict[str, Any]) -> dict[str, set[str]]:
+        ids: set[str] = set()
+        text: set[str] = set()
+        for slot in slot_digest.get("slots") or []:
+            if not isinstance(slot, dict) or slot.get("status") != "resolved":
+                continue
+            for key in ("id", "question", "candidate", "anchor"):
+                value = str(slot.get(key) or "").strip()
+                if value:
+                    text.add(value.lower())
+                    if key == "id":
+                        ids.add(value.lower())
+        return {"ids": ids, "text": text}
+
+    @staticmethod
+    def _requested_slot_terms(hint: dict[str, Any]) -> set[str]:
+        terms: set[str] = set()
+        slots = hint.get("slots")
+        if isinstance(slots, dict):
+            for slot_id, question in slots.items():
+                if str(slot_id).strip():
+                    terms.add(str(slot_id).strip().lower())
+                if str(question).strip():
+                    terms.add(str(question).strip().lower())
+        elif isinstance(slots, list):
+            for slot in slots:
+                if not isinstance(slot, dict):
+                    continue
+                for key in ("id", "question"):
+                    value = str(slot.get(key) or "").strip()
+                    if value:
+                        terms.add(value.lower())
+        for needle in hint.get("needles") or []:
+            value = str(needle or "").strip()
+            if value:
+                terms.add(value.lower())
+        return terms
+
+    @staticmethod
+    def _normalize_bridge_hint(hint: dict[str, Any]) -> dict[str, Any]:
+        normalized = copy.deepcopy(hint)
+        scope = str(normalized.get("scope") or "").strip().lower()
+        if scope in {"targeted", "specific", "selected"} or any(
+            term in scope for term in ("targeted", "specific", "selected")
+        ):
+            normalized["scope"] = "narrow"
+        elif scope in {"document", "entire", "full", "all", "tail"} or any(
+            term in scope for term in ("document", "entire", "full", "all", "tail", "file")
+        ):
+            normalized["scope"] = "new"
+        want = str(normalized.get("want") or "").strip().lower()
+        allowed_wants = {"fact", "count", "verbatim", "table", "schema", "list"}
+        if want and want not in allowed_wants:
+            if "count" in want or "how many" in want or "number" in want:
+                normalized["want"] = "count"
+            elif "list" in want:
+                normalized["want"] = "list"
+            elif "schema" in want:
+                normalized["want"] = "schema"
+            elif "table" in want:
+                normalized["want"] = "table"
+            elif "verbatim" in want or "exact" in want or "line" in want:
+                normalized["want"] = "verbatim"
+            else:
+                normalized["want"] = "fact"
+        type_hint = str(normalized.get("type_hint") or "").strip().lower()
+        if type_hint in {"key-value", "key-value assignment", "kv", "markdown"}:
+            normalized["type_hint"] = "text"
+        return normalized
 
     @staticmethod
     def _is_same_or_descendant(path: Path, root: Path) -> bool:
