@@ -12,7 +12,7 @@ metadata:
 
 # Sparse Reading
 
-Use SRO for a large supported object when `sro_card`, `read_file`, or
+Use SRO for a large supported object when `sro_preview`, `read_file`, or
 `list_dir` recommends it. SRO results are task evidence: do not replace
 resolved evidence with broad raw reads.
 
@@ -37,8 +37,10 @@ verification, then stop when the requested deliverables pass.
 ## Protocol
 
 1. If a tool result already contains an SRO handoff and `artifact_id`, follow
-   its `next_action`; do not call `sro_card` again.
-2. Otherwise call `sro_card(path)` before reading a known large object.
+   its `next_action`; do not call `sro_preview` again.
+2. Otherwise call `sro_preview(path)` before reading a known large object. The
+   preview contains the FileCard plus a deterministic default view and does not
+   require a HintSpec.
 3. Use `{"path": "/path"}` only for first discovery. Use
    `{"artifact_id": "sro_..."}` for every follow-up.
 4. After an SRO read, follow its `next_action` or `allowed_next`. For the
@@ -55,6 +57,9 @@ verification, then stop when the requested deliverables pass.
 Use `refine` only for unresolved evidence on an existing artifact.
 For `hint.scope`, use only `"new"`, `"narrow"`, `"verify"`, or `"expand"`;
 use `"verify"` for an exact follow-up check. Do not invent scope values.
+
+`sro_card` remains available for benchmark and legacy compatibility, but it is
+not the production entrypoint.
 
 ## Stop Or Continue
 

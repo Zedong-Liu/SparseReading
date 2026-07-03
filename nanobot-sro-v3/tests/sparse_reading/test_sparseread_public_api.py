@@ -3,9 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from nanobot.agent.tools.filesystem import ListDirTool, ReadFileTool
+from nanobot.agent.loop import AgentLoop
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.search import GrepTool
 from nanobot.agent.tools.shell import ExecTool
+from nanobot.sparse_reading.orchestrator import SparseReadingOrchestrator
 
 from sparseread import SparseRead, SparseReadConfig, wrap
 from sparseread.adapters.nanobot import install
@@ -77,6 +79,21 @@ def test_nanobot_adapter_installs_tools_and_guards(tmp_path: Path) -> None:
     assert agent.tools.get("grep")._sro is runtime.orchestrator  # type: ignore[union-attr]
     assert agent.tools.get("exec").sro_policy is not None  # type: ignore[union-attr]
     assert agent.sparseread is runtime
+
+
+def test_nanobot_agent_loop_registers_preview_first_tools(tmp_path: Path) -> None:
+    loop = AgentLoop.__new__(AgentLoop)
+    loop.tools = ToolRegistry()
+    sro = SparseReadingOrchestrator(tmp_path)
+
+    loop._activate_sro_macros(sro)
+
+    assert [name for name in loop.tools.tool_names if name.startswith("sro_")] == [
+        "sro_preview",
+        "sro_raw",
+        "sro_card",
+        "sro_read",
+    ]
 
 
 def test_wrapper_autodetects_nanobot_registry(tmp_path: Path) -> None:

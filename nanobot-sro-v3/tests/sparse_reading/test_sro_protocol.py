@@ -1843,10 +1843,13 @@ def test_sro_card_returns_exact_next_action_for_sparse_artifact(tmp_path, monkey
 
     result = json.loads(asyncio.run(tool.execute(str(path))))
 
+    assert result["compatibility_note"]
     assert result["next_action"]["tool"] == "sro_read"
     assert result["next_action"]["target"] == {"artifact_id": result["file_card"]["artifact_id"]}
-    assert result["next_action"]["mode"] == "collect"
-    assert "slots" not in result["next_action"]["hint"]
+    assert result["next_action"]["mode"] == "scout"
+    assert result["next_action"]["hint"]["slots"] == []
+    assert result["collect_template"]["mode"] == "collect"
+    assert result["collect_template"]["hint"]["slots"]
 
 
 def test_sro_read_normalizes_wrapped_mode_and_string_target(tmp_path, monkeypatch):

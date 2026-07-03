@@ -74,6 +74,39 @@ def test_shared_bridge_adapter_state_is_bounded(tmp_path: Path) -> None:
     assert "sro_test_4" in bridge._adapter_once_artifacts
 
 
+def test_shared_bridge_normalizes_common_natural_hint_values(tmp_path: Path) -> None:
+    target = tmp_path / "incident-report.md"
+    target.write_text(
+        "# Incident Report\n\n"
+        "ROOT_CAUSE: cache invalidation used customer_id instead of tenant_id.\n",
+        encoding="utf-8",
+    )
+    bridge = OpenCodeBridge(workspace=tmp_path, mode="force")
+    preview = bridge.handle({"method": "preview", "params": {"path": str(target)}})
+
+    result = bridge.handle(
+        {
+            "method": "read",
+            "params": {
+                "target": {"artifact_id": preview["preview_pack"]["artifact_id"]},
+                "mode": "focus",
+                "hint": {
+                    "goal": "Find ROOT_CAUSE value",
+                    "needles": ["ROOT_CAUSE"],
+                    "want": "The value assigned to ROOT_CAUSE",
+                    "scope": "entire file",
+                    "type_hint": "key-value assignment",
+                },
+            },
+        }
+    )
+
+    pack = result["evidence_pack"]
+    text = "\n".join(block["text"] for block in pack["evidence"])
+    assert pack["error"] == ""
+    assert "ROOT_CAUSE: cache invalidation" in text
+
+
 def test_opencode_ready_guard_allows_one_bounded_verify_then_stops(tmp_path: Path) -> None:
     target = tmp_path / "report.md"
     target.write_text(
@@ -180,6 +213,74 @@ def test_openclaw_ready_guard_stops_repeat_reads_immediately(tmp_path: Path) -> 
     assert raw["raw"]["protocol_next"] == "write_file_now"
     assert second["evidence_pack"]["protocol_next"] == "write_file_now"
     assert trace["summary"]["adapter_guard_hits"] == 2
+
+
+def test_openclaw_ready_guard_allows_new_slots_after_partial_ready(tmp_path: Path) -> None:
+    target = tmp_path / "report.md"
+    target.write_text(
+        "ROOT_CAUSE: cache invalidation used customer_id instead of tenant_id.\n"
+        "MITIGATION_OWNER: Mira Chen, Data Platform on-call.\n"
+        "FINAL_DEADLINE: 2026-07-18 09:30 UTC.\n",
+        encoding="utf-8",
+    )
+    bridge = OpenClawBridge(workspace=tmp_path, mode="force")
+
+    preview = bridge.handle({"method": "preview", "params": {"path": str(target)}})
+    artifact_id = preview["preview_pack"]["artifact_id"]
+    raw_ref = preview["preview_pack"]["raw_ref"]
+    first = bridge.handle(
+        {
+            "method": "read",
+            "params": {
+                "target": {"artifact_id": artifact_id},
+                "mode": "collect",
+                "hint": {
+                    "goal": "find root cause",
+                    "type_hint": "text",
+                    "needles": ["ROOT_CAUSE"],
+                    "slots": [{"id": "root_cause", "question": "What is ROOT_CAUSE?"}],
+                },
+            },
+        }
+    )
+    second = bridge.handle(
+        {
+            "method": "read",
+            "params": {
+                "target": {"artifact_id": artifact_id},
+                "mode": "collect",
+                "hint": {
+                    "goal": "find mitigation owner",
+                    "type_hint": "text",
+                    "needles": ["MITIGATION_OWNER"],
+                    "slots": [{"id": "owner", "question": "What is MITIGATION_OWNER?"}],
+                },
+            },
+        }
+    )
+    repeat = bridge.handle(
+        {
+            "method": "read",
+            "params": {
+                "target": {"artifact_id": artifact_id},
+                "mode": "collect",
+                "hint": {
+                    "goal": "repeat root cause",
+                    "type_hint": "text",
+                    "needles": ["ROOT_CAUSE"],
+                    "slots": [{"id": "root_cause", "question": "What is ROOT_CAUSE?"}],
+                },
+            },
+        }
+    )
+    raw_new_selector = bridge.handle({"method": "raw", "params": {"raw_ref": raw_ref, "selector": "FINAL_DEADLINE"}})
+
+    assert first["evidence_pack"]["slot_digest"]["overall_status"] == "ready"
+    assert first["evidence_pack"]["slot_digest"]["resolved_slot_ids"] == ["root_cause"]
+    assert second["evidence_pack"]["summary"] != "adapter ready guard: evidence is already ready from the prior read; write the deliverable now"
+    assert second["evidence_pack"]["slot_digest"]["resolved_slot_ids"] == ["owner"]
+    assert repeat["evidence_pack"]["next_action"]["guard"] == "openclaw_adapter_closure_once"
+    assert raw_new_selector["raw"]["matches"][0]["text"].startswith("FINAL_DEADLINE")
 
 
 def test_openclaw_preview_collection_ready_guard_stops_repeat_reads(tmp_path: Path) -> None:

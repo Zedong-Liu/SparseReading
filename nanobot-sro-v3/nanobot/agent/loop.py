@@ -38,7 +38,7 @@ from nanobot.providers.base import LLMProvider
 from nanobot.session.manager import Session, SessionManager
 from nanobot.sparse_reading import SparseReadingOrchestrator
 from nanobot.sparse_reading.policy import SparseCommandPolicy
-from nanobot.sparse_reading.tools import SroCardTool, SroReadTool
+from nanobot.sparse_reading.tools import SroCardTool, SroPreviewTool, SroRawTool, SroReadTool
 from nanobot.utils.document import extract_documents
 from nanobot.utils.helpers import image_placeholder_text
 from nanobot.utils.helpers import truncate_text as truncate_text_fn
@@ -345,6 +345,10 @@ class AgentLoop:
 
     def _activate_sro_macros(self, sro: SparseReadingOrchestrator) -> None:
         """Register SRO macro tools lazily after access-level interception."""
+        if not self.tools.has("sro_preview"):
+            self.tools.register(SroPreviewTool(sro))
+        if not self.tools.has("sro_raw"):
+            self.tools.register(SroRawTool(sro))
         if not self.tools.has("sro_card"):
             self.tools.register(SroCardTool(sro))
         if not self.tools.has("sro_read"):

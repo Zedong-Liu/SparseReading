@@ -27,7 +27,7 @@ class SroCardTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Return a lightweight FileCard for a large supported file or text-file collection before reading it."
+        return "Compatibility/benchmark tool: return only the lightweight FileCard. Prefer sro_preview for production use."
 
     @property
     def read_only(self) -> bool:
@@ -45,19 +45,39 @@ class SroCardTool(Tool):
 
     async def execute(self, path: str, **kwargs: Any) -> str:
         card = self.orchestrator.card(Path(path))
-        payload: dict[str, Any] = {"file_card": card.to_dict()}
+        payload: dict[str, Any] = {
+            "file_card": card.to_dict(),
+            "compatibility_note": "sro_card is retained for benchmark/legacy flows; use sro_preview as the production entrypoint.",
+        }
         if card.sparse_recommended:
-            mode = "collect" if "collect" in card.recommended_mode else card.recommended_mode
+            mode = "collect" if card.type == "collection" else "scout"
+            type_hint = "text" if card.type in {"txt", "text"} else card.type
             payload["next_action"] = {
                 "tool": "sro_read",
                 "target": {"artifact_id": card.artifact_id},
                 "mode": mode,
-                "instruction": "For multi-question reports, copy each user question into one compact slot.",
+                "instruction": (
+                    "Legacy card path: use scout/focus without slots for default discovery. "
+                    "Use collect only after copying each concrete user question into hint.slots."
+                ),
                 "hint": {
                     "goal": "state the evidence needed from this artifact",
-                    "type_hint": "text" if card.type == "txt" else card.type,
+                    "type_hint": type_hint,
+                    "needles": [],
+                    "slots": [],
                 },
             }
+            if "collect" in card.recommended_mode and card.type != "collection":
+                payload["collect_template"] = {
+                    "tool": "sro_read",
+                    "target": {"artifact_id": card.artifact_id},
+                    "mode": "collect",
+                    "hint": {
+                        "goal": "answer concrete questions from this artifact",
+                        "type_hint": type_hint,
+                        "slots": [{"id": "q1", "question": "copy a concrete user question here", "expected": "fact"}],
+                    },
+                }
         return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
@@ -171,7 +191,7 @@ class SroReadTool(Tool):
         return (
             "Read sparse evidence from a large object using mode scout/focus/collect/refine/verify. "
             "SRO evidence is authoritative for the requested evidence goal: if collect/focus returns overall_status=ready or no unresolved items, write every requested deliverable or run one short calculation instead of rereading source files. "
-            "For multi-question PDF/report tasks, the first read after sro_card should be mode=collect with hint.slots; do not use scout or a long needles list for that case. "
+            "For multi-question PDF/report tasks, the first targeted read after sro_preview should be mode=collect with hint.slots; do not use scout or a long needles list for that case. "
             "For directory collections that require diagnosis/audit/rules/config facts, use mode=collect first; use mode=focus only when you need candidate filenames and not facts. "
             "Slots are lightweight objects with id, question, expected, and optional aliases; collect returns a compact slot_digest rather than a large evidence matrix. "
             "When calc_ready is returned, use the derived TSV artifact(s) in one short calculation script."
