@@ -10,12 +10,12 @@ from typing import Any, Literal
 Want = Literal["fact", "count", "verbatim", "table", "schema", "list"]
 Scope = Literal["new", "narrow", "expand", "verify"]
 Mode = Literal["scout", "focus", "refine", "verify", "collect"]
-TypeHint = Literal["auto", "pdf", "text", "csv", "xlsx", "json", "yaml", "xml", "mixed", "collection"]
+TypeHint = Literal["auto", "pdf", "text", "csv", "xlsx", "json", "yaml", "xml", "mixed", "collection", "script_library"]
 
 VALID_WANTS = {"fact", "count", "verbatim", "table", "schema", "list"}
 VALID_SCOPES = {"new", "narrow", "expand", "verify"}
 VALID_MODES = {"scout", "focus", "refine", "verify", "collect"}
-VALID_TYPE_HINTS = {"auto", "pdf", "text", "csv", "xlsx", "json", "yaml", "xml", "mixed", "collection"}
+VALID_TYPE_HINTS = {"auto", "pdf", "text", "csv", "xlsx", "json", "yaml", "xml", "mixed", "collection", "script_library"}
 MAX_HINT_NEEDLES = 10
 MAX_HINT_SLOTS = 12
 WANT_ALIASES = {
@@ -171,11 +171,22 @@ class HintSpec:
     def _parse_slots(cls, raw: Any) -> tuple[list[SlotSpec], list[str]]:
         if not raw:
             return [], []
+        if isinstance(raw, dict):
+            return cls._parse_slot_mapping(raw)
         if not isinstance(raw, list):
             return [], ["hint.slots must be an array"]
         errors: list[str] = []
         slots: list[SlotSpec] = []
         for index, item in enumerate(raw[:MAX_HINT_SLOTS]):
+            if isinstance(item, str):
+                if cls._string_slot_has_question_shape(item):
+                    slots.append(SlotSpec(f"slot_{index + 1}", item.strip(), "fact", []))
+                else:
+                    errors.append(
+                        f"hint.slots[{index}] must be an object with id/question; "
+                        "string slot ids are not enough"
+                    )
+                continue
             slot, slot_errors = SlotSpec.from_obj(item, index)
             repaired = cls._repair_embedded_slots(item) if slot_errors or cls._looks_like_embedded_slots(item) else []
             if repaired:
@@ -199,6 +210,42 @@ class HintSpec:
             if len(deduped) >= MAX_HINT_SLOTS:
                 break
         return deduped, errors
+
+    @classmethod
+    def _parse_slot_mapping(cls, raw: dict[Any, Any]) -> tuple[list[SlotSpec], list[str]]:
+        errors: list[str] = []
+        slots: list[SlotSpec] = []
+        for index, (key, value) in enumerate(list(raw.items())[:MAX_HINT_SLOTS]):
+            slot_id = cls._normalize_slot_id(str(key), fallback=f"slot_{index + 1}")
+            if isinstance(value, dict):
+                obj = {"id": slot_id, **value}
+                slot, slot_errors = SlotSpec.from_obj(obj, index)
+                if slot is not None:
+                    slots.append(slot)
+                errors.extend(slot_errors)
+                continue
+            question = str(value or "").strip()
+            if not question:
+                errors.append(f"hint.slots[{index}].question is required")
+                continue
+            slots.append(SlotSpec(slot_id, question[:240], "fact", []))
+        if len(raw) > MAX_HINT_SLOTS:
+            errors.append(f"hint.slots must contain at most {MAX_HINT_SLOTS} items")
+        return slots, errors
+
+    @staticmethod
+    def _normalize_slot_id(value: str, *, fallback: str) -> str:
+        slot_id = re.sub(r"[^A-Za-z0-9_-]+", "_", value.strip()).strip("_")
+        return slot_id[:64] or fallback
+
+    @staticmethod
+    def _string_slot_has_question_shape(value: str) -> bool:
+        text = value.strip()
+        if not text:
+            return False
+        if "?" in text:
+            return True
+        return bool(re.match(r"(?i)^(how|what|when|where|which|who|why)\b", text))
 
     @staticmethod
     def _looks_like_embedded_slots(obj: Any) -> bool:

@@ -21,6 +21,21 @@ class StructuredReader:
 
     _SMALL_TABLE_ROWS = 30
 
+    def preview_details(self, path: Path, budget: int) -> dict[str, Any]:
+        """Return a deterministic L0 preview without requiring a HintSpec."""
+        suffix = path.suffix.lower()
+        if suffix in {".csv", ".tsv"}:
+            return self._preview_csv(path, budget, delimiter="\t" if suffix == ".tsv" else ",")
+        if suffix == ".json":
+            return self._preview_mapping(path, budget, "json")
+        if suffix in {".yaml", ".yml"}:
+            return self._preview_mapping(path, budget, "yaml")
+        if suffix == ".xlsx":
+            return self._preview_xlsx(path, budget)
+        if suffix == ".xml":
+            return self._preview_xml(path, budget)
+        return {"kind": "structured_preview", "error": f"unsupported structured type: {path.suffix}"}
+
     def card_details(self, path: Path) -> dict[str, Any]:
         suffix = path.suffix.lower()
         if suffix in {".csv", ".tsv"}:
@@ -52,6 +67,189 @@ class StructuredReader:
                 "script_native_ok": True,
             }
         return {}
+
+    def _preview_csv(self, path: Path, budget: int, *, delimiter: str) -> dict[str, Any]:
+        try:
+            with path.open(newline="", encoding="utf-8", errors="replace") as f:
+                reader = csv.DictReader(f, delimiter=delimiter)
+                headers = reader.fieldnames or []
+                sample_rows: list[dict[str, str]] = []
+                type_samples: dict[str, list[str]] = {header: [] for header in headers}
+                row_count = 0
+                for row in reader:
+                    row_count += 1
+                    if len(sample_rows) < 5:
+                        sample_rows.append({header: row.get(header, "") for header in headers[:20]})
+                    if row_count <= 100:
+                        for header in headers:
+                            value = str(row.get(header, "")).strip()
+                            if value:
+                                type_samples[header].append(value)
+        except OSError as exc:
+            return {"kind": "csv_preview", "error": str(exc)}
+        preview = {
+            "kind": "csv_preview",
+            "row_count": row_count,
+            "column_count": len(headers),
+            "columns": headers[:40],
+            "column_types": {
+                header: self._infer_scalar_type(values)
+                for header, values in type_samples.items()
+            },
+            "sample_rows": sample_rows,
+            "default_read": "schema + first 5 rows; use a script on the local path for exact aggregation/full-table work",
+        }
+        return self._fit_preview(preview, budget)
+
+    def _preview_mapping(self, path: Path, budget: int, kind: str) -> dict[str, Any]:
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace")
+            data = json.loads(raw) if kind == "json" else yaml.safe_load(raw)
+        except Exception as exc:
+            return {"kind": f"{kind}_preview", "error": str(exc)}
+        preview = {
+            "kind": f"{kind}_preview",
+            "shape": self._shape(data),
+            "top_keys": list(data.keys())[:40] if isinstance(data, dict) else [],
+            "path_index": self._mapping_path_index(data)[:40],
+            "sample": self._sample_value(data),
+            "default_read": "top-level structure + array/object schema; use sro_read only for targeted key/row evidence",
+        }
+        return self._fit_preview(preview, budget)
+
+    def _preview_xlsx(self, path: Path, budget: int) -> dict[str, Any]:
+        try:
+            import openpyxl
+        except ImportError:
+            try:
+                sheets = self._extract_xlsx_sheets_zip(path)
+            except Exception as exc:
+                return {"kind": "xlsx_preview", "error": str(exc)}
+            preview = {
+                "kind": "xlsx_preview",
+                "backend": "stdlib_zip",
+                "sheets": [
+                    {
+                        "name": name,
+                        "row_count_sampled": max(0, len(rows) - 1),
+                        "columns": rows[0][:40] if rows else [],
+                        "sample_rows": rows[1:6] if len(rows) > 1 else [],
+                    }
+                    for name, rows in sheets[:8]
+                ],
+                "default_read": "sheet names + headers + first rows; use a script for exact workbook aggregation",
+            }
+            return self._fit_preview(preview, budget)
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        try:
+            sheets: list[dict[str, Any]] = []
+            for ws in wb.worksheets[:8]:
+                rows_iter = ws.iter_rows(values_only=True)
+                header = [self._cell(value) for value in next(rows_iter, ())]
+                sample_rows: list[list[str]] = []
+                for row in rows_iter:
+                    if len(sample_rows) >= 5:
+                        break
+                    values = [self._cell(value) for value in row]
+                    if any(values):
+                        sample_rows.append(values[:20])
+                sheets.append(
+                    {
+                        "name": ws.title,
+                        "rows": ws.max_row,
+                        "columns": ws.max_column,
+                        "headers": header[:40],
+                        "sample_rows": sample_rows,
+                    }
+                )
+        finally:
+            wb.close()
+        return self._fit_preview(
+            {
+                "kind": "xlsx_preview",
+                "sheets": sheets,
+                "default_read": "sheet names + headers + first rows; use a script for exact workbook aggregation",
+            },
+            budget,
+        )
+
+    def _preview_xml(self, path: Path, budget: int) -> dict[str, Any]:
+        try:
+            root = ET.parse(path).getroot()
+        except Exception as exc:
+            return {"kind": "xml_preview", "error": str(exc)}
+        preview = {
+            "kind": "xml_preview",
+            "root": root.tag,
+            "path_index": self._xml_path_index(root)[:40],
+            "sample_entries": [
+                {"path": key, "value": self._short(value, 120)}
+                for key, value in self._xml_entries(root)[:12]
+            ],
+            "default_read": "root/path index + first scalar entries; use sro_read for targeted elements",
+        }
+        return self._fit_preview(preview, budget)
+
+    @classmethod
+    def _fit_preview(cls, preview: dict[str, Any], budget: int) -> dict[str, Any]:
+        """Trim verbose preview fields while keeping deterministic structure."""
+        fitted = dict(preview)
+        while len(json.dumps(fitted, ensure_ascii=False, default=str)) > budget:
+            if fitted.get("sample_rows"):
+                fitted["sample_rows"] = fitted["sample_rows"][:-1]
+            elif isinstance(fitted.get("sample"), list) and fitted["sample"]:
+                fitted["sample"] = fitted["sample"][:-1]
+            elif fitted.get("path_index"):
+                fitted["path_index"] = fitted["path_index"][: max(4, len(fitted["path_index"]) // 2)]
+            elif fitted.get("columns"):
+                fitted["columns"] = fitted["columns"][: max(8, len(fitted["columns"]) // 2)]
+            else:
+                fitted["truncated_to_budget"] = True
+                break
+        return fitted
+
+    @staticmethod
+    def _infer_scalar_type(values: list[str]) -> str:
+        if not values:
+            return "empty"
+        sample = values[:50]
+        if all(re.fullmatch(r"[-+]?\d+", value) for value in sample):
+            return "int"
+        if all(re.fullmatch(r"[-+]?(?:\d+\.\d*|\d*\.\d+|\d+)", value) for value in sample):
+            return "number"
+        lowered = {value.lower() for value in sample}
+        if lowered <= {"true", "false", "yes", "no", "0", "1"}:
+            return "bool"
+        if all(re.fullmatch(r"\d{4}[-/]\d{2}[-/]\d{2}.*", value) for value in sample):
+            return "date"
+        return "string"
+
+    @classmethod
+    def _shape(cls, value: Any, depth: int = 0) -> Any:
+        if depth >= 3:
+            return type(value).__name__
+        if isinstance(value, dict):
+            return {
+                "type": "object",
+                "keys": list(value.keys())[:24],
+                "fields": {str(key): cls._shape(item, depth + 1) for key, item in list(value.items())[:12]},
+            }
+        if isinstance(value, list):
+            sample = next((item for item in value if item is not None), None)
+            return {"type": "array", "count": len(value), "element": cls._shape(sample, depth + 1)}
+        return type(value).__name__
+
+    @classmethod
+    def _sample_value(cls, value: Any, depth: int = 0) -> Any:
+        if depth >= 2:
+            return cls._short(value, 80)
+        if isinstance(value, dict):
+            return {str(key): cls._sample_value(item, depth + 1) for key, item in list(value.items())[:8]}
+        if isinstance(value, list):
+            return [cls._sample_value(item, depth + 1) for item in value[:5]]
+        if value is None or isinstance(value, (bool, int, float, str)):
+            return value
+        return str(value)
 
     def read(self, path: Path, artifact_id: str, mode: str, hint: HintSpec, budget: int) -> EvidencePack:
         suffix = path.suffix.lower()
@@ -343,13 +541,17 @@ class StructuredReader:
         raw = path.read_text(encoding="utf-8", errors="replace")
         data = json.loads(raw) if kind == "json" else yaml.safe_load(raw)
         flat = list(self._flatten(data))
-        skeleton = [f"{k}: {self._short(v, 120)}" for k, v in flat[:24]]
+        path_index = self._mapping_path_index(data)
+        skeleton = [*path_index[:16], *[f"{k}: {self._short(v, 120)}" for k, v in flat[:16]]]
         terms = self._terms(hint)
-        evidence = [
+        evidence: list[EvidenceBlock] = []
+        if mode == "scout" or hint.want == "schema":
+            evidence.append(EvidenceBlock("path_index", "\n".join(path_index[:40]), 1.0))
+        evidence.extend([
             EvidenceBlock(anchor=key, text=f"{key}: {self._short(value, 700)}", score=self._score_text(f"{key} {value}", terms))
             for key, value in flat
             if mode == "scout" or self._score_text(f"{key} {value}", terms) > 0
-        ]
+        ])
         evidence.sort(key=lambda b: b.score, reverse=True)
         selected = self._fit_budget(evidence[:30], budget)
         unresolved = self._unresolved(hint, selected)
@@ -366,21 +568,17 @@ class StructuredReader:
 
     def _read_xml(self, path: Path, artifact_id: str, mode: str, hint: HintSpec, budget: int) -> EvidencePack:
         root = ET.parse(path).getroot()
-        entries: list[tuple[str, str]] = []
-        for elem in root.iter():
-            text = " ".join((elem.text or "").split())
-            attrs = " ".join(f"{k}={v}" for k, v in elem.attrib.items())
-            value = " ".join(part for part in (attrs, text) if part)
-            if value:
-                entries.append((elem.tag, value))
-            if len(entries) >= 300:
-                break
+        entries = self._xml_entries(root)
+        path_index = self._xml_path_index(root)
         terms = self._terms(hint)
-        evidence = [
-            EvidenceBlock(anchor=tag, text=f"<{tag}> {self._short(value, 700)}", score=self._score_text(f"{tag} {value}", terms))
+        evidence: list[EvidenceBlock] = []
+        if mode == "scout" or hint.want == "schema":
+            evidence.append(EvidenceBlock("path_index", "\n".join(path_index[:40]), 1.0))
+        evidence.extend(
+            EvidenceBlock(anchor=tag, text=f"{tag}: {self._short(value, 700)}", score=self._score_text(f"{tag} {value}", terms))
             for tag, value in entries
             if mode == "scout" or self._score_text(f"{tag} {value}", terms) > 0
-        ]
+        )
         evidence.sort(key=lambda b: b.score, reverse=True)
         selected = self._fit_budget(evidence[:30], budget)
         unresolved = self._unresolved(hint, selected)
@@ -389,7 +587,7 @@ class StructuredReader:
             mode=mode,
             type="xml",
             summary=f"XML root <{root.tag}> with {len(entries)} evidence-bearing elements sampled",
-            skeleton=[f"root: {root.tag}", *[f"element: {tag}" for tag, _ in entries[:20]]],
+            skeleton=[f"root: {root.tag}", *path_index[:20]],
             evidence=selected,
             unresolved=unresolved,
             next_hint=self._next_hint(hint, artifact_id) if unresolved and mode != "verify" else None,
@@ -460,6 +658,63 @@ class StructuredReader:
                 yield f"{prefix}.length", str(len(obj))
         else:
             yield prefix, self._cell(obj)
+
+    def _mapping_path_index(self, obj: Any, prefix: str = "$", depth: int = 0) -> list[str]:
+        if depth > 6:
+            return [f"{prefix}: ..."]
+        if isinstance(obj, dict):
+            keys = [str(key) for key in obj.keys()]
+            out = [f"{prefix}: object keys={', '.join(keys[:18])}"]
+            for key, value in list(obj.items())[:24]:
+                out.extend(self._mapping_path_index(value, f"{prefix}.{key}", depth + 1))
+                if len(out) >= 80:
+                    break
+            return out
+        if isinstance(obj, list):
+            item_types = sorted({type(item).__name__ for item in obj[:20]})
+            out = [f"{prefix}: list len={len(obj)} item_types={', '.join(item_types)}"]
+            if obj:
+                out.extend(self._mapping_path_index(obj[0], f"{prefix}[]", depth + 1))
+            return out
+        return [f"{prefix}: {type(obj).__name__}"]
+
+    def _xml_entries(self, root: ET.Element) -> list[tuple[str, str]]:
+        entries: list[tuple[str, str]] = []
+
+        def walk(elem: ET.Element, path: str) -> None:
+            if len(entries) >= 300:
+                return
+            text = " ".join((elem.text or "").split())
+            attrs = " ".join(f"@{k}={v}" for k, v in elem.attrib.items())
+            value = " ".join(part for part in (attrs, text) if part)
+            if value:
+                entries.append((path, value))
+            counts: dict[str, int] = {}
+            for child in list(elem):
+                counts[child.tag] = counts.get(child.tag, 0) + 1
+                walk(child, f"{path}/{child.tag}[{counts[child.tag]}]")
+
+        walk(root, f"/{root.tag}")
+        return entries
+
+    def _xml_path_index(self, root: ET.Element) -> list[str]:
+        index: list[str] = []
+
+        def walk(elem: ET.Element, path: str, depth: int) -> None:
+            if depth > 6 or len(index) >= 80:
+                return
+            attrs = f" attrs={', '.join(elem.attrib.keys())}" if elem.attrib else ""
+            children = list(elem)
+            child_tags = list(dict.fromkeys(child.tag for child in children[:24]))
+            child_text = f" children={', '.join(child_tags)}" if child_tags else ""
+            index.append(f"{path}: element{attrs}{child_text}")
+            counts: dict[str, int] = {}
+            for child in children[:24]:
+                counts[child.tag] = counts.get(child.tag, 0) + 1
+                walk(child, f"{path}/{child.tag}[{counts[child.tag]}]", depth + 1)
+
+        walk(root, f"/{root.tag}", 0)
+        return index
 
     @staticmethod
     def _terms(hint: HintSpec) -> list[str]:

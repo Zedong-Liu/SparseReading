@@ -1,0 +1,65 @@
+{
+  "id": "sparseread-openclaw",
+  "name": "SparseRead for OpenClaw",
+  "description": "Adds SparseRead tools and gate hooks for long documents and compact evidence closures.",
+  "version": "0.1.0",
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "sro_preview",
+      "sro_card",
+      "sro_read",
+      "sro_decide",
+      "sro_trace"
+    ]
+  },
+  "skills": [
+    "skills/sparse-reading"
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "policy": {
+        "type": "string",
+        "enum": [
+          "observe",
+          "advisory",
+          "enforce",
+          "native",
+          "auto"
+        ],
+        "default": "auto"
+      },
+      "projectRoot": {
+        "type": "string"
+      },
+      "workspaceRoot": {
+        "type": "string"
+      },
+      "python": {
+        "type": "string"
+      },
+      "bridgeCommand": {
+        "type": "string"
+      },
+      "bridgeModule": {
+        "type": "string",
+        "default": "sparseread.bridge.openclaw"
+      },
+      "mode": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "force",
+          "force_sro",
+          "native",
+          "advisory"
+        ],
+        "default": "auto"
+      }
+    }
+  }
+}

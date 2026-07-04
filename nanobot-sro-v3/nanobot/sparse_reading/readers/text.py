@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import csv
+import math
+import os
 import re
 import subprocess
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +41,27 @@ class TextReader:
         "was", "were", "who", "why", "did", "which",
     }
 
+    def preview_details(self, path: Path, budget: int) -> dict[str, Any]:
+        """Return a deterministic L0 text preview with anchors for follow-up reads."""
+        try:
+            units, skeleton, kind = self._load_units(path)
+        except Exception as exc:
+            return {"kind": "text_preview", "error": f"Error reading {path}: {exc}"}
+        blocks = self._scout_evidence(units, min(budget, 1400))
+        preview: dict[str, Any] = {
+            "kind": f"{kind}_preview",
+            "unit_count": len(units),
+            "headings": skeleton[:18],
+            "anchors": [
+                {"anchor": block.anchor, "text": self._clip(block.text, 280)}
+                for block in blocks
+            ],
+            "default_read": "heading/anchor preview only; use sro_read focus/refine with concrete needles or slots for targeted evidence",
+        }
+        if kind == "log":
+            preview["log_signals"] = skeleton[:18]
+        return self._fit_preview(preview, budget)
+
     def read(self, path: Path, artifact_id: str, mode: str, hint: HintSpec, budget: int) -> EvidencePack:
         try:
             units, skeleton, kind = self._load_units(path)
@@ -52,6 +77,10 @@ class TextReader:
 
         if mode == "collect" or hint.slots:
             return self.collect(path, artifact_id, mode, hint, budget, units=units, skeleton=skeleton, kind=kind)
+
+        table_pack = self._table_calc_ready_pack(path, artifact_id, mode, hint, kind, units)
+        if table_pack:
+            return table_pack
 
         if mode == "scout":
             evidence = self._scout_evidence(units, budget)
@@ -176,7 +205,7 @@ class TextReader:
             confidence = min(0.99, max(0.35, candidate_block.score / 12.0))
             if status == "resolved":
                 confidence = max(confidence, 0.8)
-        return {
+        result: dict[str, Any] = {
             "id": slot.id,
             "status": status,
             "candidate": candidate,
@@ -184,6 +213,13 @@ class TextReader:
             "confidence": round(confidence, 2),
             "verify_ref": verify_ref,
         }
+        if status == "resolved":
+            reason = self._candidate_verify_reason(slot, candidate)
+            if reason:
+                result["status"] = "partial"
+                result["confidence"] = min(float(result["confidence"]), 0.6)
+                result["needs_verify_reason"] = reason
+        return result
 
     def _best_count_candidate(
         self,
@@ -247,6 +283,12 @@ class TextReader:
         except ValueError:
             value = 0
 
+        if TextReader._slot_wants_task_list(slot):
+            if value > 1 and any(term in hay for term in ("proposed tasks", "proposed benchmark tasks", "brief:")):
+                bonus += 12.0
+            elif value == 1:
+                bonus -= 8.0
+
         if "," in candidate or value > 20:
             bonus += 4.0
 
@@ -266,6 +308,7 @@ class TextReader:
 
     def _score_slot_units(self, units: list[TextUnit], slot: SlotSpec) -> list[EvidenceBlock]:
         terms = self._slot_terms(slot)
+        term_weights = self._term_weights(units, terms)
         aliases = [alias.lower() for alias in slot.aliases]
         blocks: list[EvidenceBlock] = []
         for unit in units:
@@ -276,7 +319,7 @@ class TextReader:
                     score += 12.0
             for term in terms:
                 if term in hay:
-                    score += 1.5
+                    score += 1.5 * term_weights.get(term, 1.0)
             sentence_overlap = self._best_sentence_overlap(unit.text, terms)
             if sentence_overlap >= 2:
                 score += sentence_overlap * 2.0
@@ -333,6 +376,33 @@ class TextReader:
             return self._extract_count(text, question)
         return self._short_candidate(text, self._slot_terms(slot))
 
+    @staticmethod
+    def _candidate_verify_reason(slot: SlotSpec, candidate: str) -> str:
+        prompt = f"{slot.expected} {slot.question}".lower()
+        value = candidate.strip()
+        if not value:
+            return "empty candidate"
+        if "category" in prompt and (":" not in value or not re.search(r"\d", value)):
+            return "category candidate should include a label and count"
+        if any(term in prompt for term in ("filename", "file name", "file that")) and not re.search(r"\b[\w.-]+\.[A-Za-z0-9]{1,8}\b", value):
+            return "filename candidate should include a file extension"
+        if any(term in prompt for term in ("date", "when")) and not re.search(
+            r"\b(?:\d{1,2}\s+)?(?:January|February|March|April|May|June|July|August|September|October|November|December)(?:\s+\d{1,2},?)?\s+\d{4}\b|\b\d{4}[-/]\d{2}[-/]\d{2}\b|\b\d{4}\b",
+            value,
+            re.IGNORECASE,
+        ):
+            return "date candidate should contain a date or year"
+        if any(term in prompt for term in ("count", "how many", "number", "total")) and not re.search(r"\d", value):
+            return "count candidate should contain a number"
+        if TextReader._slot_wants_task_list(slot):
+            try:
+                count_value = int(value.replace(",", "").split(".")[0])
+            except ValueError:
+                count_value = 0
+            if count_value <= 1:
+                return "proposed task count candidate should be verified against task labels"
+        return ""
+
 
     def _section_anchor_for_slot(self, slot: SlotSpec, units: list[TextUnit]) -> str:
         terms = self._slot_section_terms(slot)
@@ -349,9 +419,10 @@ class TextReader:
         if start_idx < 0:
             return []
         labels: list[str] = []
+        end_idx = self._section_end_index(units, start_idx)
         stop_terms = {"comparative table", "roadmap", "prioritized roadmap", "visualization"}
         skip_terms = {"brief", "why", "inputs", "outputs", "success criteria", "difficulty", "suggested metrics"}
-        for unit in units[start_idx + 1 : start_idx + 40]:
+        for unit in units[start_idx + 1 : end_idx]:
             label = unit.text.strip().splitlines()[0].strip()
             low = label.lower().rstrip(":")
             if any(term in low for term in stop_terms):
@@ -367,8 +438,9 @@ class TextReader:
         if start_idx < 0:
             return []
         labels: list[str] = []
+        end_idx = self._task_section_end_index(units, start_idx)
         stop_terms = {"comparative table", "roadmap", "prioritized roadmap", "visualization"}
-        for unit in units[start_idx : start_idx + 40]:
+        for unit in units[start_idx:end_idx]:
             lines = [line.strip() for line in unit.text.splitlines() if line.strip()]
             if any(term in lines[0].lower() for term in stop_terms):
                 break
@@ -378,6 +450,22 @@ class TextReader:
                     if self._looks_like_section_item_label(label) and label not in labels:
                         labels.append(label)
         return labels or self._section_item_labels(anchor, units)
+
+    @staticmethod
+    def _task_section_end_index(units: list[TextUnit], start_idx: int) -> int:
+        soft_limit = min(len(units), start_idx + 40)
+        stop_terms = {
+            "comparative table",
+            "roadmap",
+            "prioritized roadmap",
+            "requested visualizations",
+            "references",
+        }
+        for idx in range(start_idx + 1, soft_limit):
+            lines = [line.strip() for line in units[idx].text.splitlines() if line.strip()]
+            if any(any(term in line.lower() for term in stop_terms) for line in lines[:3]):
+                return idx
+        return soft_limit
 
     def _extract_count(self, text: str, question: str) -> str:
         if "how long" in question or "duration" in question:
@@ -703,10 +791,78 @@ class TextReader:
     def _load_units(self, path: Path) -> tuple[list[TextUnit], list[str], str]:
         if path.suffix.lower() == ".pdf":
             return self._load_pdf_units(path)
+        if path.suffix.lower() == ".log":
+            return self._load_log_units(path)
         text = path.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n")
         return self._segment_text(text, kind="text")
 
+    def _load_log_units(self, path: Path) -> tuple[list[TextUnit], list[str], str]:
+        lines = path.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n").splitlines()
+        units: list[TextUnit] = []
+        skeleton: list[str] = []
+        severity_counts: dict[str, int] = {}
+        signature_counts: dict[str, int] = {}
+        start_line = 1
+        current_signature = ""
+        current_lines: list[str] = []
+
+        def flush(end_line: int) -> None:
+            nonlocal start_line, current_lines, current_signature
+            if not current_lines:
+                return
+            count = len(current_lines)
+            sample = current_lines[0]
+            tail = current_lines[-1]
+            text = sample if count == 1 else f"repeated {count}x\nfirst: {sample}\nlast: {tail}"
+            heading = self._log_heading(current_signature)
+            units.append(TextUnit(anchor=f"log:L{start_line}-L{end_line}", text=text, heading=heading))
+            signature_counts[current_signature] = signature_counts.get(current_signature, 0) + count
+            current_lines = []
+            current_signature = ""
+            start_line = end_line + 1
+
+        for idx, line in enumerate(lines, start=1):
+            stripped = line.strip()
+            if not stripped:
+                flush(idx - 1)
+                start_line = idx + 1
+                continue
+            severity = self._log_severity(stripped)
+            if severity:
+                severity_counts[severity] = severity_counts.get(severity, 0) + 1
+            signature = self._log_signature(stripped)
+            if current_lines and signature != current_signature:
+                flush(idx - 1)
+                start_line = idx
+            if not current_lines:
+                current_signature = signature
+                start_line = idx
+            current_lines.append(stripped)
+        flush(len(lines))
+
+        for severity, count in sorted(severity_counts.items()):
+            skeleton.append(f"{severity}: {count}")
+        for signature, count in sorted(signature_counts.items(), key=lambda item: item[1], reverse=True)[:12]:
+            skeleton.append(f"{count}x {self._clip(signature, 120)}")
+        return units, skeleton[:24], "log"
+
     def _load_pdf_units(self, path: Path) -> tuple[list[TextUnit], list[str], str]:
+        pages = self._extract_pdf_pages(path)
+        pages = self._strip_repeated_pdf_lines(pages)
+        units: list[TextUnit] = []
+        skeleton: list[str] = []
+        for page_idx, page in enumerate(pages, start=1):
+            page_units, page_skeleton, _ = self._segment_text(page, kind="pdf", page=page_idx)
+            units.extend(page_units)
+            skeleton.extend(page_skeleton)
+        return units, self._dedupe(skeleton)[:24], "pdf"
+
+    def _extract_pdf_pages(self, path: Path) -> list[str]:
+        backend = os.environ.get("SRO_PDF_BACKEND", "").strip().lower()
+        if backend in {"pymupdf4llm", "pymupdf4llm_markdown"}:
+            pages = self._load_pdf_pages_with_pymupdf4llm(path)
+            if pages:
+                return pages
         try:
             result = subprocess.run(
                 ["pdftotext", "-layout", str(path), "-"],
@@ -715,19 +871,100 @@ class TextReader:
                 check=False,
             )
         except FileNotFoundError:
-            pages = self._load_pdf_pages_with_pymupdf(path)
+            return self._load_pdf_pages_with_pymupdf(path)
         else:
             if result.returncode != 0:
                 detail = (result.stderr or "").strip() or f"pdftotext exited with {result.returncode}"
                 raise RuntimeError(detail)
-            pages = (result.stdout or "").split("\f")
-        units: list[TextUnit] = []
-        skeleton: list[str] = []
-        for page_idx, page in enumerate(pages, start=1):
-            page_units, page_skeleton, _ = self._segment_text(page, kind="pdf", page=page_idx)
-            units.extend(page_units)
-            skeleton.extend(page_skeleton)
-        return units, self._dedupe(skeleton)[:24], "pdf"
+            return (result.stdout or "").split("\f")
+
+    @staticmethod
+    def _load_pdf_pages_with_pymupdf4llm(path: Path) -> list[str]:
+        try:
+            import pymupdf4llm  # type: ignore[import-not-found]
+        except ImportError:
+            return []
+        try:
+            chunks = pymupdf4llm.to_markdown(str(path), page_chunks=True)
+        except Exception:
+            return []
+        if isinstance(chunks, list):
+            pages: list[str] = []
+            for item in chunks:
+                if isinstance(item, dict):
+                    text = str(item.get("text") or item.get("page_content") or "").strip()
+                else:
+                    text = str(item).strip()
+                pages.append(text)
+            return pages
+        return str(chunks).split("\f")
+
+    @classmethod
+    def _strip_repeated_pdf_lines(cls, pages: list[str]) -> list[str]:
+        if len(pages) < 3:
+            return pages
+        occurrences: dict[str, int] = {}
+        for page in pages:
+            lines = [line.strip() for line in page.splitlines() if line.strip()]
+            edge_lines = [*lines[:3], *lines[-3:]]
+            keys = {key for line in edge_lines if (key := cls._boilerplate_key(line))}
+            for key in keys:
+                occurrences[key] = occurrences.get(key, 0) + 1
+        threshold = max(3, math.ceil(len(pages) * 0.6))
+        repeated = {key for key, count in occurrences.items() if count >= threshold}
+        if not repeated:
+            return pages
+        cleaned: list[str] = []
+        for page in pages:
+            out_lines = []
+            for line in page.splitlines():
+                key = cls._boilerplate_key(line)
+                if key and key in repeated:
+                    continue
+                out_lines.append(line)
+            cleaned.append("\n".join(out_lines))
+        return cleaned
+
+    @staticmethod
+    def _boilerplate_key(line: str) -> str:
+        text = re.sub(r"\s+", " ", line.strip()).lower()
+        if not text or len(text) > 120:
+            return ""
+        if re.fullmatch(r"(?:page\s*)?\d+(?:\s*/\s*\d+)?", text):
+            return text
+        if len(text) < 8:
+            return ""
+        return text
+
+    @classmethod
+    def _log_signature(cls, line: str) -> str:
+        text = re.sub(r"^\s*\d{4}[-/]\d{2}[-/]\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?\s*", "", line)
+        text = re.sub(r"^\s*\[[^\]]*\]\s*", "", text)
+        text = re.sub(
+            r"\b((?:request|trace|span|message|event|job|task)_?id)=[A-Za-z0-9_.:-]+",
+            r"\1=<id>",
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(r"\b0x[0-9a-fA-F]+\b", "0x<hex>", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return cls._clip(text, 180)
+
+    @staticmethod
+    def _log_severity(line: str) -> str:
+        match = re.search(r"\b(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|CRITICAL|FATAL)\b", line, re.IGNORECASE)
+        if not match:
+            return ""
+        severity = match.group(1).upper()
+        return "WARN" if severity == "WARNING" else severity
+
+    @staticmethod
+    def _log_heading(signature: str) -> str:
+        severity = TextReader._log_severity(signature)
+        terms = re.findall(r"[A-Za-z_][A-Za-z0-9_./:-]{2,}", signature)
+        useful = [term for term in terms if term.lower() not in TextReader._STOPWORDS]
+        prefix = f"{severity} " if severity else ""
+        return (prefix + " ".join(useful[:8])).strip()
 
     @staticmethod
     def _load_pdf_pages_with_pymupdf(path: Path) -> list[str]:
@@ -847,6 +1084,23 @@ class TextReader:
         blocks = [EvidenceBlock(anchor=u.anchor, text=self._clip(u.text, 360), score=0.2) for u in self._unique_units(preferred)]
         return self._fit_budget(blocks, min(budget, 1400))[:4]
 
+    @classmethod
+    def _fit_preview(cls, preview: dict[str, Any], budget: int) -> dict[str, Any]:
+        fitted = dict(preview)
+        while len(str(fitted)) > budget:
+            anchors = fitted.get("anchors")
+            headings = fitted.get("headings")
+            if isinstance(anchors, list) and len(anchors) > 2:
+                fitted["anchors"] = anchors[:-1]
+            elif isinstance(headings, list) and len(headings) > 8:
+                fitted["headings"] = headings[: max(8, len(headings) // 2)]
+            elif isinstance(fitted.get("log_signals"), list) and len(fitted["log_signals"]) > 8:
+                fitted["log_signals"] = fitted["log_signals"][:8]
+            else:
+                fitted["truncated_to_budget"] = True
+                break
+        return fitted
+
     @staticmethod
     def _goal_requests_section(hint: HintSpec) -> bool:
         goal = hint.goal.lower()
@@ -865,9 +1119,10 @@ class TextReader:
         if start_idx < 0:
             return []
 
+        end_idx = self._section_end_index(units, start_idx)
         picked: list[EvidenceBlock] = []
         used = 0
-        for offset, unit in enumerate(units[start_idx : start_idx + 10]):
+        for offset, unit in enumerate(units[start_idx:end_idx]):
             block = EvidenceBlock(
                 anchor=unit.anchor,
                 text=self._clip(unit.text, 900),
@@ -886,6 +1141,7 @@ class TextReader:
         terms = [*hint.needles, *hint.must_keep]
         goal_terms = re.findall(r"[A-Za-z0-9_./:-]{3,}", hint.goal)
         lowered_terms = [t.lower() for t in terms if t] + [t.lower() for t in goal_terms[:8]]
+        term_weights = self._term_weights(units, lowered_terms)
         must_keep_terms = {x.lower() for x in hint.must_keep if x}
         blocks: list[EvidenceBlock] = []
         for unit in units:
@@ -893,7 +1149,8 @@ class TextReader:
             score = 0.0
             for term in lowered_terms:
                 if term and term in hay:
-                    score += 4.0 if term in must_keep_terms else 2.0
+                    base = 4.0 if term in must_keep_terms else 2.0
+                    score += base * term_weights.get(term, 1.0)
             if hint.want in {"count", "fact"} and re.search(r"\b\d+(?:[.,]\d+)?\b", unit.text):
                 score += 0.8
             if self._looks_like_list_item(unit.text) or "suggested metrics" in hay:
@@ -906,6 +1163,183 @@ class TextReader:
             blocks = [EvidenceBlock(anchor=u.anchor, text=self._clip(u.text, 700), score=0.1) for u in units[:5]]
         blocks.sort(key=lambda b: b.score, reverse=True)
         return blocks
+
+    def _table_calc_ready_pack(
+        self,
+        path: Path,
+        artifact_id: str,
+        mode: str,
+        hint: HintSpec,
+        kind: str,
+        units: list[TextUnit],
+    ) -> EvidencePack | None:
+        if mode not in {"scout", "focus", "refine"}:
+            return None
+        if hint.want != "table" and not self._requests_full_table(hint):
+            return None
+        tables = self._extract_pipe_tables(units)
+        if not tables:
+            return None
+        materialized: list[dict[str, Any]] = []
+        evidence: list[EvidenceBlock] = []
+        for index, table in enumerate(tables[:4], start=1):
+            headers = table["headers"]
+            rows = table["rows"]
+            if not headers or not rows or len(rows) > 30:
+                continue
+            anchor = str(table["anchor"] or f"table_{index}")
+            calc_table = self._write_text_table(path, artifact_id, anchor, headers, rows)
+            materialized.append(calc_table)
+            evidence.append(EvidenceBlock(anchor, self._calc_ready_anchor_text(calc_table), 1.0))
+        if not materialized:
+            return None
+        calc_ready = self._calc_ready_payload(materialized)
+        return EvidencePack(
+            artifact_id=artifact_id,
+            mode=mode,
+            type=kind,
+            summary=f"{kind} table subset ready: {self._table_summary(materialized)}",
+            evidence=evidence,
+            unresolved=[],
+            calc_ready=calc_ready,
+            next_action=self._calc_next_action(),
+        )
+
+    @staticmethod
+    def _requests_full_table(hint: HintSpec) -> bool:
+        hay = " ".join([hint.goal, *hint.needles, *hint.must_keep]).lower()
+        phrases = (
+            "all rows",
+            "all data",
+            "all records",
+            "complete data",
+            "complete table",
+            "entire table",
+            "full table",
+            "data rows",
+        )
+        return any(phrase in hay for phrase in phrases)
+
+    def _extract_pipe_tables(self, units: list[TextUnit]) -> list[dict[str, Any]]:
+        tables: list[dict[str, Any]] = []
+        for unit in units:
+            lines = [line.strip() for line in unit.text.splitlines()]
+            idx = 0
+            while idx < len(lines) - 1:
+                if not self._looks_like_pipe_row(lines[idx]) or not self._looks_like_separator_row(lines[idx + 1]):
+                    idx += 1
+                    continue
+                headers = self._split_pipe_row(lines[idx])
+                rows: list[dict[str, str]] = []
+                idx += 2
+                while idx < len(lines) and self._looks_like_pipe_row(lines[idx]):
+                    values = self._split_pipe_row(lines[idx])
+                    if values and any(values):
+                        row = {
+                            header: values[col_idx] if col_idx < len(values) else ""
+                            for col_idx, header in enumerate(headers)
+                        }
+                        rows.append(row)
+                    idx += 1
+                if headers and rows:
+                    tables.append({"anchor": unit.anchor, "headers": headers, "rows": rows})
+            if len(tables) >= 4:
+                break
+        return tables
+
+    @staticmethod
+    def _looks_like_pipe_row(line: str) -> bool:
+        return line.count("|") >= 2 and bool(line.strip("|").strip())
+
+    @staticmethod
+    def _looks_like_separator_row(line: str) -> bool:
+        parts = [part.strip() for part in line.strip().strip("|").split("|")]
+        return bool(parts) and all(re.fullmatch(r":?-{3,}:?", part or "") for part in parts)
+
+    @staticmethod
+    def _split_pipe_row(line: str) -> list[str]:
+        parts = [part.strip() for part in line.strip().strip("|").split("|")]
+        return parts
+
+    def _write_text_table(
+        self,
+        source_path: Path,
+        artifact_id: str,
+        anchor: str,
+        headers: list[str],
+        rows: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        calc_path = self._calc_table_path(source_path, artifact_id, anchor)
+        calc_path.parent.mkdir(parents=True, exist_ok=True)
+        with StringIO() as buffer:
+            writer = csv.DictWriter(buffer, fieldnames=headers, delimiter="\t", lineterminator="\n")
+            writer.writeheader()
+            writer.writerows(rows)
+            calc_path.write_text(buffer.getvalue(), encoding="utf-8")
+        return {
+            "anchor": anchor,
+            "name": anchor,
+            "row_count": len(rows),
+            "column_count": len(headers),
+            "columns": headers,
+            "tsv_path": str(calc_path),
+        }
+
+    @staticmethod
+    def _calc_table_path(source_path: Path, artifact_id: str, anchor: str) -> Path:
+        safe_anchor = re.sub(r"[^A-Za-z0-9_.-]+", "_", anchor).strip("._") or "table"
+        return source_path.parent / ".nanobot" / "sro-calc" / artifact_id / f"{safe_anchor}.tsv"
+
+    @staticmethod
+    def _calc_ready_payload(tables: list[dict[str, Any]]) -> dict[str, Any]:
+        return {
+            "kind": "structured_rows",
+            "instructions": "Use the TSV artifact(s) in calc_ready['tables'] as the exact source for the next calculation step.",
+            "tables": tables,
+            "python_variable": "calc_ready",
+            "python_prelude": (
+                "import csv; tables = {t['name']: list(csv.DictReader(open(t['tsv_path'], newline='', encoding='utf-8'), delimiter='\t')) "
+                "for t in calc_ready['tables']}"
+            ),
+        }
+
+    @staticmethod
+    def _calc_next_action() -> dict[str, Any]:
+        return {
+            "tool": "exec",
+            "priority": "immediate",
+            "reason": "Exact table subset is already materialized.",
+            "instructions": [
+                "Use calc_ready['tables'][*]['tsv_path'] in one short calculation script.",
+                "Do not reread the source object.",
+            ],
+        }
+
+    @staticmethod
+    def _calc_ready_anchor_text(table: dict[str, Any]) -> str:
+        columns = [str(column) for column in table.get("columns", []) if str(column)]
+        column_text = ", ".join(columns[:24])
+        return f"{table.get('name')}: {table.get('row_count', 0)} rows x {table.get('column_count', len(columns))} columns; columns: {column_text}"
+
+    @staticmethod
+    def _table_summary(tables: list[dict[str, Any]]) -> str:
+        return "; ".join(
+            f"{table.get('name')}: {table.get('row_count', 0)} rows x {table.get('column_count', 0)} columns"
+            for table in tables
+        )
+
+    @staticmethod
+    def _term_weights(units: list[TextUnit], terms: list[str]) -> dict[str, float]:
+        unique_terms = [term for term in dict.fromkeys(terms) if len(term) >= 3]
+        if not unique_terms:
+            return {}
+        doc_count = max(1, len(units))
+        weights: dict[str, float] = {}
+        for term in unique_terms:
+            df = sum(1 for unit in units if term in f"{unit.heading}\n{unit.text}".lower())
+            if df:
+                weights[term] = 1.0 + math.log((doc_count + 1) / (df + 1))
+        return weights
 
     def _fit_budget(self, blocks: list[EvidenceBlock], budget: int) -> list[EvidenceBlock]:
         picked: list[EvidenceBlock] = []
@@ -961,6 +1395,32 @@ class TextReader:
             if lowered not in out:
                 out.append(lowered)
         return out[:6]
+
+    @staticmethod
+    def _section_end_index(units: list[TextUnit], start_idx: int) -> int:
+        if start_idx < 0 or start_idx >= len(units):
+            return len(units)
+        start_heading = units[start_idx].heading
+        soft_limit = min(len(units), start_idx + 40)
+        for idx in range(start_idx + 1, soft_limit):
+            heading = units[idx].heading
+            first_line = units[idx].text.strip().splitlines()[0].strip() if units[idx].text.strip() else ""
+            if start_heading and heading and heading != start_heading and TextReader._looks_like_section_break(first_line):
+                return idx
+            if not start_heading and heading and TextReader._looks_like_section_break(first_line):
+                return idx
+        return soft_limit
+
+    @staticmethod
+    def _looks_like_section_break(line: str) -> bool:
+        low = line.lower().rstrip(":")
+        if low in {"comparative table", "roadmap", "prioritized roadmap", "visualization", "appendix", "references"}:
+            return True
+        if line.startswith("#"):
+            return True
+        if re.match(r"^\d+(?:\.\d+)*[.)]?\s+\S", line):
+            return True
+        return line.isupper() and len(re.findall(r"[A-Za-z][A-Za-z&/+.-]*", line)) >= 2
 
     @staticmethod
     def _looks_like_list_item(line: str) -> bool:

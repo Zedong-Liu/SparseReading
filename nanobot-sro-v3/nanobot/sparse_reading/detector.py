@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 STRUCTURED_EXTS = {".csv", ".tsv", ".xlsx", ".json", ".yaml", ".yml", ".xml"}
+LAMMPS_LIBRARY_MARKERS = {"lammps_input", "lammps_script", "LammpsRunner", "in.lammps"}
 TEXT_EXTS = {
     ".pdf",
     ".txt",
@@ -22,11 +23,15 @@ TEXT_EXTS = {
     ".conf",
 }
 SUPPORTED_EXTS = STRUCTURED_EXTS | TEXT_EXTS
-COLLECTION_EXTS = SUPPORTED_EXTS | {".eml"}
+COLLECTION_EXTS = SUPPORTED_EXTS | {".eml", ".lammps", ".in"}
 DEFAULT_LARGE_BYTES = int(os.environ.get("SRO_LARGE_BYTES", "4096"))
 DEFAULT_STRUCTURED_LARGE_BYTES = int(os.environ.get("SRO_STRUCTURED_LARGE_BYTES", "1024"))
 DEFAULT_COLLECTION_FILES = int(os.environ.get("SRO_COLLECTION_FILES", "3"))
-SKIP_DIRS = {".git", ".nanobot", "__pycache__", ".pytest_cache", ".ruff_cache", "memory", "sessions", "bootstrap", "skills"}
+SKIP_DIRS = {
+    ".git", ".nanobot", ".openclaw", "__pycache__", ".pytest_cache",
+    ".ruff_cache", "memory", "sessions", "bootstrap", "skills",
+}
+SKIP_FILES = {"AGENTS.md", "BOOTSTRAP.md", "HEARTBEAT.md", "IDENTITY.md", "SOUL.md", "TOOLS.md", "USER.md"}
 
 
 @dataclass(slots=True)
@@ -56,16 +61,48 @@ def file_type(path: Path) -> str:
     return "text"
 
 
+def is_script_library(path: Path) -> bool:
+    if not path.is_dir():
+        return False
+    py_files = [
+        entry for entry in path.rglob("*.py")
+        if entry.is_file()
+        and entry.name not in SKIP_FILES
+        and not any(part in SKIP_DIRS for part in entry.relative_to(path).parts[:-1])
+    ]
+    if len(py_files) < 3:
+        return False
+    hits = 0
+    for entry in py_files:
+        try:
+            sample = entry.read_text(encoding="utf-8", errors="replace")[:2000]
+        except OSError:
+            continue
+        if any(marker in sample for marker in LAMMPS_LIBRARY_MARKERS):
+            hits += 1
+    return hits * 2 >= len(py_files)
+
+
 def inspect_file(path: str | Path, *, large_bytes: int | None = None) -> FileInfo:
     p = Path(path).expanduser().resolve()
     if p.is_dir():
         files = [
             entry for entry in p.rglob("*")
             if entry.is_file()
+            and entry.name not in SKIP_FILES
             and not any(part in SKIP_DIRS for part in entry.relative_to(p).parts[:-1])
             and (entry.suffix.lower() in COLLECTION_EXTS or entry.name.lower().startswith("readme"))
         ]
         size = sum(entry.stat().st_size for entry in files if entry.exists())
+        if is_script_library(p):
+            return FileInfo(
+                path=p,
+                type="script_library",
+                size_bytes=size,
+                structured=False,
+                supported=True,
+                large=True,
+            )
         return FileInfo(
             path=p,
             type="collection",

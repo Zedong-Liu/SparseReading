@@ -153,6 +153,54 @@ def test_sro_card_and_artifact_followup_for_csv(tmp_path, monkeypatch):
     assert any("West" in block.text for block in focus.evidence)
 
 
+def test_sro_preview_l0_csv_has_schema_sample_and_no_hintspec(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    csv_path = tmp_path / "events.csv"
+    csv_path.write_text(
+        "id,status,latency,created_at\n"
+        + "\n".join(f"{idx},ok,{idx + 10},2026-06-{idx % 28 + 1:02d}" for idx in range(20)),
+        encoding="utf-8",
+    )
+    sro = SparseReadingOrchestrator(tmp_path)
+
+    preview = sro.preview(csv_path)
+
+    assert preview["entrypoint"] == "sro_preview"
+    assert preview["level"] == "L0_default_no_hintspec"
+    assert preview["file_card"]["type"] == "csv"
+    assert preview["default_view"]["kind"] == "csv_preview"
+    assert preview["default_view"]["row_count"] == 20
+    assert preview["default_view"]["columns"] == ["id", "status", "latency", "created_at"]
+    assert preview["default_view"]["column_types"]["latency"] == "int"
+    assert len(preview["default_view"]["sample_rows"]) <= 5
+    assert "hint_template" in preview["targeted_followup"] or "allowed_next" in preview["targeted_followup"]
+
+
+def test_sro_preview_l0_long_markdown_is_extractable_and_compact(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    sections = []
+    for idx in range(80):
+        sections.append(
+            f"## Section {idx}\n\n"
+            f"This is deterministic markdown content for section {idx}. "
+            f"The important trace marker is TRACE-{idx:03d}.\n\n"
+            + ("background filler text " * 30)
+        )
+    md_path = tmp_path / "long_report.md"
+    md_path.write_text("# Long Report\n\n" + "\n\n".join(sections), encoding="utf-8")
+    sro = SparseReadingOrchestrator(tmp_path)
+
+    preview = sro.preview(md_path)
+    serialized = json.dumps(preview, ensure_ascii=False)
+
+    assert preview["default_view"]["kind"] == "text_preview"
+    assert preview["default_view"]["headings"]
+    assert preview["default_view"]["anchors"]
+    assert preview["budget_chars"] <= 1800
+    assert len(serialized) < 3000
+    assert len(serialized) < md_path.stat().st_size // 5
+
+
 def test_refine_requires_artifact(tmp_path):
     sro = SparseReadingOrchestrator(tmp_path)
     result = sro.read({"path": str(tmp_path / "missing.csv")}, "refine", _hint())
@@ -743,17 +791,23 @@ def test_collection_collect_adds_diagnostic_closure(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     sro = SparseReadingOrchestrator(tmp_path)
-    card = sro.card(tmp_path)
-
-    pack = sro.read(
-        {"artifact_id": card.artifact_id},
-        "collect",
+    hint, errors = HintSpec.from_obj(
         {
             "goal": "Diagnose why scheduled notification failed",
             "needles": ["retry_after", "fallback", "rate_limit"],
             "want": "fact",
             "type_hint": "collection",
-        },
+        }
+    )
+    assert hint is not None
+    assert errors == []
+
+    pack = sro.collection_reader.read(
+        tmp_path,
+        "diagnostic_collection",
+        "collect",
+        hint,
+        budget=20_000,
     )
 
     closure = next(block.text for block in pack.evidence if block.anchor == "collection_diagnosis_closure")
@@ -950,6 +1004,59 @@ def test_panel_did_bundle_uses_native_gate(tmp_path, monkeypatch):
     assert pack.summary.startswith("low-sparse fallback")
     assert pack.next_action is not None
     assert "native read listed files" in pack.next_action["allowed_next"]
+
+
+def test_native_fit_bundles_use_native_gate(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    cases = {
+        "literature": [
+            ("cron_config.json", '{"sources":["medrxiv_infectious"]}\n'),
+            ("cron_logs/cron_execution_20260210_145000.json", '{"errors":["HTTPError_429"]}\n'),
+            ("literature_results/master_progress_tracker.json", '{"sources_attempted":6}\n'),
+            ("literature_results/run_history_summary.json", '{"HTTPError_429":38}\n'),
+            ("scripts/stable_literature_retrieval.py", "print('stable')\n"),
+            ("scripts/verified_rss_sources.py", "SOURCES=[]\n"),
+        ],
+        "discount": [
+            ("data/discount_rules.json", '{"tier_discounts":{},"spending_bonus":{}}\n'),
+            ("data/users.csv", "user_id,tier\n1,gold\n"),
+            ("data/product_catalog.csv", "sku,price\nA,10\n"),
+            ("config/promotion_schedule.json", '{"active":true}\n'),
+            ("docs/discount_policy.md", "Discount policy\n"),
+            ("discount_calculator.py", "# write calculator here\n"),
+        ],
+        "pnl": [
+            ("data/2026_new_issuance_transactions.csv", "deal_id,pnl\nD1,10\n"),
+            ("data/2026_new_issuance_transactions.json", '[{"deal_id":"D1","pnl":10}]\n'),
+            ("data/historical_transactions_2024_2025.csv", "year,pnl\n2025,5\n"),
+            ("data/deal_pipeline_2027.json", "[]\n"),
+            ("reports/2026_pnl_analysis.md", "analysis\n"),
+            ("reports/q3_2026_new_issuance_summary.md", "summary\n"),
+        ],
+        "scheduled_notification": [
+            ("book_recommendation.sh", "python scripts/send_book_recommendation.py\n"),
+            ("config/messaging.yaml", "telegram:\n  rate_limit: 1\n"),
+            ("config/task_scheduler.yaml", "schedule: daily\n"),
+            ("logs/book_recommendation.log", "ERROR Telegram 429 retry_after=3600\n"),
+            ("scripts/send_book_recommendation.py", "print('send')\n"),
+            ("templates/book_recommendation.md", "template\n"),
+            ("data/books.json", "[]\n"),
+        ],
+    }
+
+    for name, files in cases.items():
+        case_root = tmp_path / name
+        for rel, content in files:
+            path = case_root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+
+        sro = SparseReadingOrchestrator(case_root)
+        card = sro.card(case_root)
+
+        assert card.sparse_recommended is False, name
+        assert card.recommended_mode == "native_read", name
+        assert not sro.should_handoff_read(case_root), name
 
 
 def test_native_workspace_still_intercepts_intrinsically_sparse_child(tmp_path, monkeypatch):
@@ -1711,6 +1818,117 @@ def test_small_xlsx_focus_returns_calc_ready_payload(tmp_path):
     assert pack.unresolved == []
 
 
+def test_pdf_markdown_table_focus_returns_calc_ready_payload(tmp_path, monkeypatch):
+    pdf_path = tmp_path / "report.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+    sro = SparseReadingOrchestrator(tmp_path)
+    monkeypatch.setattr(
+        sro.text_reader,
+        "_extract_pdf_pages",
+        lambda _path: [
+            "| region | revenue | cost |\n"
+            "| --- | ---: | ---: |\n"
+            "| North | 100 | 50 |\n"
+            "| South | 200 | 75 |\n"
+        ],
+    )
+
+    pack = sro.read(
+        {"path": str(pdf_path)},
+        "focus",
+        {
+            "goal": "Get the full table for exact calculation",
+            "needles": ["full table", "revenue", "cost"],
+            "want": "table",
+            "type_hint": "pdf",
+        },
+    )
+
+    assert pack.calc_ready is not None
+    table = pack.calc_ready["tables"][0]
+    assert table["columns"] == ["region", "revenue", "cost"]
+    assert table["row_count"] == 2
+    assert "South\t200\t75" in Path(table["tsv_path"]).read_text(encoding="utf-8")
+    assert pack.next_action is not None
+    assert pack.next_action["tool"] == "exec"
+
+
+def test_log_reader_groups_repeated_events(tmp_path):
+    log_path = tmp_path / "book_recommendation.log"
+    log_path.write_text(
+        "2026-03-19 09:00:01 ERROR request_id=a1 Telegram API 429 retry_after=3600\n"
+        "2026-03-19 09:00:02 ERROR request_id=b2 Telegram API 429 retry_after=3600\n"
+        "2026-03-19 09:00:03 ERROR request_id=c3 Telegram API 429 retry_after=3600\n",
+        encoding="utf-8",
+    )
+    sro = SparseReadingOrchestrator(tmp_path)
+
+    pack = sro.read(
+        {"path": str(log_path)},
+        "focus",
+        {
+            "goal": "Diagnose Telegram 429 retry_after failure",
+            "needles": ["Telegram", "429", "retry_after"],
+            "want": "fact",
+            "type_hint": "text",
+        },
+    )
+
+    assert pack.type == "log"
+    assert any("ERROR: 3" in item for item in pack.skeleton)
+    assert pack.evidence
+    assert "repeated 3x" in pack.evidence[0].text
+    assert "retry_after=3600" in pack.evidence[0].text
+
+
+def test_json_schema_read_includes_path_index(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "telegram": {"enabled": True, "retry_after": 3600},
+                    "email": {"enabled": False},
+                },
+                "limits": [{"name": "daily", "value": 10}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    sro = SparseReadingOrchestrator(tmp_path)
+
+    pack = sro.read(
+        {"path": str(path)},
+        "scout",
+        {"goal": "Get schema paths", "want": "schema", "type_hint": "json"},
+    )
+
+    assert any("$.providers: object keys=telegram, email" in item for item in pack.skeleton)
+    text = "\n".join(block.text for block in pack.evidence)
+    assert "$.providers.telegram" in text
+    assert "$.limits: list len=1" in text
+
+
+def test_xml_schema_read_includes_element_paths(tmp_path):
+    path = tmp_path / "policy.xml"
+    path.write_text(
+        "<policy version='3.2'><rules><rule id='INJ-004'>deny curl pipe bash</rule></rules></policy>",
+        encoding="utf-8",
+    )
+    sro = SparseReadingOrchestrator(tmp_path)
+
+    pack = sro.read(
+        {"path": str(path)},
+        "scout",
+        {"goal": "Get XML schema paths", "want": "schema", "type_hint": "xml"},
+    )
+
+    assert any("/policy/rules[1]/rule[1]" in item for item in pack.skeleton)
+    text = "\n".join(block.text for block in pack.evidence)
+    assert "/policy/rules[1]/rule[1]" in text
+    assert "@id=INJ-004" in text
+
+
 def test_hintspec_coerces_string_needles():
     hint, errors = HintSpec.from_obj({
         "goal": "overview",
@@ -1756,6 +1974,52 @@ def test_hintspec_repairs_slots_embedded_in_other_field():
     assert errors == []
     assert hint is not None
     assert [slot.id for slot in hint.slots] == ["q1", "q2"]
+
+
+def test_hintspec_accepts_slot_id_to_question_mapping():
+    hint, errors = HintSpec.from_obj({
+        "goal": "Answer report questions",
+        "type_hint": "pdf",
+        "slots": {
+            "community_skills_before_filter": "How many community-built skills were in the public registry before filtering?",
+            "gateway_api_type": "What type of API does the OpenClaw gateway expose?",
+        },
+    })
+
+    assert errors == []
+    assert hint is not None
+    assert [slot.id for slot in hint.slots] == ["community_skills_before_filter", "gateway_api_type"]
+    assert hint.slots[0].question.startswith("How many community-built skills")
+
+
+def test_hintspec_rejects_string_slot_ids_without_questions():
+    hint, errors = HintSpec.from_obj({
+        "goal": "Answer report questions",
+        "type_hint": "pdf",
+        "slots": ["community_skills_before_filter", "gateway_api_type"],
+    })
+
+    assert hint is not None
+    assert errors == [
+        "hint.slots[0] must be an object with id/question; string slot ids are not enough",
+        "hint.slots[1] must be an object with id/question; string slot ids are not enough",
+    ]
+    assert hint.slots == []
+
+
+def test_hintspec_rejects_keyword_phrase_string_slots():
+    hint, errors = HintSpec.from_obj({
+        "goal": "Answer LooGLE follow-up questions",
+        "type_hint": "text",
+        "slots": [
+            "tripoli uninterrupted christian rule duration",
+            "when was henry ii crowned king of jerusalem?",
+        ],
+    })
+
+    assert hint is not None
+    assert errors == ["hint.slots[0] must be an object with id/question; string slot ids are not enough"]
+    assert [slot.question for slot in hint.slots] == ["when was henry ii crowned king of jerusalem?"]
 
 
 def test_calc_artifact_path_is_not_handed_off(tmp_path):
@@ -1827,7 +2091,7 @@ def test_pdf_focus_prefers_quoted_section_names(tmp_path):
     assert "Proposed tasks" in pack.evidence[0].text
 
 
-def test_sro_card_returns_exact_next_action_for_sparse_artifact(tmp_path, monkeypatch):
+def test_legacy_sro_card_uses_executable_default_and_collect_template(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     path = tmp_path / "report.md"
     path.write_text("x" * 5000, encoding="utf-8")
@@ -1838,8 +2102,10 @@ def test_sro_card_returns_exact_next_action_for_sparse_artifact(tmp_path, monkey
 
     assert result["next_action"]["tool"] == "sro_read"
     assert result["next_action"]["target"] == {"artifact_id": result["file_card"]["artifact_id"]}
-    assert result["next_action"]["mode"] == "collect"
-    assert "slots" not in result["next_action"]["hint"]
+    assert result["next_action"]["mode"] == "scout"
+    assert result["next_action"]["hint"]["slots"] == []
+    assert result["collect_template"]["mode"] == "collect"
+    assert result["collect_template"]["hint"]["slots"][0]["question"] == "copy a concrete user question here"
 
 
 def test_sro_read_normalizes_wrapped_mode_and_string_target(tmp_path, monkeypatch):
@@ -1903,6 +2169,29 @@ def test_invalid_collect_slots_returns_retry_next_action(tmp_path, monkeypatch):
     assert pack.next_action["allowed_next"] == ["retry_sro_read"]
     assert pack.next_action["target"] == {"artifact_id": card.artifact_id}
     assert pack.next_action["accepted_slot_ids"] == ["q1", "q2"]
+
+
+def test_invalid_string_slot_ids_return_retry_next_action(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    path = tmp_path / "report.md"
+    path.write_text("The public registry had 5,705 community-built skills.\n", encoding="utf-8")
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(path)
+
+    pack = sro.read(
+        {"artifact_id": card.artifact_id},
+        "collect",
+        {
+            "goal": "Answer report questions",
+            "slots": ["community_skills_before_filter"],
+        },
+    )
+
+    assert pack.summary == "invalid HintSpec"
+    assert "string slot ids are not enough" in pack.error
+    assert pack.next_action is not None
+    assert pack.next_action["allowed_next"] == ["retry_sro_read"]
+    assert pack.next_action["accepted_slot_ids"] == []
 
 
 # --- Diagnostic Ledger Tests ---

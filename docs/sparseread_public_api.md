@@ -49,8 +49,9 @@ agent.run("Audit this folder and write the report.")
 
 `wrap()` autodetects nanobot-style registries and installs:
 
-- `sro_card`
+- `sro_preview`
 - `sro_read`
+- `sro_card`
 - read/list/grep SRO guards
 - conservative command policy
 
@@ -173,9 +174,10 @@ class AgentAdapter:
     def install(self, agent, sparseread) -> list[str]: ...
 ```
 
-An adapter should do more than add two tools. For a full integration it should:
+An adapter should do more than add tools. For a full integration it should:
 
-- register `sro_card` and `sro_read`;
+- register `sro_preview` and `sro_read`;
+- keep `sro_card` only for benchmark/legacy compatibility;
 - route broad native `read_file` / `list_dir` / `grep` through Benefit Gate;
 - add command-security policy for broad raw dumps and repeated failed commands;
 - expose traces so users can see whether SparseRead intervened or passed through.

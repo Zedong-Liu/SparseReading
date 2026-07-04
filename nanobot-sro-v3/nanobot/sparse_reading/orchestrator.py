@@ -21,6 +21,7 @@ from nanobot.sparse_reading.models import (
 )
 from nanobot.sparse_reading.readers.structured import StructuredReader
 from nanobot.sparse_reading.readers.collection import CollectionReader
+from nanobot.sparse_reading.readers.script_library import ScriptLibraryReader
 from nanobot.sparse_reading.readers.text import TextReader
 
 
@@ -43,6 +44,7 @@ class SparseReadingOrchestrator:
         self._artifacts: dict[str, FileInfo] = {}
         self.structured_reader = StructuredReader()
         self.collection_reader = CollectionReader()
+        self.script_library_reader = ScriptLibraryReader()
         self.benefit_gate = BenefitGate(self.collection_reader, override=benefit_gate_override)
         self.text_reader = TextReader()
         self._slot_digests: dict[str, dict[str, Any]] = {}
@@ -117,12 +119,19 @@ class SparseReadingOrchestrator:
         generated_names = {
             "answer.txt",
             "command_classifications.json",
+            "fetch-audit.md",
             "final_answer.md",
             "diagnosis_report.md",
             "did_results_summary.md",
             "metrics_summary.json",
+            "monitoring-status.md",
             "analysis_results.json",
             "security_analysis_report.md",
+            "solution_report.md",
+            "eviction_analysis.json",
+            "bug_fixes.json",
+            "query_output.sparql",
+            "filtered_query.sparql",
         }
         if resolved.name.lower() in generated_names:
             return True
@@ -209,7 +218,7 @@ class SparseReadingOrchestrator:
         decision = self.benefit_gate.decide(info)
         if decision.mode == "native":
             self._remember_native_collection_root(info)
-        return info.type == "collection" and decision.action == "intercept"
+        return info.type in {"collection", "script_library"} and decision.action == "intercept"
 
     def card(self, path: str | Path) -> FileCard:
         info = self.inspect(path)
@@ -222,6 +231,8 @@ class SparseReadingOrchestrator:
             reason = "unsupported type; use native tools"
         elif not info.large:
             reason = "small supported object; native read is acceptable"
+        elif info.type == "script_library":
+            details = self.script_library_reader.card_details(info.path)
         elif info.type == "collection":
             details = self.collection_reader.card_details(info.path)
             self._remember_collection_artifact_children(info.path, self._artifact_for(info))
@@ -241,6 +252,40 @@ class SparseReadingOrchestrator:
             reason=reason,
             details=details,
         )
+
+    def preview(self, path: str | Path, *, budget: int | None = None) -> dict[str, Any]:
+        """Return the production L0 preview entrypoint.
+
+        The preview includes the FileCard as its smallest identity unit, then a
+        deterministic default view that does not require a HintSpec. Targeted
+        digging still happens through sro_read once the model has a concrete
+        evidence goal.
+        """
+        info = self.inspect(path)
+        card = self.card(info.path)
+        preview_budget = min(int(budget or self._budget("scout")), self._budget("scout"))
+        if info.type == "script_library":
+            default_view = self.script_library_reader.preview_details(info.path, preview_budget)
+        elif info.type == "collection":
+            default_view = self._collection_preview(info.path, preview_budget)
+        elif info.type in self._STRUCTURED:
+            default_view = self.structured_reader.preview_details(info.path, preview_budget)
+        elif info.type in self._TEXT or info.path.suffix.lower() in {".txt", ".md", ".markdown", ".rst", ".pdf", ".log"}:
+            default_view = self.text_reader.preview_details(info.path, preview_budget)
+        else:
+            default_view = {
+                "kind": "unsupported_preview",
+                "default_read": "use native tools; SparseRead has no deterministic reader for this object",
+            }
+        payload = {
+            "entrypoint": "sro_preview",
+            "level": "L0_default_no_hintspec",
+            "file_card": card.to_dict(),
+            "default_view": default_view,
+            "budget_chars": preview_budget,
+            "targeted_followup": self._preview_followup(card),
+        }
+        return self._fit_preview_payload(payload, preview_budget + 900)
 
     def handoff_message(self, path: str | Path) -> str:
         self.request_macro_activation()
@@ -317,6 +362,27 @@ class SparseReadingOrchestrator:
                 },
             }
             return json.dumps(payload, ensure_ascii=False, indent=2)
+        if card.type == "script_library":
+            payload = {
+                "sro_handoff": True,
+                "message": "LAMMPS script template library detected. Do not full-read the library; use focus with task_family/material needles to retrieve the closest validated template.",
+                "file_card": card.to_dict(),
+                "next_action": {
+                    "tool": "sro_read",
+                    "target": {"artifact_id": card.artifact_id},
+                    "mode": "focus",
+                    "hint": {
+                        "goal": "select the closest LAMMPS script template",
+                        "needles": [],
+                        "want": "verbatim",
+                        "scope": "new",
+                        "artifact": card.artifact_id,
+                        "type_hint": "script_library",
+                        "must_keep": [],
+                    },
+                },
+            }
+            return json.dumps(payload, ensure_ascii=False, indent=2)
         payload = {
             "sro_handoff": True,
             "message": "Large supported object detected. Do not full-read it first, and do not keep calling read_file on the same object. Bind to the returned artifact_id and continue with sro_read using a HintSpec. For multi-question PDF/report QA, use mode='collect' with hint.slots as the first read. For collections, use mode='collect' to get source-keyed excerpts for the task; use mode='focus' only when you only need candidate filenames.",
@@ -337,6 +403,69 @@ class SparseReadingOrchestrator:
             },
         }
         return json.dumps(payload, ensure_ascii=False, indent=2)
+
+    def _collection_preview(self, path: Path, budget: int) -> dict[str, Any]:
+        details = self.collection_reader.card_details(path)
+        files = list(details.get("files") or [])
+        preview = {
+            "kind": "collection_preview",
+            "file_count": details.get("file_count", len(files)),
+            "total_size_bytes": details.get("total_size_bytes"),
+            "files": files[:18],
+            "default_read": "file inventory + compact signals; use one sro_read collect only when a cross-file evidence goal is known",
+        }
+        return self._fit_preview_payload(preview, budget)
+
+    @staticmethod
+    def _preview_followup(card: FileCard) -> dict[str, Any]:
+        if not card.sparse_recommended:
+            if card.structured:
+                return {
+                    "allowed_next": ["native script over local path", "targeted sro_read if exact row/key evidence is needed"],
+                    "instruction": "For full-table calculation or aggregation, use the local file path in code instead of pulling rows into chat.",
+                }
+            return {
+                "allowed_next": ["native read/list/grep", "targeted sro_read only after native truncation or a concrete evidence goal"],
+                "instruction": "SparseRead preview is advisory for this object; native path is expected to be cheaper.",
+            }
+        mode = "collect" if card.type == "collection" or "collect" in card.recommended_mode else "focus"
+        type_hint = "text" if card.type in {"txt", "md", "markdown", "rst"} else card.type
+        return {
+            "tool": "sro_read",
+            "when": "only after the task has a concrete evidence goal, needles, or slots",
+            "target": {"artifact_id": card.artifact_id},
+            "mode": mode,
+            "hint_template": {
+                "goal": "state the concrete evidence needed from this artifact",
+                "needles": [],
+                "want": "fact",
+                "scope": "new",
+                "artifact": card.artifact_id,
+                "type_hint": type_hint,
+                "slots": [],
+            },
+            "instruction": "Do not call sro_card first in production; this preview already contains the FileCard.",
+        }
+
+    @staticmethod
+    def _fit_preview_payload(payload: dict[str, Any], budget: int) -> dict[str, Any]:
+        fitted = dict(payload)
+        while len(json.dumps(fitted, ensure_ascii=False, default=str)) > budget:
+            view = fitted.get("default_view") if isinstance(fitted.get("default_view"), dict) else fitted
+            if isinstance(view.get("files"), list) and len(view["files"]) > 8:
+                view["files"] = view["files"][: max(8, len(view["files"]) // 2)]
+            elif isinstance(view.get("anchors"), list) and len(view["anchors"]) > 2:
+                view["anchors"] = view["anchors"][:-1]
+            elif isinstance(view.get("headings"), list) and len(view["headings"]) > 8:
+                view["headings"] = view["headings"][:8]
+            elif isinstance(view.get("sample_rows"), list) and view["sample_rows"]:
+                view["sample_rows"] = view["sample_rows"][:-1]
+            elif isinstance(view.get("path_index"), list) and len(view["path_index"]) > 8:
+                view["path_index"] = view["path_index"][:8]
+            else:
+                fitted["truncated_to_budget"] = True
+                break
+        return fitted
 
     def read(self, target: Any, mode: str, hint_obj: Any) -> EvidencePack:
         if mode not in VALID_MODES:
@@ -377,6 +506,9 @@ class SparseReadingOrchestrator:
                 unresolved=list(hint.needles),
             )
 
+        if info.type == "script_library":
+            budget = self._collection_budget(mode)
+            return self.script_library_reader.read(info.path, artifact_id, mode, hint, budget)
         if info.type == "collection":
             if self._is_native_escape_collection(artifact_id):
                 return self._native_escape_pack(artifact_id, mode)
@@ -414,7 +546,7 @@ class SparseReadingOrchestrator:
         errors: list[str],
     ) -> EvidencePack:
         next_action = None
-        if hint.slots and any("hint.slots" in error for error in errors):
+        if any("hint.slots" in error for error in errors):
             next_action = {
                 "allowed_next": ["retry_sro_read"],
                 "tool": "sro_read",

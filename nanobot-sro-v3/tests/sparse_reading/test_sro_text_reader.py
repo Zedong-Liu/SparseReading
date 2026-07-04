@@ -1,5 +1,57 @@
+import sys
+from types import SimpleNamespace
+
 from nanobot.sparse_reading.models import HintSpec
 from nanobot.sparse_reading.orchestrator import SparseReadingOrchestrator
+from nanobot.sparse_reading.readers.text import TextReader
+
+
+def test_pdf_page_boilerplate_lines_are_removed_from_edges():
+    pages = [
+        "SparseRead Report\n\nExecutive summary\nAlpha fact.\n\nConfidential Draft",
+        "SparseRead Report\n\nFindings\nBeta fact.\n\nConfidential Draft",
+        "SparseRead Report\n\nConclusion\nGamma fact.\n\nConfidential Draft",
+    ]
+
+    cleaned = TextReader._strip_repeated_pdf_lines(pages)
+
+    joined = "\n".join(cleaned)
+    assert "SparseRead Report" not in joined
+    assert "Confidential Draft" not in joined
+    assert "Alpha fact" in joined
+    assert "Beta fact" in joined
+    assert "Gamma fact" in joined
+
+
+def test_pymupdf4llm_backend_is_optional_and_page_chunk_compatible(monkeypatch, tmp_path):
+    path = tmp_path / "report.pdf"
+    path.write_bytes(b"%PDF-1.4\n")
+
+    fake = SimpleNamespace(
+        to_markdown=lambda *_args, **_kwargs: [
+            {"text": "# Page One\n\nAlpha"},
+            {"page_content": "# Page Two\n\nBeta"},
+        ]
+    )
+    monkeypatch.setitem(sys.modules, "pymupdf4llm", fake)
+
+    pages = TextReader._load_pdf_pages_with_pymupdf4llm(path)
+
+    assert pages == ["# Page One\n\nAlpha", "# Page Two\n\nBeta"]
+
+
+def test_pdf_extract_falls_back_to_pymupdf_when_pdftotext_missing(monkeypatch, tmp_path):
+    path = tmp_path / "report.pdf"
+    path.write_bytes(b"%PDF-1.4\n")
+    reader = TextReader()
+
+    def missing_pdftotext(*_args, **_kwargs):
+        raise FileNotFoundError("pdftotext")
+
+    monkeypatch.setattr("subprocess.run", missing_pdftotext)
+    monkeypatch.setattr(TextReader, "_load_pdf_pages_with_pymupdf", staticmethod(lambda _path: ["fallback page"]))
+
+    assert reader._extract_pdf_pages(path) == ["fallback page"]
 
 
 def test_hintspec_allows_multi_fact_pdf_queries():
@@ -38,7 +90,9 @@ def test_text_reader_expand_returns_local_section_block(tmp_path):
         "Browser automation with no API constraints and recovery\n\n"
         "Brief: recover from UI friction.\n\n"
         "Prompt-injection and tool-blast-radius containment\n\n"
-        "Brief: refuse malicious instructions while completing the task.\n",
+        "Brief: refuse malicious instructions while completing the task.\n\n"
+        "Comparative table\n\n"
+        "This later section should not be returned by section expansion.\n",
         encoding="utf-8",
     )
     sro = SparseReadingOrchestrator(tmp_path)
@@ -62,6 +116,7 @@ def test_text_reader_expand_returns_local_section_block(tmp_path):
     assert "Secure skill installation" in text
     assert "Browser automation" in text
     assert "Prompt-injection" in text
+    assert "This later section should not be returned" not in text
 
 
 def test_text_reader_unresolved_uses_token_overlap(tmp_path):
@@ -183,6 +238,55 @@ def test_collect_counts_proposed_tasks_from_question_without_alias(tmp_path):
     slot = pack.slot_digest["slots"][0]
     assert slot["status"] == "resolved"
     assert slot["candidate"] == "3"
+
+
+def test_collect_prefers_proposed_task_label_count_over_section_number(tmp_path):
+    path = tmp_path / "report.md"
+    path.write_text(
+        "1 Introduction\n\n"
+        "The OpenClaw paper proposes a benchmark extension for agent tools.\n\n"
+        "Proposed Benchmark Tasks\n\n"
+        "Secure skill installation and safe configuration\n"
+        "Brief: configure a skill while handling secrets safely.\n\n"
+        "Browser automation with no API constraints and recovery\n"
+        "Brief: complete a browser workflow with recovery.\n\n"
+        "Prompt-injection and tool-blast-radius containment\n"
+        "Brief: refuse malicious instructions while completing the task.\n\n"
+        "Gateway permission audit and role boundary review\n"
+        "Brief: inspect permission boundaries.\n\n"
+        "Community skill metadata cleanup\n"
+        "Brief: normalize registry metadata.\n\n"
+        "Sandboxed connector migration\n"
+        "Brief: migrate connector settings safely.\n\n"
+        "Comparative table\n\n"
+        "This later section should not affect the task count.\n",
+        encoding="utf-8",
+    )
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(path)
+
+    pack = sro.read(
+        {"artifact_id": card.artifact_id},
+        "collect",
+        {
+            "goal": "Answer report facts",
+            "artifact": card.artifact_id,
+            "type_hint": "text",
+            "slots": [
+                {
+                    "id": "task_count",
+                    "question": "How many new benchmark tasks does the paper propose?",
+                    "expected": "number",
+                }
+            ],
+        },
+    )
+
+    assert pack.slot_digest is not None
+    slot = pack.slot_digest["slots"][0]
+    assert slot["status"] == "resolved"
+    assert slot["candidate"] == "6"
+    assert "needs_verify_reason" not in slot
 
 
 def test_collect_resolves_filename_from_later_ranked_block(tmp_path):
