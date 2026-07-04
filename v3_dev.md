@@ -3811,3 +3811,77 @@ Interpretation:
 - The OpenClaw provider route is locally validated in the isolated profile; the
   earlier `Unknown model: paratera/DeepSeek-V4-Flash` blocker is no longer the
   current state for this profile.
+
+## 2026-07-04: Source Install Shape And Release Fixtures
+
+Objective:
+
+- Converge the community-facing install shape for users who already have
+  OpenCode or OpenClaw installed locally.
+- Keep this as a source checkout install, not a PyPI/npm marketplace release.
+- Add a fixed local release fixture suite that should run before each version
+  update.
+
+Install shape:
+
+- Added `scripts/install_sparseread.py`.
+- OpenCode path:
+  - installs `.opencode/plugins/sparseread.ts` into a chosen workspace
+  - writes `.opencode/sparseread.env` with the repo-backed bridge command
+  - user launches with `source .opencode/sparseread.env && opencode ...`
+- OpenClaw path:
+  - builds `integrations/openclaw/plugin`
+  - runs `openclaw plugins install --link integrations/openclaw/plugin`
+  - enables `sparseread-openclaw`
+  - patches plugin config with `bridgeCommand`, `projectRoot`, `workspaceRoot`,
+    `policy`, and `mode`
+- The bridge command is unified as:
+  - `uv --project <repo>/nanobot-sro-v3 run --with pymupdf python`
+
+Docs:
+
+- Rewrote `docs/sparseread_installation.md` around fresh-machine source
+  install for users with existing OpenCode/OpenClaw CLIs.
+- Updated `integrations/README.md`, `integrations/opencode/README.md`,
+  `integrations/openclaw/README.md`, and the OpenClaw plugin README to point
+  to the installer instead of making manual env/config edits the main path.
+
+Release fixtures:
+
+- Added `nanobot-sro-v3/tests/sparse_reading/test_release_fixtures.py`.
+- Six deterministic local fixtures:
+  1. long markdown key-value fields
+  2. log level preview plus raw selector
+  3. CSV schema/sample/signals
+  4. JSON schema/sample/signals
+  5. YAML schema/sample/signals
+  6. XML root/schema/sample preview
+- Each fixture runs through both `OpenCodeBridge` and `OpenClawBridge`.
+
+Validation:
+
+```text
+python3 -m py_compile scripts/install_sparseread.py
+passed
+
+python3 scripts/install_sparseread.py --platform opencode --opencode-cmd npx --doctor-only
+opencode bridge smoke passed
+
+python3 scripts/install_sparseread.py --platform openclaw --openclaw-cmd npx --doctor-only
+openclaw bridge smoke passed
+
+uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
+  pytest nanobot-sro-v3/tests/sparse_reading/test_release_fixtures.py -q
+6 passed
+
+uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
+  pytest nanobot-sro-v3/tests/sparse_reading -q
+147 passed
+```
+
+Scope note:
+
+- This is now suitable for technical source-install users who already have the
+  framework CLI and model credentials configured.
+- It is still not a marketplace/PyPI/npm one-command public release. That
+  requires packaging and CI against fresh OS images and framework versions.

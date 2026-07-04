@@ -35,6 +35,26 @@ native. Command-security bundles stay SR-assisted, but use a stricter
 one-collect-then-write advisory trajectory to avoid repeated SR ready-after
 reads while preserving native reads for small templates.
 
+## Install
+
+Use the source installer from the repository root when OpenCode is already
+installed:
+
+```bash
+python3 scripts/install_sparseread.py \
+  --platform opencode \
+  --opencode-workspace /path/to/project \
+  --doctor
+```
+
+Then launch OpenCode from that workspace:
+
+```bash
+cd /path/to/project
+source .opencode/sparseread.env
+opencode run "Use SparseRead to inspect the large report"
+```
+
 ## Runner
 
 ```bash

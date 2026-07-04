@@ -1,7 +1,8 @@
-# SparseRead Installation Guide
+# SparseRead Fresh-Machine Installation
 
-This guide describes the current production integration shape for nanobot,
-OpenCode, and OpenClaw.
+This is the default source-install shape for community users who already have
+OpenCode or OpenClaw installed locally. SparseRead is installed from this
+repository checkout; PyPI/npm marketplace publishing is a later release step.
 
 Production entrypoint:
 
@@ -11,149 +12,172 @@ sro_read(target, mode, hint) -> targeted evidence only when needed
 sro_raw(raw_ref) -> explicit original-content fallback
 ```
 
-`sro_card` is still shipped for benchmark and legacy compatibility. New
-integrations should not teach users to start there.
+`sro_card` is still shipped for benchmark and legacy compatibility. Product
+docs and prompts should start from `sro_preview`.
 
-## Prerequisites
+## Supported Versions
 
-- Python 3.11+
+Fresh install validation on 2026-07-04 used:
+
+- OpenCode `1.17.13`
+- OpenClaw `2026.6.11`
+- Python `3.11+`
+- Node.js `22.22.2+`; Node 24 should be `24.15.0+`
 - `uv`
-- Node.js 22.22.2+ for TypeScript plugin build checks. Node 24 should be
-  24.15.0+; Node 24.14.x can build locally but may emit upstream npm engine
-  warnings from OpenCode dependencies.
-- A checkout of this repository
+- `npm`
 
-Use the repo-backed bridge command for OpenCode/OpenClaw:
+OpenClaw plugin metadata declares `openclaw >= 2026.5.17`. Older framework
+versions may work only if they expose the same plugin/tool APIs.
+
+## Install From Source
+
+Clone the repository:
 
 ```bash
-export SPARSEREAD_PROJECT_ROOT="$PWD"
-export SPARSEREAD_BRIDGE_COMMAND='["uv","run","--project","'"$PWD"'/nanobot-sro-v3","python"]'
-export SPARSEREAD_MODE=auto
+git clone https://github.com/Zedong-Liu/SparseReading.git
+cd SparseReading
 ```
 
-## Shared Local Verification
+Run the installer for the framework you use.
 
-Run the Python core, public API, and bridge tests:
+### OpenCode
+
+Install SparseRead into an OpenCode workspace:
+
+```bash
+python3 scripts/install_sparseread.py \
+  --platform opencode \
+  --opencode-workspace /path/to/your/project \
+  --policy auto \
+  --mode auto \
+  --doctor
+```
+
+The installer writes:
+
+```text
+/path/to/your/project/.opencode/plugins/sparseread.ts
+/path/to/your/project/.opencode/sparseread.env
+```
+
+Launch OpenCode from that workspace with the generated environment:
+
+```bash
+cd /path/to/your/project
+source .opencode/sparseread.env
+opencode run "Use SparseRead to inspect the large report and answer the question"
+```
+
+If your binary is named differently, pass it explicitly:
+
+```bash
+python3 scripts/install_sparseread.py \
+  --platform opencode \
+  --opencode-cmd opencode-ai \
+  --opencode-workspace /path/to/your/project
+```
+
+### OpenClaw
+
+Install SparseRead into an existing OpenClaw profile:
+
+```bash
+python3 scripts/install_sparseread.py \
+  --platform openclaw \
+  --policy auto \
+  --mode auto \
+  --doctor
+```
+
+The installer:
+
+- builds `integrations/openclaw/plugin`
+- runs `openclaw plugins install --link integrations/openclaw/plugin`
+- enables `sparseread-openclaw`
+- patches the plugin config with a repo-backed SparseRead bridge command
+
+Inspect the loaded plugin:
+
+```bash
+openclaw plugins inspect sparseread-openclaw --runtime --json
+```
+
+Expected tool surface:
+
+```text
+sro_preview, sro_raw, sro_card, sro_read, sro_decide, sro_trace
+```
+
+OpenClaw provider/model credentials are still configured by OpenClaw itself.
+SparseRead does not install or manage model keys.
+
+For a named OpenClaw profile, pass it explicitly:
+
+```bash
+python3 scripts/install_sparseread.py \
+  --platform openclaw \
+  --openclaw-profile work \
+  --doctor
+
+openclaw --profile work plugins inspect sparseread-openclaw --runtime --json
+```
+
+### Both Frameworks
+
+If both CLIs are already installed:
+
+```bash
+python3 scripts/install_sparseread.py \
+  --platform both \
+  --opencode-workspace /path/to/your/project \
+  --policy auto \
+  --mode auto \
+  --doctor
+```
+
+## Doctor Checks
+
+Run checks without changing framework config:
+
+```bash
+python3 scripts/install_sparseread.py --platform opencode --doctor-only
+python3 scripts/install_sparseread.py --platform openclaw --doctor-only
+```
+
+The doctor validates local commands and starts each Python bridge against a
+small temporary markdown fixture.
+
+## Release Fixture Suite
+
+Every release should run the fixed six-fixture local suite:
+
+```bash
+uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
+  pytest nanobot-sro-v3/tests/sparse_reading/test_release_fixtures.py -q
+```
+
+The six fixtures are:
+
+1. long markdown key-value fields
+2. log level preview plus raw selector
+3. CSV schema/sample/signals
+4. JSON schema/sample/signals
+5. YAML schema/sample/signals
+6. XML root/schema/sample preview
+
+Each fixture runs through both `OpenCodeBridge` and `OpenClawBridge`, so the
+suite checks shared bridge parity in addition to reader behavior.
+
+For full local regression:
 
 ```bash
 uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
   pytest nanobot-sro-v3/tests/sparse_reading -q
 ```
 
-## nanobot
-
-Enable SparseRead in nanobot with `SRO_ENABLED=1`. The nanobot integration
-registers `sro_preview`, `sro_raw`, `sro_read`, and legacy `sro_card`, then
-attaches guards to `read_file`, `list_dir`, `grep`, and `exec`.
-
-Adapter install for an existing nanobot-style agent:
-
-```python
-from sparseread.adapters.nanobot import install
-
-runtime = install(agent, workspace=".")
-```
-
-Smoke check:
-
-```bash
-uv run --project nanobot-sro-v3 python - <<'PY'
-from pathlib import Path
-from sparseread import SparseRead
-
-root = Path(".sro_smoke")
-root.mkdir(exist_ok=True)
-target = root / "report.md"
-target.write_text("# Report\n\nThe gateway exposes a typed WebSocket API.\n" * 80)
-
-sr = SparseRead(workspace=root, mode="force")
-preview = sr.orchestrator.preview({"path": str(target)})
-print(preview.artifact_id, preview.card["type"], preview.raw_ref)
-PY
-```
-
-## OpenCode
-
-OpenCode loads the local TypeScript plugin from a workspace plugin directory.
-
-Build/typecheck the plugin:
-
-```bash
-cd integrations/opencode/plugin
-npm install
-npm run build
-cd ../../..
-```
-
-Install into a workspace:
-
-```bash
-mkdir -p .opencode/plugins
-cp integrations/opencode/plugin/sparseread.ts .opencode/plugins/sparseread.ts
-```
-
-Start OpenCode from the workspace with the shared bridge environment above.
-The plugin exposes `sro_preview`, `sro_raw`, `sro_read`, legacy `sro_card`,
-and `sro_trace`. In `enforce` policy it blocks only high-confidence broad
-native reads and points the model to `sro_preview`.
-
-Bridge subprocess smoke:
-
-```bash
-uv run --project nanobot-sro-v3 python -m sparseread.bridge.opencode \
-  --workspace . --mode force
-```
-
-Send JSONL:
-
-```json
-{"id":"1","method":"preview","params":{"path":"README.md"}}
-{"id":"2","method":"trace","params":{}}
-{"id":"3","method":"shutdown","params":{}}
-```
-
-## OpenClaw
-
-Build the plugin:
-
-```bash
-cd integrations/openclaw/plugin
-npm install
-npm run build
-cd ../../..
-```
-
-Install into OpenClaw:
-
-```bash
-openclaw plugins install --link integrations/openclaw/plugin
-openclaw plugins enable sparseread-openclaw
-openclaw plugins inspect sparseread-openclaw --runtime --json
-```
-
-Use the shared bridge environment above when launching OpenClaw. The plugin
-declares `sro_preview`, `sro_raw`, `sro_read`, `sro_decide`, `sro_trace`, and
-legacy `sro_card`. `openclaw` is an optional peer dependency for build-time
-safety; the running OpenClaw host provides `openclaw/plugin-sdk/plugin-entry`.
-
-Bridge subprocess smoke:
-
-```bash
-uv run --project nanobot-sro-v3 python -m sparseread.bridge.openclaw \
-  --workspace . --mode force
-```
-
-Send JSONL:
-
-```json
-{"id":"1","method":"preview","params":{"path":"README.md"}}
-{"id":"2","method":"trace","params":{}}
-{"id":"3","method":"shutdown","params":{}}
-```
-
 ## Benchmark Compatibility
 
 Existing benchmark scripts may still count `sro_card` and `sro_read` calls.
 That path remains available through `SPARSEREAD_MODE=bench_protocol` and
-`SparseReadConfig(mode="bench_protocol")`. Product prompts and user-facing docs
-should prefer `sro_preview` so default L0 reading does not require a HintSpec.
+`SparseReadConfig(mode="bench_protocol")`. Product installs should use
+`mode=auto` and start from `sro_preview`.

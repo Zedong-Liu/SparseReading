@@ -10,3 +10,10 @@ existing SparseRead core.
 Default policy is `advisory`. Production use starts with `sro_preview`; `sro_card`
 is retained for compatibility/debugging and `bench_protocol`. Use `enforce` only
 for controlled high-confidence long-document/PDF or compact audit-closure runs.
+
+For normal source installs, run this from the repository root instead of
+manually editing OpenClaw config:
+
+```bash
+python3 scripts/install_sparseread.py --platform openclaw --doctor
+```

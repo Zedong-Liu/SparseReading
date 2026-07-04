@@ -38,6 +38,20 @@ Command-security bundles use `advisory + one_collect_then_write`: preview first,
 then exactly one collection `collect` only when slots are explicit, write once
 ready, and allow small template or named unresolved-slot native reads.
 
+## Install
+
+Use the source installer from the repository root when OpenClaw is already
+installed:
+
+```bash
+python3 scripts/install_sparseread.py \
+  --platform openclaw \
+  --doctor
+```
+
+The installer builds this plugin, links it into OpenClaw, enables it, and
+patches the plugin config with the repo-backed SparseRead bridge command.
+
 ## Local Development
 
 Install or link the plugin with an OpenClaw CLI that supports native plugins:

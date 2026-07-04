@@ -24,6 +24,18 @@ Compatibility symlinks remain at `openclaw_pilot/` and `opencode_pilot/` so
 older runbook commands and local tooling continue to work.  New documentation
 and development should use `integrations/openclaw` and `integrations/opencode`.
 
+## Default Install Shape
+
+For users who already have OpenCode or OpenClaw installed, use the source
+installer from the repository root:
+
+```bash
+python3 scripts/install_sparseread.py --platform opencode --opencode-workspace /path/to/project --doctor
+python3 scripts/install_sparseread.py --platform openclaw --doctor
+```
+
+The full fresh-machine guide is `docs/sparseread_installation.md`.
+
 ## Boundary
 
 - Shared behavior belongs in `nanobot-sro-v3/sparseread/bridge/server.py`.
