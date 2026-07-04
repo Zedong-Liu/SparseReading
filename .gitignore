@@ -33,6 +33,16 @@ outputs/
 *.key
 *.pem
 
+# Local development notes and machine-specific runbooks
+AGENTS.md
+Agent.md
+agent.md
+remote.md
+docker.md
+runbook.md
+v3_plan.md
+v3_dev.md
+
 # Large/generated archives
 *.zip
 *.tar

@@ -30,43 +30,55 @@ SparseRead 是面向工具调用型 agent 的证据引导式阅读层。它拦�
 
 SparseRead（SRO v3）是一个面向工具调用型 agent 的 sparse-reading 协议。通过确定性的 Benefit Gate 和按类型分派的 reader，将大文件、长文本、PDF 以及审计类文件集合路由为紧凑的 evidence pack，替代反复的 broad read。
 
-当前协议接口：
+当前生产接口：
 
 ```text
-sro_card(path) -> FileCard
-sro_read(target, mode=scout|focus|refine|verify, hint=HintSpec) -> EvidencePack
+sro_preview(path) -> L0 默认预览（内含 FileCard，不需要 HintSpec）
+sro_read(target, mode=scout|focus|collect|refine|verify, hint=HintSpec) -> EvidencePack
+sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 ```
+
+`sro_card(path)` 仍保留给 benchmark 和旧脚本使用；新用户和新框架集成应从
+`sro_preview` 开始。OpenCode/OpenClaw/nanobot 的源码安装步骤见
+[`docs/sparseread_installation.md`](docs/sparseread_installation.md)。
 
 源代码位于 `nanobot-sro-v3/`。推荐以外层仓库根目录作为 benchmark workspace，因为测试脚本也依赖 `local_agent_comp/`、`local_bin/` 和 `SRO_test/qwenclawbench/` 中的 runtime 夹具。
 
-## 快速开始
+## 快速开始（源码安装）
 
-运行核心 SRO 单元测试：
-
-```bash
-uv run --project nanobot-sro-v3 pytest \
-  nanobot-sro-v3/tests/sparse_reading/test_sro_text_reader.py \
-  nanobot-sro-v3/tests/sparse_reading/test_sro_protocol.py \
-  nanobot-sro-v3/tests/sparse_reading/test_sparseread_public_api.py \
-  -q
-```
-
-用 DeepSeek API 跑一个 benchmark 冒烟测试：
+当前默认安装形态是：用户本机已有 OpenCode 或 OpenClaw CLI，然后从本仓库源码加装 SparseRead。完整 fresh-machine 指南见
+[`docs/sparseread_installation.md`](docs/sparseread_installation.md)。
 
 ```bash
-export API_KEY="..."
-export API_BASE_URL="https://llmapi.paratera.com/v1"
-export BENCH_MODEL="deepseek-v4-flash"
-export PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000
-export TIMEOUT_MULTIPLIER=1
+git clone https://github.com/Zedong-Liu/SparseReading.git
+cd SparseReading
 
-local_agent_comp/run_qcb_trusted_batch.sh \
-  --runset smoke_$(date +%Y%m%dT%H%M%S) \
-  --modes baseline,gate \
-  --tasks task_loogle_shortdep_fall_of_outremer_3q_followup
+uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
+  pytest nanobot-sro-v3/tests/sparse_reading/test_release_fixtures.py -q
 ```
 
-同事测试包说明详见 `handoff/sro_v3_test_20260522/README.md`。
+OpenCode workspace 安装：
+
+```bash
+python3 scripts/install_sparseread.py \
+  --platform opencode \
+  --opencode-workspace /path/to/your/project \
+  --policy auto \
+  --mode auto \
+  --doctor
+```
+
+OpenClaw profile 安装：
+
+```bash
+python3 scripts/install_sparseread.py \
+  --platform openclaw \
+  --policy auto \
+  --mode auto \
+  --doctor
+```
+
+插件加载后，生产入口是 `sro_preview(path)`；只有形成明确目标后再用 `sro_read(...)` 提取定向证据。需要跑 benchmark 时，继续看下面的 benchmark 章节；同事测试包说明见 `handoff/sro_v3_test_20260522/README.md`。
 
 ## 三个 Benchmark 的测试方法
 
