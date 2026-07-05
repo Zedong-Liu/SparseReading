@@ -1,5 +1,10 @@
 # SparseRead
 
+> Paper/nanobot bench branch: this branch keeps the latest SR core but defaults
+> benchmark work to the old compact `sro_card -> sro_read` path via
+> `SPARSEREAD_MODE=bench_protocol`. See
+> [`docs/sr_paper_nanobot_bench.md`](docs/sr_paper_nanobot_bench.md).
+
 **你的 Agent 正在用「读取一切」的方式燃烧 token。**
 
 现代 Agent 能浏览文件、审查仓库、分析 PDF，甚至操作整个工作区。但在需要信息时，很多 Agent 依然遵循同一种原始策略：

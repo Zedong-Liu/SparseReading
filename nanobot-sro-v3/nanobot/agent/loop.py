@@ -219,7 +219,12 @@ class AgentLoop:
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
-        self._sro_disabled_for_workspace = SparseReadingOrchestrator.disabled_for_low_sparse_workspace(workspace)
+        self._sro_runtime_mode = self._read_sro_runtime_mode()
+        self._sro_disabled_for_workspace = (
+            False
+            if self._sro_runtime_mode in {"force", "force_sro", "enforce"}
+            else SparseReadingOrchestrator.disabled_for_low_sparse_workspace(workspace)
+        )
         effective_disabled_skills = list(disabled_skills or [])
         self._start_time = time.time()
         self._last_usage: dict[str, int] = {}
@@ -286,6 +291,31 @@ class AgentLoop:
         self.commands = CommandRouter()
         register_builtin_commands(self.commands)
 
+    @staticmethod
+    def _read_sro_runtime_mode() -> str:
+        raw = (
+            os.environ.get("SPARSEREAD_MODE")
+            or os.environ.get("SPARSEREAD_PROFILE")
+            or os.environ.get("SR_PROFILE")
+            or ""
+        )
+        mode = raw.strip().lower().replace("-", "_")
+        if mode in {"bench", "paper_bench", "paper_nanobot_bench", "nanobot_bench"}:
+            return "bench_protocol"
+        return mode or "auto"
+
+    @staticmethod
+    def _sro_benefit_override_for_mode(mode: str) -> str | None:
+        if mode in {"auto", "bench_protocol"}:
+            return None
+        if mode in {"observe", "nudge"}:
+            return "advisory"
+        if mode in {"force", "force_sro", "enforce"}:
+            return "force_sro"
+        if mode in {"native", "advisory"}:
+            return mode
+        return None
+
     def _register_default_tools(self) -> None:
         """Register the default set of tools."""
         allowed_dir = (
@@ -297,6 +327,7 @@ class AgentLoop:
             sro = SparseReadingOrchestrator(
                 self.workspace,
                 macro_available=not self._sro_disabled_for_workspace,
+                benefit_gate_override=self._sro_benefit_override_for_mode(self._sro_runtime_mode),
             )
 
             def _activate_sro_macros(orchestrator: SparseReadingOrchestrator = sro) -> None:
@@ -345,6 +376,13 @@ class AgentLoop:
 
     def _activate_sro_macros(self, sro: SparseReadingOrchestrator) -> None:
         """Register SRO macro tools lazily after access-level interception."""
+        if self._sro_runtime_mode == "bench_protocol":
+            if not self.tools.has("sro_card"):
+                self.tools.register(SroCardTool(sro, bench_protocol=True))
+            if not self.tools.has("sro_read"):
+                self.tools.register(SroReadTool(sro, discovery_tool="sro_card"))
+            sro.mark_macro_available()
+            return
         if not self.tools.has("sro_preview"):
             self.tools.register(SroPreviewTool(sro))
         if not self.tools.has("sro_raw"):

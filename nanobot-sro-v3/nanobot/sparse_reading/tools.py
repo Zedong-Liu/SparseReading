@@ -18,8 +18,9 @@ from nanobot.sparse_reading.orchestrator import SparseReadingOrchestrator
 
 
 class SroCardTool(Tool):
-    def __init__(self, orchestrator: SparseReadingOrchestrator):
+    def __init__(self, orchestrator: SparseReadingOrchestrator, *, bench_protocol: bool = False):
         self.orchestrator = orchestrator
+        self.bench_protocol = bench_protocol
 
     @property
     def name(self) -> str:
@@ -27,6 +28,8 @@ class SroCardTool(Tool):
 
     @property
     def description(self) -> str:
+        if self.bench_protocol:
+            return "Benchmark SparseRead entrypoint: return a lightweight FileCard, then continue with sro_read."
         return "Compatibility/benchmark tool: return only the lightweight FileCard. Prefer sro_preview for production use."
 
     @property
@@ -47,7 +50,11 @@ class SroCardTool(Tool):
         card = self.orchestrator.card(Path(path))
         payload: dict[str, Any] = {
             "file_card": card.to_dict(),
-            "compatibility_note": "sro_card is retained for benchmark/legacy flows; use sro_preview as the production entrypoint.",
+            "compatibility_note": (
+                "bench_protocol path: sro_card is the entrypoint; continue with sro_read."
+                if self.bench_protocol
+                else "sro_card is retained for benchmark/legacy flows; use sro_preview as the production entrypoint."
+            ),
         }
         if card.sparse_recommended:
             mode = "collect" if card.type == "collection" else "scout"
@@ -57,7 +64,10 @@ class SroCardTool(Tool):
                 "target": {"artifact_id": card.artifact_id},
                 "mode": mode,
                 "instruction": (
-                    "Legacy card path: use scout/focus without slots for default discovery. "
+                    "Bench protocol path: use collect with hint.slots for explicit multi-question text/PDF tasks; "
+                    "otherwise use scout or focus with a concrete HintSpec."
+                    if self.bench_protocol
+                    else "Legacy card path: use scout/focus without slots for default discovery. "
                     "Use collect only after copying each concrete user question into hint.slots."
                 ),
                 "hint": {
@@ -179,8 +189,14 @@ class SroRawTool(Tool):
 
 
 class SroReadTool(Tool):
-    def __init__(self, orchestrator: SparseReadingOrchestrator):
+    def __init__(
+        self,
+        orchestrator: SparseReadingOrchestrator,
+        *,
+        discovery_tool: str = "sro_preview",
+    ):
         self.orchestrator = orchestrator
+        self.discovery_tool = discovery_tool
 
     @property
     def name(self) -> str:
@@ -188,10 +204,11 @@ class SroReadTool(Tool):
 
     @property
     def description(self) -> str:
+        first_read = f"after {self.discovery_tool}"
         return (
             "Read sparse evidence from a large object using mode scout/focus/collect/refine/verify. "
             "SRO evidence is authoritative for the requested evidence goal: if collect/focus returns overall_status=ready or no unresolved items, write every requested deliverable or run one short calculation instead of rereading source files. "
-            "For multi-question PDF/report tasks, the first targeted read after sro_preview should be mode=collect with hint.slots; do not use scout or a long needles list for that case. "
+            f"For multi-question PDF/report tasks, the first targeted read {first_read} should be mode=collect with hint.slots; do not use scout or a long needles list for that case. "
             "For directory collections that require diagnosis/audit/rules/config facts, use mode=collect first; use mode=focus only when you need candidate filenames and not facts. "
             "Slots are lightweight objects with id, question, expected, and optional aliases; collect returns a compact slot_digest rather than a large evidence matrix. "
             "When calc_ready is returned, use the derived TSV artifact(s) in one short calculation script."

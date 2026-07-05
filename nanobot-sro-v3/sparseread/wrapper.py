@@ -35,7 +35,10 @@ class SparseRead:
         """Return SparseRead tool objects for frameworks that accept Python tools."""
 
         if self.config.mode == "bench_protocol":
-            return [SroCardTool(self.orchestrator), SroReadTool(self.orchestrator)]
+            return [
+                SroCardTool(self.orchestrator, bench_protocol=True),
+                SroReadTool(self.orchestrator, discovery_tool="sro_card"),
+            ]
         return [
             SroPreviewTool(self.orchestrator),
             SroRawTool(self.orchestrator),

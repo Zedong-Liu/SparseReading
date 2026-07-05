@@ -30,6 +30,17 @@ def test_sro_read_description_retains_p0_guidance(tmp_path: Path) -> None:
     assert "calc_ready" in description
 
 
+def test_bench_protocol_tool_descriptions_use_card_entrypoint(tmp_path: Path) -> None:
+    orchestrator = SparseReadingOrchestrator(tmp_path)
+
+    card = SroCardTool(orchestrator, bench_protocol=True)
+    read = SroReadTool(orchestrator, discovery_tool="sro_card")
+
+    assert "Benchmark SparseRead entrypoint" in card.description
+    assert "after sro_card" in read.description
+    assert "after sro_preview" not in read.description
+
+
 def test_sro_preview_schema_is_hintless_production_entry(tmp_path: Path) -> None:
     tool = SroPreviewTool(SparseReadingOrchestrator(tmp_path))
 

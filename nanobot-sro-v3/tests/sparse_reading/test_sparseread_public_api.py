@@ -41,6 +41,8 @@ def test_bench_protocol_keeps_original_tool_path(tmp_path: Path) -> None:
     runtime = SparseRead(SparseReadConfig(mode="bench_protocol", workspace=tmp_path))
 
     assert runtime.tool_names == ["sro_card", "sro_read"]
+    assert "Benchmark SparseRead entrypoint" in runtime.tools()[0].description
+    assert "after sro_card" in runtime.tools()[1].description
 
 
 def test_config_force_mode_overrides_benefit_gate(tmp_path: Path) -> None:
@@ -84,6 +86,7 @@ def test_nanobot_adapter_installs_tools_and_guards(tmp_path: Path) -> None:
 def test_nanobot_agent_loop_registers_preview_first_tools(tmp_path: Path) -> None:
     loop = AgentLoop.__new__(AgentLoop)
     loop.tools = ToolRegistry()
+    loop._sro_runtime_mode = "auto"
     sro = SparseReadingOrchestrator(tmp_path)
 
     loop._activate_sro_macros(sro)
@@ -91,6 +94,20 @@ def test_nanobot_agent_loop_registers_preview_first_tools(tmp_path: Path) -> Non
     assert [name for name in loop.tools.tool_names if name.startswith("sro_")] == [
         "sro_preview",
         "sro_raw",
+        "sro_card",
+        "sro_read",
+    ]
+
+
+def test_nanobot_agent_loop_bench_protocol_registers_original_path_only(tmp_path: Path) -> None:
+    loop = AgentLoop.__new__(AgentLoop)
+    loop.tools = ToolRegistry()
+    loop._sro_runtime_mode = "bench_protocol"
+    sro = SparseReadingOrchestrator(tmp_path)
+
+    loop._activate_sro_macros(sro)
+
+    assert [name for name in loop.tools.tool_names if name.startswith("sro_")] == [
         "sro_card",
         "sro_read",
     ]

@@ -12,39 +12,41 @@ metadata:
 
 # Sparse Reading
 
-Use SRO for a large supported object when `sro_preview`, `read_file`, or
-`list_dir` recommends it. SRO results are task evidence: do not replace
-resolved evidence with broad raw reads.
+This branch is the paper/benchmark profile. When `SRO_ENABLED=1`, use the
+original compact path:
 
-**Activation boundary:** Use this SRO protocol after a tool recommends SRO or
-returns an SRO handoff. If no such signal appears, no SRO action is required:
-continue with the agent's existing native tools and workflow. Once SRO is
-recommended, follow this protocol.
-For ordinary native code/config/data tasks, keep the workflow bounded: read the
-authoritative inputs, make the smallest complete change, run focused
-verification, then stop when the requested deliverables pass.
+```text
+sro_card(path) -> sro_read(target={artifact_id}, mode, HintSpec) -> write_file
+```
+
+`sro_preview` is the production entrypoint on the single-repo integration
+branch, but it is not the default trajectory for this nanobot benchmark branch.
+If only `sro_card` and `sro_read` are registered, do not ask for preview or raw
+fallback tools.
+
+Use SRO after a tool recommends SRO or returns an SRO handoff. If no such
+signal appears, keep the agent's native workflow bounded: read authoritative
+inputs, make the smallest complete change, run focused verification, then stop.
 
 **Terminal write rules (highest priority):**
-- If `slot_digest.overall_status` is `"ready"`, write the requested output
-  from its candidates immediately. It overrides individual slot confidence:
-  do not verify, search, or raw-read the source before writing.
+- If `slot_digest.overall_status` is `"ready"`, write the requested output from
+  its candidates immediately. Do not verify, search, or raw-read the source
+  before writing.
 - If a collection response allows `write_file`, write from its evidence
-  immediately. Do not inspect covered source files or code with `read_file`,
-  `grep`, or `exec` unless the response names a specific unresolved fact.
-- Write in the requested format. `one answer per line` means unnumbered
-  answer values in the original question order.
+  immediately. Do not inspect covered source files or code unless the response
+  names a specific unresolved fact.
+- Write in the requested format. `one answer per line` means unnumbered answer
+  values in the original question order.
 
 ## Protocol
 
 1. If a tool result already contains an SRO handoff and `artifact_id`, follow
-   its `next_action`; do not call `sro_preview` again.
-2. Otherwise call `sro_preview(path)` before reading a known large object. The
-   preview contains the FileCard plus a deterministic default view and does not
-   require a HintSpec.
+   its `next_action`.
+2. Otherwise call `sro_card(path)` before reading a known large object.
 3. Use `{"path": "/path"}` only for first discovery. Use
    `{"artifact_id": "sro_..."}` for every follow-up.
-4. After an SRO read, follow its `next_action` or `allowed_next`. For the
-   first read, route the explicit user need with the table below.
+4. After an SRO read, follow its `next_action` or `allowed_next`. For the first
+   read, route the explicit user need with the table below.
 
 | Need | First useful `sro_read` |
 | --- | --- |
@@ -58,9 +60,6 @@ Use `refine` only for unresolved evidence on an existing artifact.
 For `hint.scope`, use only `"new"`, `"narrow"`, `"verify"`, or `"expand"`;
 use `"verify"` for an exact follow-up check. Do not invent scope values.
 
-`sro_card` remains available for benchmark and legacy compatibility, but it is
-not the production entrypoint.
-
 ## Stop Or Continue
 
 | Returned signal | Action |
@@ -73,8 +72,8 @@ not the production entrypoint.
 | `sro_guard` for a covered source | Use the existing digest; do not retry broad reads on that source. |
 
 Do not dump a supported large source with `read_file`, `cat`, `grep`, or
-`exec` after SRO has supplied evidence. For a small complete table request,
-use `want: "table"` with `scope: "expand"` and state `all rows` in the goal.
+`exec` after SRO has supplied evidence. For a small complete table request, use
+`want: "table"` with `scope: "expand"` and state `all rows` in the goal.
 
 ## Multi-Question Text Template
 
