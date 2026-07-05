@@ -18,6 +18,9 @@ build/
 # Local plugin install/build outputs
 integrations/*/plugin/node_modules/
 integrations/openclaw/plugin/dist/
+opencode_pilot/plugin/node_modules/
+openclaw_pilot/plugin/node_modules/
+openclaw_pilot/plugin/dist/
 
 # Local agent/session artifacts
 .nanobot/

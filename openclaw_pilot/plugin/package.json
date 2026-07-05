@@ -1,0 +1,36 @@
+{
+  "name": "openclaw-plugin-sparseread",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "files": [
+    "dist",
+    "skills",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "plugin:inspect": "openclaw plugins inspect sparseread-openclaw --runtime --json"
+  },
+  "dependencies": {
+    "typebox": "^1.1.38"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.5.17"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "typescript": "^5.8.3"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  }
+}
