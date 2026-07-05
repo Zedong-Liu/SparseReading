@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "nanobot-sro-v3"
 OPENCODE_PLUGIN = ROOT / "integrations" / "opencode" / "plugin"
 OPENCLAW_PLUGIN = ROOT / "integrations" / "openclaw" / "plugin"
+WINDOWS_COMMAND_SUFFIXES = (".cmd", ".exe", ".bat")
 
 
 def run(
@@ -49,12 +50,18 @@ def require_command(name: str, *, install_hint: str = "") -> str:
     path = shutil.which(name)
     if path:
         return path
+    if os.name == "nt" and not Path(name).suffix:
+        for suffix in WINDOWS_COMMAND_SUFFIXES:
+            path = shutil.which(f"{name}{suffix}")
+            if path:
+                return path
     suffix = f" {install_hint}" if install_hint else ""
     raise SystemExit(f"missing required command: {name}.{suffix}")
 
 
-def bridge_command() -> list[str]:
-    return ["uv", "--project", str(CORE), "run", "--with", "pymupdf", "python"]
+def bridge_command(uv_cmd: str | None = None) -> list[str]:
+    command = uv_cmd or require_command("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
+    return [command, "--project", str(CORE), "run", "--with", "pymupdf", "python"]
 
 
 def bridge_env(policy: str, mode: str) -> str:
@@ -70,12 +77,12 @@ def bridge_env(policy: str, mode: str) -> str:
 
 
 def npm_install_and_build(plugin_dir: Path, *, dry_run: bool) -> None:
-    require_command("npm")
+    npm_cmd = require_command("npm")
     if (plugin_dir / "package-lock.json").exists():
-        run(["npm", "ci", "--ignore-scripts"], cwd=plugin_dir, dry_run=dry_run)
+        run([npm_cmd, "ci", "--ignore-scripts"], cwd=plugin_dir, dry_run=dry_run)
     else:
-        run(["npm", "install", "--ignore-scripts"], cwd=plugin_dir, dry_run=dry_run)
-    run(["npm", "run", "build"], cwd=plugin_dir, dry_run=dry_run)
+        run([npm_cmd, "install", "--ignore-scripts"], cwd=plugin_dir, dry_run=dry_run)
+    run([npm_cmd, "run", "build"], cwd=plugin_dir, dry_run=dry_run)
 
 
 def install_opencode(args: argparse.Namespace) -> None:
@@ -96,17 +103,17 @@ def install_opencode(args: argparse.Namespace) -> None:
 
 
 def install_openclaw(args: argparse.Namespace) -> None:
-    require_command(args.openclaw_cmd)
+    openclaw_cmd = require_command(args.openclaw_cmd)
     if not args.skip_build:
         npm_install_and_build(OPENCLAW_PLUGIN, dry_run=args.dry_run)
     profile_args = ["--profile", args.openclaw_profile] if args.openclaw_profile else []
     run(
-        [args.openclaw_cmd, *profile_args, "plugins", "install", "--link", str(OPENCLAW_PLUGIN)],
+        [openclaw_cmd, *profile_args, "plugins", "install", "--link", str(OPENCLAW_PLUGIN)],
         check=False,
         dry_run=args.dry_run,
     )
     run(
-        [args.openclaw_cmd, *profile_args, "plugins", "enable", "sparseread-openclaw"],
+        [openclaw_cmd, *profile_args, "plugins", "enable", "sparseread-openclaw"],
         check=False,
         dry_run=args.dry_run,
     )
@@ -130,13 +137,13 @@ def install_openclaw(args: argparse.Namespace) -> None:
         }
     }
     run(
-        [args.openclaw_cmd, *profile_args, "config", "patch", "--stdin"],
+        [openclaw_cmd, *profile_args, "config", "patch", "--stdin"],
         input_text=json.dumps(patch),
         dry_run=args.dry_run,
     )
     inspect = run(
         [
-            args.openclaw_cmd,
+            openclaw_cmd,
             *profile_args,
             "plugins",
             "inspect",
@@ -158,7 +165,7 @@ def install_openclaw(args: argparse.Namespace) -> None:
 
 
 def bridge_smoke(module: str, *, dry_run: bool) -> None:
-    require_command("uv")
+    uv_cmd = require_command("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
     with tempfile.TemporaryDirectory(prefix="sparseread-install-smoke-") as tmp:
         workspace = Path(tmp)
         target = workspace / "report.md"
@@ -172,7 +179,7 @@ def bridge_smoke(module: str, *, dry_run: bool) -> None:
             ]
         )
         proc = run(
-            [*bridge_command(), "-m", module, "--workspace", str(workspace), "--mode", "force"],
+            [*bridge_command(uv_cmd), "-m", module, "--workspace", str(workspace), "--mode", "force"],
             input_text=payload,
             check=False,
             dry_run=dry_run,

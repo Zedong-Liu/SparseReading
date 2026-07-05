@@ -40,6 +40,8 @@ sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 - Git
 - 已安装的 OpenCode CLI 或 OpenClaw CLI
 
+Windows 上如果 `npm`、`openclaw` 等入口实际是 `.cmd/.exe/.bat`，安装脚本会自动解析到对应入口，不需要手动修改命令名。
+
 当前源码安装验证使用过：
 
 - OpenCode `1.17.13`
