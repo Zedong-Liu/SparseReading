@@ -11,7 +11,7 @@
 
 ## 当前生产入口
 
-生产路径从 `sro_preview` 开始：
+这是框架和 agent 内部看到的工具形态，不是要求用户手动输入的命令。生产路径从 `sro_preview` 开始：
 
 ```text
 sro_preview(path) -> L0 默认预览，内含 FileCard，不需要 HintSpec
@@ -19,7 +19,17 @@ sro_read(target, mode, hint) -> 有明确目标时再读取定向证据
 sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 ```
 
-`sro_card` 仍会注册，但只用于 benchmark 和旧脚本兼容。新用户、新插件和新文档都应该把 `sro_preview` 作为第一入口。
+`sro_card` 仍会注册，但只用于 benchmark 和旧脚本兼容。新插件和新框架集成都应该把 `sro_preview` 作为内部第一入口。
+
+## 模型可见的 SparseRead 指南在哪里
+
+当前三平台不是完全相同的 skill 文件形态：
+
+- nanobot 内置 skill：`nanobot-sro-v3/nanobot/skills/sparse-reading/SKILL.md`。
+- OpenClaw 插件随带 skill：`integrations/openclaw/plugin/skills/sparse-reading/SKILL.md`；pilot 展示路径是 `openclaw_pilot/plugin/skills/sparse-reading/SKILL.md`。
+- OpenCode 当前没有独立 `SKILL.md`。它通过插件注册 `sro_preview`、`sro_read` 等工具，并在大文件/截断输出场景给模型 nudge。日常使用时，用户应该在任务里要求 agent 自动使用 SparseRead。
+
+所以，用户文档不应该写成工具调用教程；工具调用顺序是给模型和插件看的。
 
 ## 环境要求
 
@@ -174,17 +184,50 @@ doctor 会用一个临时 markdown fixture 启动对应 Python bridge，验证 `
 
 ## 日常使用建议
 
-默认使用顺序：
+用户不需要手动调用 `sro_preview`、`sro_read` 或填写 `HintSpec`。正确用法是在任务里告诉 agent 自动使用 SparseRead，例如：
 
 ```text
-1. 大文件、长 markdown、PDF、日志或多文件证据包 -> sro_preview(path)
-2. 从 preview 里形成明确问题 -> sro_read(..., hint=HintSpec)
-3. EvidencePack 已经 ready -> 写交付物，不要重复读同一证据
-4. 明确需要原文 -> sro_raw(raw_ref)
-5. 小文件、脚本、配置改动、全表计算 -> 原生工具通常更便宜
+请自动使用 SparseRead 阅读这个大文件/证据包，只提取完成任务所需的证据；证据足够后直接写结果，不要反复全文读取。
 ```
 
+适合明确要求 agent 使用 SparseRead 的场景：
+
+- 大文件、长 markdown、PDF、长日志；
+- 多文件证据包、审计材料、诊断材料；
+- 问题本身只需要文件中的少量证据，而不是完整重算或逐行处理。
+
+通常不需要特别要求 SparseRead 的场景：
+
+- 小文件、脚本、配置改动；
+- 全表计算、精确逐行统计、需要运行代码得到答案的任务；
+- 你已经知道要改哪几行代码的普通开发任务。
+
+agent 内部会按生产协议工作：先做 L0 preview；如果 preview 不够，再围绕明确问题读取 EvidencePack；证据已经 ready 时直接写交付物；只有明确需要原文时才回溯 raw 内容。用户只需要描述任务和目标，不需要自己组织这些工具调用。
+
 不要把 SparseRead 当成“所有内容都压缩”的代理。它的优势是让 agent 少读无关材料，并在需要时用可回溯的 evidence pack 补证据。
+
+## 快速体验测试
+
+本仓库提供了一个长 markdown fixture：
+
+```text
+examples/sparseread_quick_test/incident-report.md
+```
+
+OpenCode 安装后，在目标 workspace 里运行：
+
+```bash
+source .opencode/sparseread.env
+opencode run "请自动使用 SparseRead 阅读 $SPARSEREAD_PROJECT_ROOT/examples/sparseread_quick_test/incident-report.md，只提取必要证据，并回答 ROOT_CAUSE、MITIGATION_OWNER、FINAL_DEADLINE 分别是什么。不要让我手动调用工具。"
+```
+
+OpenClaw 或 nanobot 会话中发送同类自然语言请求即可，把路径换成你本机 checkout 下的完整路径。预期答案应包含：
+
+```text
+ROOT_CAUSE: cache invalidation used customer_id instead of tenant_id.
+MITIGATION_OWNER: Mira Chen, Data Platform on-call.
+FINAL_DEADLINE: 2026-07-18 09:30 UTC.
+```
 
 ## 版本发布前固定测试
 

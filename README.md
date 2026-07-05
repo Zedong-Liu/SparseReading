@@ -30,7 +30,7 @@ SparseRead 是面向工具调用型 agent 的证据引导式阅读层。它拦�
 
 SparseRead（SRO v3）是一个面向工具调用型 agent 的 sparse-reading 协议。通过确定性的 Benefit Gate 和按类型分派的 reader，将大文件、长文本、PDF 以及审计类文件集合路由为紧凑的 evidence pack，替代反复的 broad read。
 
-当前生产接口：
+框架内部生产接口（用户不需要手动调用）：
 
 ```text
 sro_preview(path) -> L0 默认预览（内含 FileCard，不需要 HintSpec）
@@ -38,7 +38,7 @@ sro_read(target, mode=scout|focus|collect|refine|verify, hint=HintSpec) -> Evide
 sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 ```
 
-`sro_card(path)` 仍保留给 benchmark 和旧脚本使用；新用户和新框架集成应从
+`sro_card(path)` 仍保留给 benchmark 和旧脚本使用；新框架集成和内部协议应从
 `sro_preview` 开始。OpenCode/OpenClaw/nanobot 的源码安装步骤见
 [`docs/sparseread_installation.md`](docs/sparseread_installation.md)。
 
@@ -78,7 +78,36 @@ python3 scripts/install_sparseread.py \
   --doctor
 ```
 
-插件加载后，生产入口是 `sro_preview(path)`；只有形成明确目标后再用 `sro_read(...)` 提取定向证据。需要跑 benchmark 时，继续看下面的 benchmark 章节；同事测试包说明见 `handoff/sro_v3_test_20260522/README.md`。
+安装完成后，用户不需要手动调用 `sro_preview` 或填写 `HintSpec`。在任务里明确要求 agent 使用 SparseRead 即可，例如：
+
+```text
+请自动使用 SparseRead 阅读这个大文件，只提取回答问题所需的证据；证据足够后直接回答，不要反复全文读取。
+```
+
+### 小测试：让 agent 自动使用 SparseRead
+
+本仓库提供了一个长 markdown fixture：
+
+```text
+examples/sparseread_quick_test/incident-report.md
+```
+
+OpenCode 安装后可以在目标 workspace 里运行：
+
+```bash
+source .opencode/sparseread.env
+opencode run "请自动使用 SparseRead 阅读 $SPARSEREAD_PROJECT_ROOT/examples/sparseread_quick_test/incident-report.md，只提取必要证据，并回答 ROOT_CAUSE、MITIGATION_OWNER、FINAL_DEADLINE 分别是什么。不要让我手动调用工具。"
+```
+
+OpenClaw 或 nanobot 会话中发送同一类自然语言请求即可，把路径换成你本机 checkout 下的完整路径。预期答案应包含：
+
+```text
+ROOT_CAUSE: cache invalidation used customer_id instead of tenant_id.
+MITIGATION_OWNER: Mira Chen, Data Platform on-call.
+FINAL_DEADLINE: 2026-07-18 09:30 UTC.
+```
+
+需要跑 benchmark 时，继续看下面的 benchmark 章节；同事测试包说明见 `handoff/sro_v3_test_20260522/README.md`。
 
 ## 三个 Benchmark 的测试方法
 
