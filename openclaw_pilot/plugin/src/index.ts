@@ -27,6 +27,7 @@ type SparseReadConfig = {
   workspaceRoot: string
   bridgeModule: string
   mode: "auto" | "bench_protocol" | "force" | "force_sro" | "native" | "advisory"
+  hookMode: "off" | "trace" | "prompt" | "enforce"
 }
 
 class SparseReadBridge {
@@ -147,6 +148,7 @@ function config(raw: Json): SparseReadConfig {
     workspaceRoot: stringValue(obj.workspaceRoot ?? process.env.SPARSEREAD_WORKSPACE_ROOT, ""),
     bridgeModule: stringValue(obj.bridgeModule ?? process.env.SPARSEREAD_BRIDGE_MODULE, "sparseread.bridge.openclaw"),
     mode: sparseMode(obj.mode ?? process.env.SPARSEREAD_MODE),
+    hookMode: hookMode(obj.hookMode ?? process.env.SPARSEREAD_OPENCLAW_HOOK_MODE),
   }
 }
 
@@ -166,6 +168,11 @@ function sparseMode(value: Json): SparseReadConfig["mode"] {
   return "auto"
 }
 
+function hookMode(value: Json): SparseReadConfig["hookMode"] {
+  if (value === "trace" || value === "prompt" || value === "enforce") return value
+  return "off"
+}
+
 function stringValue(value: Json, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback
 }
@@ -182,13 +189,30 @@ function splitCommand(raw: string, fallback: string): string[] {
   return raw.trim().split(/\s+/)
 }
 
+function windowsShellShim(command: string): boolean {
+  return process.platform === "win32" && /\.(cmd|bat)$/i.test(command)
+}
+
+function spawnCommand(prefix: string[]): [string, string[]] {
+  const [command, ...args] = prefix
+  if (windowsShellShim(command)) {
+    return [process.env.COMSPEC || "cmd.exe", ["/d", "/s", "/c", [command, ...args].map(windowsQuote).join(" ")]]
+  }
+  return [command, args]
+}
+
+function windowsQuote(value: string): string {
+  if (!/[\s"]/u.test(value)) return value
+  return `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, "$1$1")}"`
+}
+
 function bridgeFor(ctx: Json, cfg: SparseReadConfig): SparseReadBridge {
   const workspace = workspaceOf(ctx, cfg)
   const key = `${workspace}:${cfg.bridgeModule}:${cfg.mode}`
   const existing = bridges.get(key)
   if (existing) return existing
   const prefix = splitCommand(cfg.bridgeCommand || "", cfg.python)
-  const [command, ...argsPrefix] = prefix
+  const [command, argsPrefix] = spawnCommand(prefix)
   const bridge = new SparseReadBridge(
     command,
     [...argsPrefix, "-m", cfg.bridgeModule, "--workspace", workspace, "--mode", cfg.mode],
@@ -419,7 +443,7 @@ async function recordNative(
 const sparseReadPlugin: any = definePluginEntry({
   id: "sparseread-openclaw",
   name: "SparseRead for OpenClaw",
-  description: "Adds SparseRead tools and runtime-feature gate hooks.",
+  description: "Adds SparseRead tools and optional runtime hooks.",
   register(api: any) {
     const registeredConfig = api.pluginConfig
 
@@ -525,103 +549,111 @@ const sparseReadPlugin: any = definePluginEntry({
       },
     })
 
-    api.on("before_tool_call", async (event: any, ctx: Json) => {
-      const runCtx = runtimeContext(event, ctx)
-      const cfg = pluginConfig(runCtx, registeredConfig)
-      if (cfg.policy !== "enforce" && cfg.policy !== "auto") return
-      const toolName = String(event?.toolName ?? "")
-      const params = asObject(event?.params)
-      const bridge = bridgeFor(runCtx, cfg)
-      await recordNative(bridge, "before", toolName, params)
+    const registeredHookMode = config(registeredConfig).hookMode
 
-      if (toolName === "read" || toolName === "read_file") {
-        const gate = await decideGate(bridge, paramsPath(params), runCtx, cfg)
-        if (gate?.block_native_read !== true) return
-        if (isBroadRead(params) || gate?.mode === "enforce") {
-          const handoffPath = typeof gate.handoff_path === "string" ? gate.handoff_path : paramsPath(params)
-          return {
-            block: true,
-            blockReason: sparseReadBlockReason(gate, handoffPath, "reread", runCtx, cfg),
-          }
-        }
-      }
+    if (registeredHookMode === "enforce") {
+      api.on("before_tool_call", async (event: any, ctx: Json) => {
+        const runCtx = runtimeContext(event, ctx)
+        const cfg = pluginConfig(runCtx, registeredConfig)
+        if (cfg.policy !== "enforce" && cfg.policy !== "auto") return
+        const toolName = String(event?.toolName ?? "")
+        const params = asObject(event?.params)
+        const bridge = bridgeFor(runCtx, cfg)
+        await recordNative(bridge, "before", toolName, params)
 
-      if (toolName === "list" || toolName === "list_dir" || toolName === "dir_list") {
-        if (!isBroadList(params)) return
-        const gate = await decideGate(bridge, paramsPath(params), runCtx, cfg)
-        if (gate?.block_native_read === true) {
-          const handoffPath = typeof gate.handoff_path === "string" ? gate.handoff_path : paramsPath(params)
-          return {
-            block: true,
-            blockReason: sparseReadBlockReason(gate, handoffPath, "list", runCtx, cfg),
-          }
-        }
-      }
-
-      if (toolName === "grep") {
-        const gate = await decideGate(bridge, paramsPath(params), runCtx, cfg)
-        if (gate?.block_native_search === true) {
-          return {
-            block: true,
-            blockReason: `SparseRead enforce: use sro_preview first and sro_read only for targeted evidence instead of broad grep on this target.`,
-          }
-        }
-      }
-
-      if (toolName === "exec" || toolName === "bash" || toolName === "shell") {
-        const command = String(params.command ?? params.cmd ?? "")
-        const rawDump = looksLikeRawDump(command)
-        const rawCopy = looksLikeRawCopy(command)
-        if (!rawDump && !rawCopy) return
-        for (const candidate of commandPaths(command)) {
-          const gate = await decideGate(bridge, candidate, runCtx, cfg)
-          if (gate?.block_native_exec_dump === true) {
+        if (toolName === "read" || toolName === "read_file") {
+          const gate = await decideGate(bridge, paramsPath(params), runCtx, cfg)
+          if (gate?.block_native_read !== true) return
+          if (isBroadRead(params) || gate?.mode === "enforce") {
+            const handoffPath = typeof gate.handoff_path === "string" ? gate.handoff_path : paramsPath(params)
             return {
               block: true,
-              blockReason: sparseReadBlockReason(gate, candidate, rawCopy ? "copy" : "dump", runCtx, cfg),
+              blockReason: sparseReadBlockReason(gate, handoffPath, "reread", runCtx, cfg),
             }
           }
         }
-      }
-    }, { priority: 40, timeoutMs: 15000 })
 
-    api.on("after_tool_call", async (event: any, ctx: Json) => {
-      const runCtx = runtimeContext(event, ctx)
-      const cfg = pluginConfig(runCtx, registeredConfig)
-      const toolName = String(event?.toolName ?? event?.name ?? "")
-      const params = asObject(event?.params)
-      const result = event?.result ?? event?.toolResult ?? event?.output
-      await recordNative(bridgeFor(runCtx, cfg), "after", toolName, params, result)
-    }, { priority: 0, timeoutMs: 15000 })
+        if (toolName === "list" || toolName === "list_dir" || toolName === "dir_list") {
+          if (!isBroadList(params)) return
+          const gate = await decideGate(bridge, paramsPath(params), runCtx, cfg)
+          if (gate?.block_native_read === true) {
+            const handoffPath = typeof gate.handoff_path === "string" ? gate.handoff_path : paramsPath(params)
+            return {
+              block: true,
+              blockReason: sparseReadBlockReason(gate, handoffPath, "list", runCtx, cfg),
+            }
+          }
+        }
 
-    api.on("llm_output", async (event: any, ctx: Json) => {
-      const runCtx = runtimeContext(event, ctx)
-      const cfg = pluginConfig(runCtx, registeredConfig)
-      const usage = event?.usage ?? event?.message?.usage
-      if (!usage) return
-      await bridgeFor(runCtx, cfg).request("usage_event", {
-        provider: event?.provider,
-        model: event?.model,
-        usage,
-        request_id: event?.callId ?? event?.requestId,
-      })
-    }, { priority: 0, timeoutMs: 10000 })
+        if (toolName === "grep") {
+          const gate = await decideGate(bridge, paramsPath(params), runCtx, cfg)
+          if (gate?.block_native_search === true) {
+            return {
+              block: true,
+              blockReason: `SparseRead enforce: use sro_preview first and sro_read only for targeted evidence instead of broad grep on this target.`,
+            }
+          }
+        }
 
-    api.on("before_prompt_build", async (event: any, ctx: Json) => {
-      const runCtx = runtimeContext(event, ctx)
-      const cfg = pluginConfig(runCtx, registeredConfig)
-      if (cfg.policy === "native") return
-      let preflight = ""
-      try {
-        preflight = preflightPrompt(await bridgeFor(runCtx, cfg).request("preflight", { max_candidates: 24, max_results: 3 }))
-      } catch {
-        preflight = ""
-      }
-      return {
-        appendSystemContext:
-          "SparseRead is available for long documents, PDFs, and compact evidence closures. Production SparseRead starts with sro_preview(path), which returns the minimal card, structure, samples, signals, raw_ref, and next action. Use native reads for small files, small logs, config edits, scripts, calculations, and full-table work. Call sro_read only after preview when targeted evidence is needed and provide a concrete HintSpec. For evidence collections: preview first, then at most one sro_read(mode=collect) when slots are explicit. Once slots are ready, write the deliverable immediately. Do not verify, refine, or re-read resolved slots. sro_card remains a compatibility/debug path, and bench_protocol keeps the older sro_card -> sro_read flow." + preflight,
-      }
-    }, { priority: -20, timeoutMs: 10000 })
+        if (toolName === "exec" || toolName === "bash" || toolName === "shell") {
+          const command = String(params.command ?? params.cmd ?? "")
+          const rawDump = looksLikeRawDump(command)
+          const rawCopy = looksLikeRawCopy(command)
+          if (!rawDump && !rawCopy) return
+          for (const candidate of commandPaths(command)) {
+            const gate = await decideGate(bridge, candidate, runCtx, cfg)
+            if (gate?.block_native_exec_dump === true) {
+              return {
+                block: true,
+                blockReason: sparseReadBlockReason(gate, candidate, rawCopy ? "copy" : "dump", runCtx, cfg),
+              }
+            }
+          }
+        }
+      }, { priority: 40, timeoutMs: 15000 })
+    }
+
+    if (registeredHookMode === "trace" || registeredHookMode === "enforce") {
+      api.on("after_tool_call", async (event: any, ctx: Json) => {
+        const runCtx = runtimeContext(event, ctx)
+        const cfg = pluginConfig(runCtx, registeredConfig)
+        const toolName = String(event?.toolName ?? event?.name ?? "")
+        const params = asObject(event?.params)
+        const result = event?.result ?? event?.toolResult ?? event?.output
+        await recordNative(bridgeFor(runCtx, cfg), "after", toolName, params, result)
+      }, { priority: 0, timeoutMs: 15000 })
+
+      api.on("llm_output", async (event: any, ctx: Json) => {
+        const runCtx = runtimeContext(event, ctx)
+        const cfg = pluginConfig(runCtx, registeredConfig)
+        const usage = event?.usage ?? event?.message?.usage
+        if (!usage) return
+        await bridgeFor(runCtx, cfg).request("usage_event", {
+          provider: event?.provider,
+          model: event?.model,
+          usage,
+          request_id: event?.callId ?? event?.requestId,
+        })
+      }, { priority: 0, timeoutMs: 10000 })
+    }
+
+    if (registeredHookMode === "prompt" || registeredHookMode === "trace" || registeredHookMode === "enforce") {
+      api.on("before_prompt_build", async (event: any, ctx: Json) => {
+        const runCtx = runtimeContext(event, ctx)
+        const cfg = pluginConfig(runCtx, registeredConfig)
+        if (cfg.policy === "native") return
+        let preflight = ""
+        try {
+          preflight = preflightPrompt(await bridgeFor(runCtx, cfg).request("preflight", { max_candidates: 24, max_results: 3 }))
+        } catch {
+          preflight = ""
+        }
+        return {
+          appendSystemContext:
+            "SparseRead is available for long documents, PDFs, and compact evidence closures. Production SparseRead starts with sro_preview(path), which returns the minimal card, structure, samples, signals, raw_ref, and next action. Use native reads for small files, small logs, config edits, scripts, calculations, and full-table work. Call sro_read only after preview when targeted evidence is needed and provide a concrete HintSpec. For evidence collections: preview first, then at most one sro_read(mode=collect) when slots are explicit. Once slots are ready, write the deliverable immediately. Do not verify, refine, or re-read resolved slots. sro_card remains a compatibility/debug path, and bench_protocol keeps the older sro_card -> sro_read flow." + preflight,
+        }
+      }, { priority: -20, timeoutMs: 10000 })
+    }
 
     api.on("agent_end", async () => {
       for (const bridge of bridges.values()) bridge.shutdown()

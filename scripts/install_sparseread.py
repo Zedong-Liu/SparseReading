@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -17,6 +18,18 @@ CORE = ROOT / "nanobot-sro-v3"
 OPENCODE_PLUGIN = ROOT / "integrations" / "opencode" / "plugin"
 OPENCLAW_PLUGIN = ROOT / "integrations" / "openclaw" / "plugin"
 WINDOWS_COMMAND_SUFFIXES = (".cmd", ".exe", ".bat")
+WINDOWS_SHELL_EXTS = {".cmd", ".bat"}
+
+
+@dataclass(frozen=True)
+class CommandSpec:
+    executable: str
+
+    def argv(self, *args: str) -> list[str]:
+        if is_windows_shell_script(self.executable):
+            shell = os.environ.get("COMSPEC") or "cmd.exe"
+            return [shell, "/d", "/s", "/c", subprocess.list2cmdline([self.executable, *args])]
+        return [self.executable, *args]
 
 
 def run(
@@ -59,9 +72,21 @@ def require_command(name: str, *, install_hint: str = "") -> str:
     raise SystemExit(f"missing required command: {name}.{suffix}")
 
 
-def bridge_command(uv_cmd: str | None = None) -> list[str]:
-    command = uv_cmd or require_command("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
-    return [command, "--project", str(CORE), "run", "--with", "pymupdf", "python"]
+def command_spec(name: str, *, install_hint: str = "") -> CommandSpec:
+    return CommandSpec(require_command(name, install_hint=install_hint))
+
+
+def is_windows_shell_script(path: str) -> bool:
+    return Path(path).suffix.lower() in WINDOWS_SHELL_EXTS
+
+
+def bridge_command(uv_cmd: CommandSpec | None = None) -> list[str]:
+    command = uv_cmd or command_spec("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
+    return [command.executable, "--project", str(CORE), "run", "--with", "pymupdf", "python"]
+
+
+def bridge_invocation(uv_cmd: CommandSpec, *args: str) -> list[str]:
+    return uv_cmd.argv("--project", str(CORE), "run", "--with", "pymupdf", "python", *args)
 
 
 def bridge_env(policy: str, mode: str) -> str:
@@ -77,19 +102,19 @@ def bridge_env(policy: str, mode: str) -> str:
 
 
 def npm_install_and_build(plugin_dir: Path, *, dry_run: bool) -> None:
-    npm_cmd = require_command("npm")
+    npm_cmd = command_spec("npm")
     if (plugin_dir / "package-lock.json").exists():
-        run([npm_cmd, "ci", "--ignore-scripts"], cwd=plugin_dir, dry_run=dry_run)
+        run(npm_cmd.argv("ci", "--ignore-scripts"), cwd=plugin_dir, dry_run=dry_run)
     else:
-        run([npm_cmd, "install", "--ignore-scripts"], cwd=plugin_dir, dry_run=dry_run)
-    run([npm_cmd, "run", "build"], cwd=plugin_dir, dry_run=dry_run)
+        run(npm_cmd.argv("install", "--ignore-scripts"), cwd=plugin_dir, dry_run=dry_run)
+    run(npm_cmd.argv("run", "build"), cwd=plugin_dir, dry_run=dry_run)
 
 
 def install_opencode(args: argparse.Namespace) -> None:
     workspace = Path(args.opencode_workspace or os.getcwd()).expanduser().resolve()
     plugin_target = workspace / ".opencode" / "plugins" / "sparseread.ts"
     env_target = workspace / ".opencode" / "sparseread.env"
-    require_command(args.opencode_cmd)
+    command_spec(args.opencode_cmd)
     if not args.skip_build:
         npm_install_and_build(OPENCODE_PLUGIN, dry_run=args.dry_run)
     print(f"[opencode] install workspace: {workspace}")
@@ -103,17 +128,17 @@ def install_opencode(args: argparse.Namespace) -> None:
 
 
 def install_openclaw(args: argparse.Namespace) -> None:
-    openclaw_cmd = require_command(args.openclaw_cmd)
+    openclaw_cmd = command_spec(args.openclaw_cmd)
     if not args.skip_build:
         npm_install_and_build(OPENCLAW_PLUGIN, dry_run=args.dry_run)
     profile_args = ["--profile", args.openclaw_profile] if args.openclaw_profile else []
     run(
-        [openclaw_cmd, *profile_args, "plugins", "install", "--link", str(OPENCLAW_PLUGIN)],
+        openclaw_cmd.argv(*profile_args, "plugins", "install", "--link", str(OPENCLAW_PLUGIN)),
         check=False,
         dry_run=args.dry_run,
     )
     run(
-        [openclaw_cmd, *profile_args, "plugins", "enable", "sparseread-openclaw"],
+        openclaw_cmd.argv(*profile_args, "plugins", "enable", "sparseread-openclaw"),
         check=False,
         dry_run=args.dry_run,
     )
@@ -131,26 +156,19 @@ def install_openclaw(args: argparse.Namespace) -> None:
                         else "",
                         "bridgeModule": "sparseread.bridge.openclaw",
                         "mode": args.mode,
+                        "hookMode": args.openclaw_hook_mode,
                     },
                 }
             }
         }
     }
     run(
-        [openclaw_cmd, *profile_args, "config", "patch", "--stdin"],
+        openclaw_cmd.argv(*profile_args, "config", "patch", "--stdin"),
         input_text=json.dumps(patch),
         dry_run=args.dry_run,
     )
     inspect = run(
-        [
-            openclaw_cmd,
-            *profile_args,
-            "plugins",
-            "inspect",
-            "sparseread-openclaw",
-            "--runtime",
-            "--json",
-        ],
+        openclaw_cmd.argv(*profile_args, "plugins", "inspect", "sparseread-openclaw", "--runtime", "--json"),
         check=False,
         dry_run=args.dry_run,
     )
@@ -165,7 +183,7 @@ def install_openclaw(args: argparse.Namespace) -> None:
 
 
 def bridge_smoke(module: str, *, dry_run: bool) -> None:
-    uv_cmd = require_command("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
+    uv_cmd = command_spec("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
     with tempfile.TemporaryDirectory(prefix="sparseread-install-smoke-") as tmp:
         workspace = Path(tmp)
         target = workspace / "report.md"
@@ -179,7 +197,7 @@ def bridge_smoke(module: str, *, dry_run: bool) -> None:
             ]
         )
         proc = run(
-            [*bridge_command(uv_cmd), "-m", module, "--workspace", str(workspace), "--mode", "force"],
+            bridge_invocation(uv_cmd, "-m", module, "--workspace", str(workspace), "--mode", "force"),
             input_text=payload,
             check=False,
             dry_run=dry_run,
@@ -194,14 +212,14 @@ def bridge_smoke(module: str, *, dry_run: bool) -> None:
 
 
 def doctor(args: argparse.Namespace) -> None:
-    require_command("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
-    require_command("node")
-    require_command("npm")
+    command_spec("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
+    command_spec("node")
+    command_spec("npm")
     if args.platform in {"opencode", "both"}:
-        require_command(args.opencode_cmd)
+        command_spec(args.opencode_cmd)
         bridge_smoke("sparseread.bridge.opencode", dry_run=args.dry_run)
     if args.platform in {"openclaw", "both"}:
-        require_command(args.openclaw_cmd)
+        command_spec(args.openclaw_cmd)
         bridge_smoke("sparseread.bridge.openclaw", dry_run=args.dry_run)
 
 
@@ -213,6 +231,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--openclaw-cmd", default="openclaw")
     parser.add_argument("--openclaw-profile", default="", help="Optional OpenClaw profile name")
     parser.add_argument("--openclaw-workspace", default="", help="Optional OpenClaw default SparseRead workspaceRoot")
+    parser.add_argument(
+        "--openclaw-hook-mode",
+        choices=["off", "prompt", "trace", "enforce"],
+        default="off",
+        help="OpenClaw runtime hook mode. Keep off for production compatibility.",
+    )
     parser.add_argument("--policy", choices=["observe", "advisory", "enforce", "native", "auto"], default="auto")
     parser.add_argument(
         "--mode",

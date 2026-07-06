@@ -9,6 +9,8 @@
 
 这还不是 PyPI/npm/官方插件市场的一键发行版。当前目标是让开源用户能从源码稳定安装、验证、使用，并且三个平台使用同一套 core 能力。
 
+当前源码安装目标支持 macOS、Linux、Windows。仓库里的 PinchBench/QwenClawBench benchmark runtime 仍包含 POSIX `/tmp`、shell wrapper 等假设，不作为 Windows 日常安装验证的一部分；Windows 用户优先使用本指南中的 release fixture、doctor 和快速体验测试。
+
 ## 当前生产入口
 
 这是框架和 agent 内部看到的工具形态，不是要求用户手动输入的命令。生产路径从 `sro_preview` 开始：
@@ -48,6 +50,16 @@ Windows 上如果 `npm`、`openclaw` 等入口实际是 `.cmd/.exe/.bat`，安�
 - OpenClaw `2026.6.11`
 
 OpenClaw 插件声明的 host 版本要求是 `openclaw >= 2026.5.17`。更旧版本只有在保留相同 plugin/tool API 时才可能可用。
+
+OpenClaw `2026.6.11` 上，生产安装默认不注册 `before_tool_call`/`after_tool_call` 这类 native tool lifecycle hook，只注册 SparseRead 工具和插件 skill。这样可以避开部分 Windows/OpenClaw 安全隔离策略下的工具调用拦截问题。需要诊断或 benchmark 时再显式打开：
+
+```bash
+python3 scripts/install_sparseread.py \
+  --platform openclaw \
+  --openclaw-hook-mode trace
+```
+
+只有在受控实验里才使用 `--openclaw-hook-mode enforce`，它会注册 `before_tool_call` 并可能阻断 broad native read/search/exec-dump。
 
 ## Fresh Machine 安装
 
@@ -125,6 +137,7 @@ python3 scripts/install_sparseread.py \
   --platform openclaw \
   --policy auto \
   --mode auto \
+  --openclaw-hook-mode off \
   --doctor
 ```
 
@@ -255,4 +268,4 @@ uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
 
 历史 benchmark 和旧脚本可能还统计 `sro_card -> sro_read`。这条路径保留，并可通过 `SPARSEREAD_MODE=bench_protocol` 或 `SparseReadConfig(mode="bench_protocol")` 使用。
 
-生产安装应使用 `mode=auto`，并从 `sro_preview` 开始。
+生产安装应使用 `mode=auto`、OpenClaw `hookMode=off`。用户侧用自然语言要求 agent 自动使用 SparseRead；框架内部仍以 `sro_preview` 作为第一入口。

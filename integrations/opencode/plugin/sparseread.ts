@@ -165,13 +165,30 @@ function bridgeCommandPrefix(options: SparseReadPluginOptions | undefined, pytho
   return trimmed.split(/\s+/)
 }
 
+function windowsShellShim(command: string): boolean {
+  return process.platform === "win32" && /\.(cmd|bat)$/i.test(command)
+}
+
+function spawnCommand(prefix: string[]): [string, string[]] {
+  const [command, ...args] = prefix
+  if (windowsShellShim(command)) {
+    return [process.env.COMSPEC || "cmd.exe", ["/d", "/s", "/c", [command, ...args].map(windowsQuote).join(" ")]]
+  }
+  return [command, args]
+}
+
+function windowsQuote(value: string): string {
+  if (!/[\s"]/u.test(value)) return value
+  return `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, "$1$1")}"`
+}
+
 export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, options?: SparseReadPluginOptions) => {
   const policy = normalizePolicy(options?.policy || process.env.SPARSEREAD_POLICY)
   const projectRoot = options?.projectRoot || process.env.SPARSEREAD_PROJECT_ROOT || process.cwd()
   const python = options?.python || process.env.SPARSEREAD_PYTHON || "python3"
   const bridgeModule = options?.bridgeModule || "sparseread.bridge.opencode"
   const commandPrefix = bridgeCommandPrefix(options, python)
-  const [bridgeCommand, ...bridgeArgsPrefix] = commandPrefix
+  const [bridgeCommand, bridgeArgsPrefix] = spawnCommand(commandPrefix)
   const bridge = new SparseReadBridge(
     bridgeCommand,
     [
