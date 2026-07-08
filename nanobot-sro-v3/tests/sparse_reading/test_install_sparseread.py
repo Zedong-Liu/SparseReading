@@ -82,16 +82,72 @@ def test_bridge_invocation_wraps_cmd_after_full_args() -> None:
     ]
 
 
-def test_openclaw_install_patch_defaults_hook_mode_off(monkeypatch, tmp_path: Path) -> None:
+def test_install_opencode_writes_persistent_workspace_config(monkeypatch, tmp_path: Path) -> None:
     installer = load_installer()
-    patches: list[dict] = []
+    workspace = tmp_path / "workspace"
 
     monkeypatch.setattr(installer, "command_spec", lambda *_args, **_kwargs: installer.CommandSpec("/bin/true"))
     monkeypatch.setattr(installer, "npm_install_and_build", lambda *_args, **_kwargs: None)
 
+    installer.install_opencode(
+        SimpleNamespace(
+            opencode_workspace=str(workspace),
+            opencode_cmd="opencode",
+            policy="auto",
+            mode="auto",
+            skip_build=True,
+            dry_run=False,
+        )
+    )
+
+    plugin_target, config_target = installer.opencode_workspace_paths(workspace.resolve())
+    config = json.loads(config_target.read_text(encoding="utf-8"))
+
+    assert plugin_target.exists()
+    assert config["projectRoot"] == str(installer.ROOT)
+    assert config["bridgeModule"] == "sparseread.bridge.opencode"
+    assert config["policy"] == "auto"
+    assert config["mode"] == "auto"
+    assert isinstance(config["bridgeCommand"], list)
+    installer.validate_opencode_workspace(workspace.resolve())
+    assert not (workspace / ".opencode" / "sparseread.env").exists()
+
+
+def test_openclaw_install_patch_defaults_enforce_hook_mode(monkeypatch, tmp_path: Path) -> None:
+    installer = load_installer()
+    calls: list[list[str]] = []
+    patches: list[dict] = []
+
+    monkeypatch.setattr(installer, "command_spec", lambda *_args, **_kwargs: installer.CommandSpec("/bin/true"))
+    monkeypatch.setattr(installer, "npm_install_and_build", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(installer, "normalized_openclaw_load_paths", lambda _profile: [str(installer.OPENCLAW_PLUGIN)])
+
     def fake_run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
+        calls.append(cmd)
         if cmd[-3:] == ["config", "patch", "--stdin"]:
             patches.append(json.loads(kwargs["input_text"]))
+        if cmd[-5:] == ["plugins", "inspect", "sparseread-openclaw", "--runtime", "--json"]:
+            return subprocess.CompletedProcess(
+                cmd,
+                0,
+                json.dumps(
+                    {
+                        "status": "loaded",
+                        "plugin": {"rootDir": str(installer.OPENCLAW_PLUGIN)},
+                        "install": {"sourcePath": str(installer.OPENCLAW_PLUGIN)},
+                        "toolNames": list(installer.OPENCLAW_RUNTIME_TOOLS),
+                        "hookCount": 5,
+                        "typedHooks": [
+                            {"name": "before_prompt_build"},
+                            {"name": "before_tool_call"},
+                            {"name": "after_tool_call"},
+                            {"name": "llm_output"},
+                            {"name": "agent_end"},
+                        ],
+                    }
+                ),
+                "",
+            )
         return subprocess.CompletedProcess(cmd, 0, "{}", "")
 
     monkeypatch.setattr(installer, "run", fake_run)
@@ -103,11 +159,122 @@ def test_openclaw_install_patch_defaults_hook_mode_off(monkeypatch, tmp_path: Pa
             openclaw_workspace=str(tmp_path),
             policy="auto",
             mode="auto",
-            openclaw_hook_mode="off",
+            openclaw_hook_mode="enforce",
             skip_build=True,
             dry_run=False,
         )
     )
 
-    config = patches[0]["plugins"]["entries"]["sparseread-openclaw"]["config"]
-    assert config["hookMode"] == "off"
+    load_paths_patch = patches[0]["plugins"]["load"]["paths"]
+    entry = patches[1]["plugins"]["entries"]["sparseread-openclaw"]
+    config = entry["config"]
+    assert load_paths_patch == [str(installer.OPENCLAW_PLUGIN)]
+    assert config["hookMode"] == "enforce"
+    assert entry["hooks"]["allowPromptInjection"] is True
+    assert entry["hooks"]["allowConversationAccess"] is True
+    assert any(cmd[-2:] == ["sparseread-openclaw", "--force"] for cmd in calls)
+    assert any(cmd[-3:] == ["registry", "--refresh", "--json"] for cmd in calls)
+
+
+def test_validate_openclaw_runtime_accepts_hookless_production_payload() -> None:
+    installer = load_installer()
+    payload = {
+        "status": "loaded",
+        "plugin": {"rootDir": str(installer.OPENCLAW_PLUGIN)},
+        "install": {"sourcePath": str(installer.OPENCLAW_PLUGIN)},
+        "toolNames": list(installer.OPENCLAW_RUNTIME_TOOLS),
+        "hookCount": 0,
+        "hookNames": [],
+    }
+
+    installer.validate_openclaw_runtime(json.dumps(payload), hook_mode="off")
+
+
+def test_validate_openclaw_runtime_accepts_prompt_only_payload() -> None:
+    installer = load_installer()
+    payload = {
+        "status": "loaded",
+        "plugin": {"rootDir": str(installer.OPENCLAW_PLUGIN)},
+        "install": {"sourcePath": str(installer.OPENCLAW_PLUGIN)},
+        "toolNames": list(installer.OPENCLAW_RUNTIME_TOOLS),
+        "hookCount": 1,
+        "hookNames": ["before_prompt_build"],
+    }
+
+    installer.validate_openclaw_runtime(json.dumps(payload), hook_mode="prompt")
+
+
+def test_validate_openclaw_runtime_accepts_enforce_payload() -> None:
+    installer = load_installer()
+    payload = {
+        "status": "loaded",
+        "plugin": {"rootDir": str(installer.OPENCLAW_PLUGIN)},
+        "install": {"sourcePath": str(installer.OPENCLAW_PLUGIN)},
+        "toolNames": list(installer.OPENCLAW_RUNTIME_TOOLS),
+        "hookCount": 3,
+        "typedHooks": [
+            {"name": "before_prompt_build"},
+            {"name": "before_tool_call"},
+            {"name": "after_tool_call"},
+        ],
+    }
+
+    installer.validate_openclaw_runtime(json.dumps(payload), hook_mode="enforce")
+
+
+def test_validate_openclaw_runtime_rejects_enforce_without_before_tool_call() -> None:
+    installer = load_installer()
+    payload = {
+        "status": "loaded",
+        "plugin": {"rootDir": str(installer.OPENCLAW_PLUGIN)},
+        "install": {"sourcePath": str(installer.OPENCLAW_PLUGIN)},
+        "toolNames": list(installer.OPENCLAW_RUNTIME_TOOLS),
+        "hookCount": 2,
+        "typedHooks": [{"name": "before_prompt_build"}, {"name": "after_tool_call"}],
+    }
+
+    try:
+        installer.validate_openclaw_runtime(json.dumps(payload), hook_mode="enforce")
+    except SystemExit as exc:
+        assert "must register before_tool_call" in str(exc)
+    else:
+        raise AssertionError("expected enforce mode without before_tool_call to fail doctor")
+
+
+def test_validate_openclaw_runtime_rejects_prompt_native_lifecycle_hooks() -> None:
+    installer = load_installer()
+    payload = {
+        "status": "loaded",
+        "plugin": {"rootDir": str(installer.OPENCLAW_PLUGIN)},
+        "install": {"sourcePath": str(installer.OPENCLAW_PLUGIN)},
+        "toolNames": list(installer.OPENCLAW_RUNTIME_TOOLS),
+        "hookCount": 2,
+        "hookNames": ["before_prompt_build", "before_tool_call"],
+    }
+
+    try:
+        installer.validate_openclaw_runtime(json.dumps(payload), hook_mode="prompt")
+    except SystemExit as exc:
+        assert "must not register native tool lifecycle hooks" in str(exc)
+    else:
+        raise AssertionError("expected prompt mode native lifecycle hook to fail doctor")
+
+
+def test_validate_openclaw_runtime_rejects_duplicate_sparse_read_plugins() -> None:
+    installer = load_installer()
+    payload = {
+        "status": "loaded",
+        "plugin": {"rootDir": str(installer.OPENCLAW_PLUGIN)},
+        "install": {"sourcePath": str(installer.OPENCLAW_PLUGIN)},
+        "toolNames": list(installer.OPENCLAW_RUNTIME_TOOLS),
+        "hookCount": 0,
+        "hookNames": [],
+        "diagnostics": [{"message": "duplicate plugin id resolved by explicit config-selected plugin"}],
+    }
+
+    try:
+        installer.validate_openclaw_runtime(json.dumps(payload), hook_mode="off")
+    except SystemExit as exc:
+        assert "duplicate SparseRead plugins" in str(exc)
+    else:
+        raise AssertionError("expected duplicate plugin diagnostic to fail doctor")

@@ -33,6 +33,7 @@ from run_openclaw_validation import (
     estimate_transcript_tokens,
     extract_final_prompt_tokens,
     iter_session_events,
+    openclaw_cmd,
     parse_agent_json,
     session_file_from_result,
     session_metrics,
@@ -461,10 +462,7 @@ def run_case(task: LoadedTask, mode: str, run_root: Path, profile: str, model: s
     timeout = max(60, int(task.timeout_seconds * timeout_multiplier))
     started = time.time()
     proc = run(
-        [
-            "npx",
-            "-y",
-            "openclaw",
+        openclaw_cmd(
             "--profile",
             profile,
             "agent",
@@ -478,7 +476,7 @@ def run_case(task: LoadedTask, mode: str, run_root: Path, profile: str, model: s
             "--json",
             "--timeout",
             str(timeout),
-        ],
+        ),
         timeout=timeout + 60,
         env=env,
     )
@@ -720,7 +718,7 @@ def main() -> int:
     print("[openclaw-unified14] preflight: plugin runtime", flush=True)
     ensure_plugin_runtime()
     print("[openclaw-unified14] preflight: plugin inspect", flush=True)
-    checked(["npx", "-y", "openclaw", "--profile", args.profile, "plugins", "inspect", "sparseread-openclaw", "--json"], timeout=120)
+    checked(openclaw_cmd("--profile", args.profile, "plugins", "inspect", "sparseread-openclaw", "--json"), timeout=120)
     print("[openclaw-unified14] preflight: ok", flush=True)
 
     results: list[dict[str, Any]] = []

@@ -178,7 +178,16 @@ class SparseReadBridgeServer:
         mode = params.get("mode")
         hint = params.get("hint") or {}
         if isinstance(target, str) and target:
-            target = {"artifact_id": target}
+            stripped = target.strip()
+            if stripped.startswith("{"):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError:
+                    target = {"artifact_id": target}
+                else:
+                    target = parsed
+            else:
+                target = {"artifact_id": target}
         if isinstance(mode, str):
             mode = {"full": "collect", "scan": "scout"}.get(mode, mode)
         if not isinstance(target, dict):
@@ -231,6 +240,8 @@ class SparseReadBridgeServer:
         max_candidates = self._bounded_int(params.get("max_candidates"), default=24, lower=1, upper=64)
         max_results = self._bounded_int(params.get("max_results"), default=3, lower=1, upper=5)
         handoffs: list[dict[str, Any]] = []
+        seen_handoff_paths: set[str] = set()
+        root_handoff: dict[str, Any] | None = None
         for candidate in self._preflight_candidates(workspace, max_candidates=max_candidates):
             info, decision, gate = self._classified_gate_for_path(candidate)
             if (
@@ -240,19 +251,27 @@ class SparseReadBridgeServer:
             ):
                 continue
             handoff_path = Path(str(gate.get("handoff_path") or info.path)).resolve(strict=False)
-            handoffs.append(
-                {
-                    "path": str(handoff_path),
-                    "relative_path": self._relative_path(handoff_path, workspace),
-                    "type": info.type,
-                    "reason": str(gate.get("reason") or decision.reason),
-                    "decision_mode": decision.mode,
-                    "gate_mode": gate.get("mode"),
-                    "trajectory": gate.get("trajectory"),
-                }
-            )
+            item = {
+                "path": str(handoff_path),
+                "relative_path": self._relative_path(handoff_path, workspace),
+                "type": info.type,
+                "reason": str(gate.get("reason") or decision.reason),
+                "decision_mode": decision.mode,
+                "gate_mode": gate.get("mode"),
+                "trajectory": gate.get("trajectory"),
+            }
+            key = str(handoff_path)
+            if key in seen_handoff_paths:
+                continue
+            if handoff_path == workspace and candidate.resolve(strict=False) != workspace:
+                root_handoff = root_handoff or item
+                continue
+            seen_handoff_paths.add(key)
+            handoffs.append(item)
             if len(handoffs) >= max_results:
                 break
+        if not handoffs and root_handoff:
+            handoffs.append(root_handoff)
         result: dict[str, Any] = {
             "workspace": str(workspace),
             "handoffs": handoffs,
@@ -465,10 +484,12 @@ class SparseReadBridgeServer:
         return artifact_id if artifact_id in self._adapter_ready_artifacts else ""
 
     def _adapter_ready_guard_covers_hint(self, artifact_id: str, hint: dict[str, Any]) -> bool:
+        ready = self._adapter_ready_artifacts.get(artifact_id) or {}
+        if str(ready.get("type") or "") == "collection" and artifact_id in self._adapter_once_artifacts:
+            return True
         requested = self._requested_slot_terms(hint)
         if not requested:
             return True
-        ready = self._adapter_ready_artifacts.get(artifact_id) or {}
         resolved_ids = {str(item).lower() for item in ready.get("resolved_slot_ids") or []}
         resolved_text = " ".join(str(item).lower() for item in ready.get("resolved_slot_text") or [])
         return all(term in resolved_ids or term in resolved_text for term in requested)

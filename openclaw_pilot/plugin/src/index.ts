@@ -170,7 +170,7 @@ function sparseMode(value: Json): SparseReadConfig["mode"] {
 
 function hookMode(value: Json): SparseReadConfig["hookMode"] {
   if (value === "trace" || value === "prompt" || value === "enforce") return value
-  return "off"
+  return "enforce"
 }
 
 function stringValue(value: Json, fallback: string): string {
@@ -411,7 +411,7 @@ function preflightPrompt(result: JsonObject): string {
   const firstPath = String(first.relative_path || first.path || "").trim()
   if (!firstPath) return ""
   if (handoffs.length === 1) {
-    return ` SparseRead preflight: high-confidence evidence target ${JSON.stringify(firstPath)} detected. First action for broad audit/QA: call ${previewCall(firstPath)} before native reads, listing, grep, or exec inspection.`
+    return ` SparseRead preflight: first action for this high-confidence evidence target is ${previewCall(firstPath)}. Do not start with native reads, listing, grep, or exec inspection.`
   }
   const targets = handoffs
     .map((item) => String(item.relative_path || item.path || "").trim())
@@ -648,9 +648,11 @@ const sparseReadPlugin: any = definePluginEntry({
         } catch {
           preflight = ""
         }
+        const systemContext =
+          "SparseRead is available for long documents, PDFs, and compact evidence closures. Production SparseRead starts with sro_preview(path), which returns the minimal card, structure, samples, signals, raw_ref, and next action. Use native reads for small files, small logs, config edits, scripts, calculations, and full-table work. Call sro_read only after preview when targeted evidence is needed and provide a concrete HintSpec. For evidence collections: preview first, then at most one sro_read(mode=collect) when slots are explicit. Once slots are ready, write the deliverable immediately. Do not verify, refine, or re-read resolved slots. sro_card remains a compatibility/debug path, and bench_protocol keeps the older sro_card -> sro_read flow." + preflight
         return {
-          appendSystemContext:
-            "SparseRead is available for long documents, PDFs, and compact evidence closures. Production SparseRead starts with sro_preview(path), which returns the minimal card, structure, samples, signals, raw_ref, and next action. Use native reads for small files, small logs, config edits, scripts, calculations, and full-table work. Call sro_read only after preview when targeted evidence is needed and provide a concrete HintSpec. For evidence collections: preview first, then at most one sro_read(mode=collect) when slots are explicit. Once slots are ready, write the deliverable immediately. Do not verify, refine, or re-read resolved slots. sro_card remains a compatibility/debug path, and bench_protocol keeps the older sro_card -> sro_read flow." + preflight,
+          prependContext: preflight.trim() ? preflight.trim() : undefined,
+          appendSystemContext: systemContext,
         }
       }, { priority: -20, timeoutMs: 10000 })
     }

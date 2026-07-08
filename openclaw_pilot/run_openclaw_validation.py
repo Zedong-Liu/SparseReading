@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[1]
 BASELINE = REPO / "SRO_test" / "qwenclawbench" / "baseline"
 PLUGIN_DIR = REPO / "integrations" / "openclaw" / "plugin"
 CORE_DIR = REPO / "nanobot-sro-v3"
@@ -167,6 +167,11 @@ def set_plugin_enabled(profile: str, enabled: bool, *, policy: str = "advisory",
             "workspaceRoot": str(workspace) if workspace else "",
             "bridgeModule": "sparseread.bridge.openclaw",
             "mode": "auto",
+            "hookMode": "enforce",
+        }
+        entry["hooks"] = {
+            "allowPromptInjection": True,
+            "allowConversationAccess": True,
         }
     patch_config(profile, {"plugins": {"entries": {"sparseread-openclaw": entry}}})
 
@@ -546,10 +551,7 @@ def run_case(task: TaskSpec, mode: str, run_root: Path, profile: str, model: str
     }
     started = time.time()
     proc = run(
-        [
-            "npx",
-            "-y",
-            "openclaw",
+        openclaw_cmd(
             "--profile",
             profile,
             "agent",
@@ -563,7 +565,7 @@ def run_case(task: TaskSpec, mode: str, run_root: Path, profile: str, model: str
             "--json",
             "--timeout",
             str(timeout),
-        ],
+        ),
         timeout=timeout + 60,
         env=env,
     )

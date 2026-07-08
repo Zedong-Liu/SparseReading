@@ -27,6 +27,7 @@ PLUGIN_DIR = REPO / "integrations" / "openclaw" / "plugin"
 CORE_DIR = REPO / "nanobot-sro-v3"
 DEFAULT_PROFILE = "srotest"
 DEFAULT_MODEL = "paratera/DeepSeek-V4-Flash"
+OPENCLAW_BIN = os.environ.get("OPENCLAW_PATH") or shutil.which("openclaw") or "openclaw"
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,10 @@ def checked(cmd: list[str], *, input_text: str | None = None, timeout: int = 120
     return proc
 
 
+def openclaw_cmd(*args: str) -> list[str]:
+    return [OPENCLAW_BIN, *args]
+
+
 def extract_prompt(task_md: Path) -> str:
     text = task_md.read_text(encoding="utf-8")
     match = re.search(r"^## Prompt\s*\n(?P<prompt>.*?)(?=^## |\Z)", text, re.M | re.S)
@@ -142,7 +147,7 @@ def materialize_assets(task: TaskSpec, workspace: Path) -> None:
 
 def patch_config(profile: str, patch: dict[str, Any]) -> None:
     checked(
-        ["npx", "-y", "openclaw", "--profile", profile, "config", "patch", "--stdin"],
+        openclaw_cmd("--profile", profile, "config", "patch", "--stdin"),
         input_text=json.dumps(patch),
         timeout=120,
     )
@@ -167,6 +172,11 @@ def set_plugin_enabled(profile: str, enabled: bool, *, policy: str = "advisory",
             "workspaceRoot": str(workspace) if workspace else "",
             "bridgeModule": "sparseread.bridge.openclaw",
             "mode": "auto",
+            "hookMode": "enforce",
+        }
+        entry["hooks"] = {
+            "allowPromptInjection": True,
+            "allowConversationAccess": True,
         }
     patch_config(profile, {"plugins": {"entries": {"sparseread-openclaw": entry}}})
 
@@ -176,7 +186,7 @@ def set_workspace(profile: str, workspace: Path) -> None:
 
 
 def ensure_plugin_available(profile: str) -> None:
-    proc = run(["npx", "-y", "openclaw", "--profile", profile, "plugins", "inspect", "sparseread-openclaw", "--json"], timeout=120)
+    proc = run(openclaw_cmd("--profile", profile, "plugins", "inspect", "sparseread-openclaw", "--json"), timeout=120)
     if proc.returncode == 0:
         return
     raise RuntimeError(
@@ -546,10 +556,7 @@ def run_case(task: TaskSpec, mode: str, run_root: Path, profile: str, model: str
     }
     started = time.time()
     proc = run(
-        [
-            "npx",
-            "-y",
-            "openclaw",
+        openclaw_cmd(
             "--profile",
             profile,
             "agent",
@@ -563,7 +570,7 @@ def run_case(task: TaskSpec, mode: str, run_root: Path, profile: str, model: str
             "--json",
             "--timeout",
             str(timeout),
-        ],
+        ),
         timeout=timeout + 60,
         env=env,
     )

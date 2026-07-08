@@ -17,6 +17,8 @@ def classify_opencode_gate(info: FileInfo, decision: BenefitDecision) -> dict[st
         "mode": "native",
         "prompt_style": "native",
         "block_native_read": False,
+        "block_native_search": False,
+        "block_native_exec_dump": False,
         "nudge_native": False,
         "trajectory": "native",
         "reason": decision.reason,
@@ -72,6 +74,8 @@ def classify_opencode_gate(info: FileInfo, decision: BenefitDecision) -> dict[st
             "mode": "enforce",
             "prompt_style": "sro_first",
             "block_native_read": True,
+            "block_native_search": True,
+            "block_native_exec_dump": True,
             "nudge_native": True,
             "trajectory": "sro_first",
         }

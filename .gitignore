@@ -23,12 +23,19 @@ openclaw_pilot/plugin/node_modules/
 openclaw_pilot/plugin/dist/
 
 # Local agent/session artifacts
+.opencode/
 .nanobot/
 sessions/
 .local_openclaw/
 .codex_tmp_*
 tmp/
 outputs/
+HEARTBEAT.md
+IDENTITY.md
+SOUL.md
+TOOLS.md
+USER.md
+openclaw-workspace-state.json
 
 # Credentials and local env
 .env

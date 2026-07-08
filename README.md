@@ -49,6 +49,8 @@ sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 当前默认安装形态是：用户本机已有 OpenCode 或 OpenClaw CLI，然后从本仓库源码加装 SparseRead。完整 fresh-machine 指南见
 [`docs/sparseread_installation.md`](docs/sparseread_installation.md)。
 
+Windows 默认推荐路径是 **PowerShell 原生安装**。OpenClaw 生产模式默认使用 `hookMode=enforce`，并由 `policy=auto` / `mode=auto` 的 gate 决定是否接管：高收益的长文档、PDF、日志和审计证据包会拦截 broad native read/search/dump；收益不清晰的任务只提示或保持原生工具。OpenCode 生产安装不再依赖 `.env + source`。
+
 ```bash
 git clone https://github.com/Zedong-Liu/SparseReading.git
 cd SparseReading
@@ -56,6 +58,14 @@ cd SparseReading
 uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
   pytest nanobot-sro-v3/tests/sparse_reading/test_release_fixtures.py -q
 ```
+
+支持矩阵：
+
+| 场景 | macOS / Linux | Windows PowerShell |
+|---|---|---|
+| OpenCode / OpenClaw 源码安装 | ✅ | ✅ |
+| doctor / quick test | ✅ | ✅ |
+| benchmark shell runtime | ✅ | ⚠️ 不作为默认安装路径 |
 
 OpenCode workspace 安装：
 
@@ -67,6 +77,8 @@ python3 scripts/install_sparseread.py \
   --mode auto \
   --doctor
 ```
+
+Windows PowerShell 使用 `py scripts/install_sparseread.py ...` 即可。
 
 OpenClaw profile 安装：
 
@@ -92,14 +104,14 @@ python3 scripts/install_sparseread.py \
 examples/sparseread_quick_test/incident-report.md
 ```
 
-OpenCode 安装后可以在目标 workspace 里运行：
+推荐把当前仓库根目录本身作为 OpenCode workspace，或者先把这个 fixture 复制进你的目标 workspace，再运行：
 
 ```bash
-source .opencode/sparseread.env
-opencode run "请自动使用 SparseRead 阅读 $SPARSEREAD_PROJECT_ROOT/examples/sparseread_quick_test/incident-report.md，只提取必要证据，并回答 ROOT_CAUSE、MITIGATION_OWNER、FINAL_DEADLINE 分别是什么。不要让我手动调用工具。"
+cd /absolute/path/to/SparseReading
+opencode run "请自动使用 SparseRead 阅读 examples/sparseread_quick_test/incident-report.md，只提取必要证据，并回答 ROOT_CAUSE、MITIGATION_OWNER、FINAL_DEADLINE 分别是什么。不要让我手动调用工具。"
 ```
 
-OpenClaw 或 nanobot 会话中发送同一类自然语言请求即可，把路径换成你本机 checkout 下的完整路径。预期答案应包含：
+OpenClaw 或 nanobot 会话中发送同一类自然语言请求即可。预期答案应包含：
 
 ```text
 ROOT_CAUSE: cache invalidation used customer_id instead of tenant_id.

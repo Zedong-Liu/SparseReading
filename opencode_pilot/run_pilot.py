@@ -26,10 +26,11 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 QCB_ROOT = ROOT / "SRO_test" / "qwenclawbench"
 PLUGIN_SOURCE = ROOT / "integrations" / "opencode" / "plugin" / "sparseread.ts"
 SR_PROJECT = ROOT / "nanobot-sro-v3"
+DEFAULT_OPENCODE_CMD = os.environ.get("OPENCODE_PATH") or shutil.which("opencode") or ""
 TASKS = [
     "task_loogle_shortdep_fall_of_outremer",
     "task_loogle_shortdep_fall_of_outremer_5q",
@@ -49,6 +50,7 @@ TASKS = [
 MODES = [
     "native_truncation",
     "plugin_observe",
+    "plugin_auto",
     "plugin_nudge",
     "plugin_replace_truncation_experimental",
 ]
@@ -154,9 +156,19 @@ def prepare_run(runset: str, task: str, mode: str, *, force: bool) -> Path:
 
 
 def install_plugin(run_dir: Path) -> None:
-    plugin_dir = run_dir / "runtime" / ".opencode" / "plugins"
+    config_dir = run_dir / "runtime" / ".opencode"
+    plugin_dir = config_dir / "plugins"
     plugin_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(PLUGIN_SOURCE, plugin_dir / "sparseread.ts")
+    json_dump(
+        config_dir / "sparseread.json",
+        {
+            "projectRoot": str(ROOT),
+            "python": sys.executable,
+            "bridgeModule": "sparseread.bridge.opencode",
+            "mode": "auto",
+        },
+    )
     json_dump(
         run_dir / "runtime" / "opencode.json",
         {
@@ -245,6 +257,8 @@ def sparse_read_protocol_prompt(runtime: Path, task: str, *, diagnostic_hints: b
 
 
 def opencode_policy(mode: str) -> str:
+    if mode == "plugin_auto":
+        return "auto"
     if mode == "plugin_nudge":
         return "advisory"
     if mode == "plugin_replace_truncation_experimental":
@@ -273,6 +287,7 @@ def run_real_opencode(run_dir: Path, task: str, mode: str, args: argparse.Namesp
     env.update(
         {
             "SPARSEREAD_PROJECT_ROOT": str(ROOT),
+            "SPARSEREAD_WORKSPACE_ROOT": str(run_dir / "runtime"),
             "SPARSEREAD_POLICY": opencode_policy(mode),
             "SPARSEREAD_PYTHON": args.python,
             "SPARSEREAD_BRIDGE_COMMAND": json.dumps(bridge_command_prefix(args)),
@@ -355,6 +370,14 @@ def run_offline(run_dir: Path, task: str, mode: str, args: argparse.Namespace, *
     elif mode == "plugin_observe":
         simulate_native(runtime, task, trace)
         simulate_sro(runtime, task, trace, args, observe_only=True, diagnostic_hints=diagnostic_hints)
+    elif mode == "plugin_auto":
+        gate = opencode_gate_profile(runtime, task)
+        if gate.get("block_native_read") is True:
+            simulate_sro(runtime, task, trace, args, observe_only=False, diagnostic_hints=diagnostic_hints)
+            trace["notes"].append("auto gate enforced sro_preview-first path in offline harness")
+        else:
+            simulate_native(runtime, task, trace)
+            trace["notes"].append(f"auto gate stayed {gate.get('mode', 'native')} in offline harness")
     elif mode == "plugin_nudge":
         simulate_native(runtime, task, trace)
         trace["notes"].append("nudge would be appended on truncated/high-confidence native reads")
@@ -464,7 +487,15 @@ def bridge_command_prefix(args: argparse.Namespace) -> list[str]:
 
 
 def opencode_command_prefix(args: argparse.Namespace) -> list[str]:
-    return args.opencode_cmd.split()
+    raw = args.opencode_cmd.strip()
+    if not raw:
+        return []
+    if raw.startswith("["):
+        value = json.loads(raw)
+        if not isinstance(value, list) or not value or any(not isinstance(part, str) or not part.strip() for part in value):
+            raise ValueError(f"invalid --opencode-cmd JSON array: {args.opencode_cmd!r}")
+        return value
+    return [raw]
 
 
 def bridge_request(proc: subprocess.Popen[str], method: str, params: dict[str, Any]) -> Any:
@@ -874,6 +905,7 @@ def write_report(runset: str, summaries: list[RunSummary], *, executor: str, dia
             "",
             "## Conclusions",
             "",
+            "- `plugin_auto` is the production-equivalent source-install row. Use it for release validation when you want the adapter to apply the same `policy=auto, mode=auto` shape that end users install.",
             "- Native OpenCode was sufficient on these rows when status is `ok` and the expected deliverable exists, but it used substantially more requests/tokens on the positive sparse-reading tasks.",
             "- SparseRead shows a clear OpenCode trajectory win on the current long-document and audit tasks when the model follows `sro_preview -> targeted sro_read -> write`: fewer requests, fewer native reads, and no quality loss in the checked deliverables.",
             "- `plugin_replace_truncation_experimental` remains experimental: it can be the cheapest row for a high-confidence collection task, but prior rows showed blocking risk on broader security tasks. Do not generalize it as the default policy yet.",
@@ -942,7 +974,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--modes", nargs="*", default=MODES)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--offline", action="store_true", help="Run deterministic offline bridge/truncation harness")
-    parser.add_argument("--opencode-cmd", default=shutil.which("opencode") or "npx -y opencode-ai")
+    parser.add_argument(
+        "--opencode-cmd",
+        default=DEFAULT_OPENCODE_CMD,
+        help="Installed OpenCode executable or JSON argv array. Defaults to OPENCODE_PATH or the opencode found on PATH.",
+    )
     parser.add_argument("--model", default="paratera/DeepSeek-V4-Flash")
     parser.add_argument("--api-base-url", default=os.environ.get("API_BASE_URL", "https://llmapi.paratera.com/v1"))
     parser.add_argument("--python", default=sys.executable)
@@ -963,7 +999,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    executor = "offline" if args.offline or not args.opencode_cmd else "opencode"
+    executor = "offline" if args.offline else "opencode"
+    if executor == "opencode" and not args.opencode_cmd.strip():
+        raise SystemExit("OpenCode CLI not found. Install `opencode`, set OPENCODE_PATH, or rerun with --offline.")
     if executor == "opencode" and "API_KEY" not in os.environ:
         raise SystemExit("API_KEY must be set for the OpenCode runner API; do not reuse subagent provider keys.")
     summaries: list[RunSummary] = []

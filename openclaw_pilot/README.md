@@ -38,12 +38,13 @@ Command-security bundles use `advisory + one_collect_then_write`: preview first,
 then exactly one collection `collect` only when slots are explicit, write once
 ready, and allow small template or named unresolved-slot native reads.
 
-Production installs keep `hookMode=off`: the plugin registers SparseRead tools
-and the SparseRead skill, but it does not register native tool lifecycle hooks.
-This is the stable path for OpenClaw 2026.6.11 and Windows.  `hookMode=trace`
-records after-call/usage events, and `hookMode=enforce` additionally registers
-`before_tool_call` for controlled benchmark runs where native read/search/dump
-blocking is desired.
+Production installs use `policy=auto`, `mode=auto`, and `hookMode=enforce`.
+The plugin registers SparseRead tools, the SparseRead skill, prompt preflight,
+and native tool lifecycle hooks.  The lifecycle hook is still gate-controlled:
+high-confidence long documents/PDFs/logs and compact audit closures are routed
+to `sro_preview`, while advisory/native cases keep using OpenClaw tools.  Use
+`hookMode=prompt` or `hookMode=off` only as a compatibility fallback when the
+local OpenClaw environment cannot grant lifecycle-hook permissions.
 
 ## Install
 
@@ -53,7 +54,6 @@ installed:
 ```bash
 python3 scripts/install_sparseread.py \
   --platform openclaw \
-  --openclaw-hook-mode off \
   --doctor
 ```
 
@@ -81,14 +81,13 @@ Useful environment overrides:
 ```bash
 export SPARSEREAD_PROJECT_ROOT="$PWD"
 export SPARSEREAD_PYTHON="uv --project $PWD/nanobot-sro-v3 run --with pymupdf python"
-export SPARSEREAD_POLICY=advisory
-export SPARSEREAD_OPENCLAW_HOOK_MODE=off
+export SPARSEREAD_POLICY=auto
+export SPARSEREAD_OPENCLAW_HOOK_MODE=enforce
 ```
 
-Use `SPARSEREAD_POLICY=enforce` only for controlled tests of high-confidence
-long document/PDF or compact audit-closure cases. Use
-`SPARSEREAD_OPENCLAW_HOOK_MODE=enforce` only for controlled lifecycle-hook
-compatibility tests.
+Use `SPARSEREAD_POLICY=enforce` only for controlled tests that force every
+eligible high-confidence case through SparseRead. Production should keep
+`SPARSEREAD_POLICY=auto` with `SPARSEREAD_OPENCLAW_HOOK_MODE=enforce`.
 
 Legacy path compatibility remains available through `openclaw_pilot/` symlinks,
 but new development should use `integrations/openclaw/`.

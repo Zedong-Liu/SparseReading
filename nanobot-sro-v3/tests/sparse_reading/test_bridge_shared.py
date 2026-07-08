@@ -335,6 +335,53 @@ def test_openclaw_preview_collection_ready_guard_stops_repeat_reads(tmp_path: Pa
     assert trace["summary"]["adapter_guard_hits"] == 1
 
 
+def test_audit_collection_ready_guard_stops_new_detail_reads(tmp_path: Path) -> None:
+    assets = _write_audit_bundle(tmp_path / "audit")
+
+    for bridge_cls in (OpenCodeBridge, OpenClawBridge):
+        bridge = bridge_cls(workspace=tmp_path, mode="auto")
+        preview = bridge.handle({"method": "preview", "params": {"path": str(assets)}})
+        artifact_id = preview["preview_pack"]["artifact_id"]
+        first = bridge.handle(
+            {
+                "method": "read",
+                "params": {
+                    "target": {"artifact_id": artifact_id},
+                    "mode": "collect",
+                    "hint": {
+                        "goal": "audit the fetcher data integrity path",
+                        "want": "fact",
+                        "type_hint": "collection",
+                        "slots": [
+                            {"id": "state_vs_output", "question": "state vs output consistency"},
+                            {"id": "missing_csv", "question": "missing csv summary"},
+                            {"id": "dedup_bug", "question": "deduplication bug and fix"},
+                        ],
+                    },
+                },
+            }
+        )
+        second = bridge.handle(
+            {
+                "method": "read",
+                "params": {
+                    "target": {"artifact_id": artifact_id},
+                    "mode": "focus",
+                    "hint": {
+                        "goal": "read run_scheduled_fetch.py again for exact code",
+                        "want": "verbatim",
+                        "type_hint": "python",
+                        "needles": ["deduplicate", "list(seen)", "save_csv_summary"],
+                    },
+                },
+            }
+        )
+
+        assert first["evidence_pack"]["next_action"]["overall_status"] == "ready"
+        assert second["evidence_pack"]["protocol_next"] == "write_file_now"
+        assert second["evidence_pack"]["summary"].startswith("adapter ready guard")
+
+
 def test_adapter_gates_preserve_t86_advisory_and_audit_enforce(tmp_path: Path) -> None:
     command_assets = _write_command_security_bundle(tmp_path / "command")
     audit_assets = _write_audit_bundle(tmp_path / "audit")
@@ -354,6 +401,8 @@ def test_adapter_gates_preserve_t86_advisory_and_audit_enforce(tmp_path: Path) -
 
         assert audit_decision[gate_key]["mode"] == "enforce"
         assert audit_decision[gate_key]["block_native_read"] is True
+        assert audit_decision[gate_key]["block_native_search"] is True
+        assert audit_decision[gate_key]["block_native_exec_dump"] is True
         assert child_decision[gate_key]["mode"] == "enforce"
         assert child_decision[gate_key]["handoff_path"] == str(audit_assets)
 
@@ -376,6 +425,25 @@ def test_bridge_preflight_reports_force_sro_first_action(tmp_path: Path) -> None
         assert preflight["handoffs"][0]["gate_mode"] == "enforce"
         assert preflight["handoffs"][0]["trajectory"] == "sro_first"
         assert preflight["first_action"]["tool"] == "sro_preview"
+        assert preflight["first_action"]["path"] == "a_stock_announcements"
+
+
+def test_bridge_preflight_prefers_specific_target_over_root_handoff(tmp_path: Path) -> None:
+    audit = tmp_path / "a_stock_announcements"
+    audit.mkdir()
+    (audit / "fetcher.py").write_text("def deduplicate(seen):\n    return list(seen)[-5000:]\n", encoding="utf-8")
+    (audit / "state.json").write_text('{"seen_ids":["a","b"]}\n', encoding="utf-8")
+    (audit / "announcements_2026-02-09.json").write_text('[{"id":"b","important":true}]\n', encoding="utf-8")
+    (audit / "config.yaml").write_text("summary_csv: true\n", encoding="utf-8")
+    (tmp_path / "fetcher.py").write_text("def fetch():\n    pass\n", encoding="utf-8")
+    (tmp_path / "fetch_state.json").write_text('{"cursor":"2026-02-09"}\n', encoding="utf-8")
+
+    for bridge_cls in (OpenCodeBridge, OpenClawBridge):
+        bridge = bridge_cls(workspace=tmp_path, mode="auto")
+        preflight = bridge.handle({"method": "preflight", "params": {"max_candidates": 12}})
+
+        assert preflight["handoff_count"] == 1
+        assert [item["relative_path"] for item in preflight["handoffs"]] == ["a_stock_announcements"]
         assert preflight["first_action"]["path"] == "a_stock_announcements"
 
 

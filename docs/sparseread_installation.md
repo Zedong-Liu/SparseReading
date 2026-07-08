@@ -9,7 +9,7 @@
 
 这还不是 PyPI/npm/官方插件市场的一键发行版。当前目标是让开源用户能从源码稳定安装、验证、使用，并且三个平台使用同一套 core 能力。
 
-当前源码安装目标支持 macOS、Linux、Windows。仓库里的 PinchBench/QwenClawBench benchmark runtime 仍包含 POSIX `/tmp`、shell wrapper 等假设，不作为 Windows 日常安装验证的一部分；Windows 用户优先使用本指南中的 release fixture、doctor 和快速体验测试。
+当前源码安装目标支持 macOS、Linux、Windows。Windows 默认推荐路径是 **PowerShell 原生安装**，不推荐把日常产品安装建立在 WSL shell wrapper 之上。仓库里的 PinchBench/QwenClawBench benchmark runtime 仍包含 POSIX `/tmp`、shell wrapper 等假设，不作为 Windows 日常安装验证的一部分；Windows 用户优先使用本指南中的 release fixture、doctor 和快速体验测试。
 
 ## 当前生产入口
 
@@ -46,20 +46,27 @@ Windows 上如果 `npm`、`openclaw` 等入口实际是 `.cmd/.exe/.bat`，安�
 
 当前源码安装验证使用过：
 
-- OpenCode `1.17.13`
+- OpenCode `1.17.14`
 - OpenClaw `2026.6.11`
 
 OpenClaw 插件声明的 host 版本要求是 `openclaw >= 2026.5.17`。更旧版本只有在保留相同 plugin/tool API 时才可能可用。
 
-OpenClaw `2026.6.11` 上，生产安装默认不注册 `before_tool_call`/`after_tool_call` 这类 native tool lifecycle hook，只注册 SparseRead 工具和插件 skill。这样可以避开部分 Windows/OpenClaw 安全隔离策略下的工具调用拦截问题。需要诊断或 benchmark 时再显式打开：
+OpenClaw `2026.6.11` 上，生产安装默认使用 `hookMode=enforce`，同时保持 `policy=auto`、`mode=auto`。这不是把所有读取都强行改成 SparseRead，而是让插件注册 `before_tool_call`、`after_tool_call` 和 `before_prompt_build`，再由 SparseRead gate 决定：
 
-```bash
-python3 scripts/install_sparseread.py \
-  --platform openclaw \
-  --openclaw-hook-mode trace
-```
+- `enforce`：长文档、PDF、日志、compact audit closure 等高置信收益场景，拦截 broad native read/search/exec-dump，要求先走 `sro_preview`。
+- `advisory`：命令安全、边界集合、收益不稳定的诊断包，只提示 SparseRead 可用，不阻断原生工具。
+- `native`：小文件、脚本、配置、全表计算等低收益场景不受 SparseRead 影响。
 
-只有在受控实验里才使用 `--openclaw-hook-mode enforce`，它会注册 `before_tool_call` 并可能阻断 broad native read/search/exec-dump。
+Windows 上如果 OpenClaw 权限策略没有允许插件 lifecycle hook，可能表现为工具调用被隔离或 `doctor` 检查失败。这是本地 OpenClaw 配置/权限问题，不是生产模式应降级为 prompt-only 的证据。推荐先修正 OpenClaw 插件权限；只有在无法放开权限时，才临时使用 `--openclaw-hook-mode prompt` 或 `--openclaw-hook-mode off` 作为兼容降级。
+
+## 支持矩阵
+
+| 场景 | macOS / Linux | Windows PowerShell |
+|---|---|---|
+| OpenCode 源码安装 | ✅ 支持 | ✅ 支持 |
+| OpenClaw 源码安装 | ✅ 支持 | ✅ 支持 |
+| quick test / doctor | ✅ 支持 | ✅ 支持 |
+| benchmark shell runtime | ✅ 可用 | ⚠️ 不作为默认安装路径 |
 
 ## Fresh Machine 安装
 
@@ -84,6 +91,12 @@ uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
   pytest nanobot-sro-v3/tests/sparse_reading -q
 ```
 
+Windows PowerShell 可直接使用：
+
+```powershell
+uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio pytest nanobot-sro-v3/tests/sparse_reading/test_release_fixtures.py -q
+```
+
 ## 安装到 OpenCode
 
 假设你已经能在目标 workspace 里运行 `opencode`。
@@ -101,23 +114,30 @@ python3 scripts/install_sparseread.py \
 
 ```text
 /path/to/your/project/.opencode/plugins/sparseread.ts
-/path/to/your/project/.opencode/sparseread.env
+/path/to/your/project/.opencode/sparseread.json
 ```
 
 启动 OpenCode：
 
 ```bash
 cd /path/to/your/project
-source .opencode/sparseread.env
 opencode run "Use SparseRead to inspect the large report and answer the question"
 ```
 
-如果你的 CLI 名称不是 `opencode`，显式指定：
+Windows PowerShell：
+
+```powershell
+py scripts/install_sparseread.py --platform opencode --opencode-workspace D:\path\to\your\project --policy auto --mode auto --doctor
+Set-Location D:\path\to\your\project
+opencode run "请自动使用 SparseRead 阅读长报告并回答问题"
+```
+
+如果 `opencode` 不在 PATH，显式指定可执行文件路径：
 
 ```bash
 python3 scripts/install_sparseread.py \
   --platform opencode \
-  --opencode-cmd opencode-ai \
+  --opencode-cmd /absolute/path/to/opencode \
   --opencode-workspace /path/to/your/project \
   --doctor
 ```
@@ -128,6 +148,8 @@ OpenCode 插件会暴露：
 sro_preview, sro_raw, sro_card, sro_read, sro_trace
 ```
 
+注意：OpenCode 对 workspace 外路径的默认权限更严格。第一次验证安装时，推荐把测试文件放在当前 workspace 内，或者直接把本仓库根目录作为 workspace 来运行 quick test，而不是从另一个 workspace 读取本仓库外的绝对路径文件。
+
 ## 安装到 OpenClaw
 
 假设你已经能运行 `openclaw`。
@@ -137,7 +159,6 @@ python3 scripts/install_sparseread.py \
   --platform openclaw \
   --policy auto \
   --mode auto \
-  --openclaw-hook-mode off \
   --doctor
 ```
 
@@ -173,6 +194,14 @@ openclaw --profile work plugins inspect sparseread-openclaw --runtime --json
 
 OpenClaw 的 provider/model/key 仍由 OpenClaw 自己配置。SparseRead 不安装或管理模型密钥。
 
+第一次在新机器上使用 OpenClaw 前，先确保你的目标 profile 本身已经能正常启动普通 agent 会话；SparseRead 只负责插件和 bridge，不替你修 OpenClaw 自己的 provider/model 配置。
+
+Windows PowerShell：
+
+```powershell
+py scripts/install_sparseread.py --platform openclaw --policy auto --mode auto --doctor
+```
+
 ## 同时安装两个框架
 
 如果两个 CLI 都已经安装：
@@ -195,7 +224,12 @@ python3 scripts/install_sparseread.py --platform opencode --doctor-only
 python3 scripts/install_sparseread.py --platform openclaw --doctor-only
 ```
 
-doctor 会用一个临时 markdown fixture 启动对应 Python bridge，验证 `sro_preview` 能返回 FileCard 和 L0 预览。
+doctor 会做两层检查：
+
+- bridge smoke：用临时 markdown fixture 启动对应 Python bridge，验证 `sro_preview` 能返回 FileCard 和 L0 预览；
+- 已安装集成检查：
+  - OpenCode 验证 `.opencode/plugins/sparseread.ts` 和 `.opencode/sparseread.json`；
+  - OpenClaw 验证 `plugins inspect --runtime --json` 中的 SparseRead 工具面；生产 `hookMode=enforce` 下还会检查 `before_tool_call` 已注册。
 
 ## 日常使用建议
 
@@ -229,14 +263,14 @@ agent 内部会按生产协议工作：先做 L0 preview；如果 preview 不够
 examples/sparseread_quick_test/incident-report.md
 ```
 
-OpenCode 安装后，在目标 workspace 里运行：
+OpenCode 安装后，推荐直接在本仓库根目录运行：
 
 ```bash
-source .opencode/sparseread.env
-opencode run "请自动使用 SparseRead 阅读 $SPARSEREAD_PROJECT_ROOT/examples/sparseread_quick_test/incident-report.md，只提取必要证据，并回答 ROOT_CAUSE、MITIGATION_OWNER、FINAL_DEADLINE 分别是什么。不要让我手动调用工具。"
+cd /absolute/path/to/SparseReading
+opencode run "请自动使用 SparseRead 阅读 examples/sparseread_quick_test/incident-report.md，只提取必要证据，并回答 ROOT_CAUSE、MITIGATION_OWNER、FINAL_DEADLINE 分别是什么。不要让我手动调用工具。"
 ```
 
-OpenClaw 或 nanobot 会话中发送同类自然语言请求即可，把路径换成你本机 checkout 下的完整路径。预期答案应包含：
+如果你已经在别的 workspace 里工作，先把 `examples/sparseread_quick_test/incident-report.md` 复制进去再测。OpenClaw 或 nanobot 会话中发送同类自然语言请求即可。预期答案应包含：
 
 ```text
 ROOT_CAUSE: cache invalidation used customer_id instead of tenant_id.
@@ -268,4 +302,5 @@ uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
 
 历史 benchmark 和旧脚本可能还统计 `sro_card -> sro_read`。这条路径保留，并可通过 `SPARSEREAD_MODE=bench_protocol` 或 `SparseReadConfig(mode="bench_protocol")` 使用。
 
-生产安装应使用 `mode=auto`、OpenClaw `hookMode=off`。用户侧用自然语言要求 agent 自动使用 SparseRead；框架内部仍以 `sro_preview` 作为第一入口。
+生产安装应使用 `policy=auto`、`mode=auto`，OpenClaw 默认 `hookMode=enforce`。用户侧用自然语言要求 agent 自动使用 SparseRead；框架内部仍以 `sro_preview` 作为第一入口。
+OpenCode benchmark runner 里的 `plugin_auto` 才对应这个生产安装形态；`plugin_nudge` 和 `plugin_replace_truncation_experimental` 只是兼容/调试对照行，不是用户安装后的默认模式。
