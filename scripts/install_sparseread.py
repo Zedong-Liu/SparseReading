@@ -34,6 +34,36 @@ class CommandSpec:
         return [self.executable, *args]
 
 
+@dataclass(frozen=True)
+class InstallProfile:
+    policy: str
+    mode: str
+    openclaw_hook_mode: str
+
+
+def install_profile(args: argparse.Namespace) -> InstallProfile:
+    """Map the user-facing SparseRead mode to internal adapter knobs.
+
+    Public installs expose only two modes:
+    - auto: gate-controlled interception for high-benefit reads.
+    - advisory: prompt/tool guidance only; no OpenClaw native tool interception.
+
+    The legacy internal flags remain accepted for old scripts, but are not
+    shown in help or docs.
+    """
+
+    public_mode = getattr(args, "sparseread_mode", None) or "auto"
+    if public_mode not in {"auto", "advisory"}:
+        raise SystemExit(f"invalid SparseRead mode: {public_mode}")
+    default_policy = "auto" if public_mode == "auto" else "advisory"
+    default_hook_mode = "enforce" if public_mode == "auto" else "prompt"
+    return InstallProfile(
+        policy=getattr(args, "policy", None) or default_policy,
+        mode=getattr(args, "mode", None) or "auto",
+        openclaw_hook_mode=getattr(args, "openclaw_hook_mode", None) or default_hook_mode,
+    )
+
+
 def run(
     cmd: list[str],
     *,
@@ -272,6 +302,7 @@ def npm_install_and_build(plugin_dir: Path, *, dry_run: bool) -> None:
 
 
 def install_opencode(args: argparse.Namespace) -> None:
+    profile = install_profile(args)
     workspace = Path(args.opencode_workspace or os.getcwd()).expanduser().resolve()
     plugin_target, config_target = opencode_workspace_paths(workspace)
     command_spec(args.opencode_cmd)
@@ -281,21 +312,22 @@ def install_opencode(args: argparse.Namespace) -> None:
     if not args.dry_run:
         plugin_target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(OPENCODE_PLUGIN / "sparseread.ts", plugin_target)
-        write_json(config_target, opencode_workspace_config(args.policy, args.mode))
+        write_json(config_target, opencode_workspace_config(profile.policy, profile.mode))
     print(f"[opencode] plugin: {plugin_target}")
     print(f"[opencode] config: {config_target}")
     print("[opencode] launch with: opencode run ...")
 
 
 def install_openclaw(args: argparse.Namespace) -> None:
+    profile = install_profile(args)
     openclaw_cmd = command_spec(args.openclaw_cmd)
     if not args.skip_build:
         npm_install_and_build(OPENCLAW_PLUGIN, dry_run=args.dry_run)
     profile_args = ["--profile", args.openclaw_profile] if args.openclaw_profile else []
     hook_policy: dict[str, bool] = {}
-    if args.openclaw_hook_mode in {"prompt", "trace", "enforce"}:
+    if profile.openclaw_hook_mode in {"prompt", "trace", "enforce"}:
         hook_policy["allowPromptInjection"] = True
-    if args.openclaw_hook_mode in {"trace", "enforce"}:
+    if profile.openclaw_hook_mode in {"prompt", "trace", "enforce"}:
         hook_policy["allowConversationAccess"] = True
     run(
         openclaw_cmd.argv(*profile_args, "plugins", "uninstall", "sparseread-openclaw", "--force"),
@@ -328,15 +360,15 @@ def install_openclaw(args: argparse.Namespace) -> None:
                     "enabled": True,
                     "hooks": hook_policy,
                     "config": {
-                        "policy": args.policy,
+                        "policy": profile.policy,
                         "bridgeCommand": json.dumps(bridge_command()),
                         "projectRoot": str(ROOT),
                         "workspaceRoot": str(Path(args.openclaw_workspace).expanduser().resolve())
                         if args.openclaw_workspace
                         else "",
                         "bridgeModule": "sparseread.bridge.openclaw",
-                        "mode": args.mode,
-                        "hookMode": args.openclaw_hook_mode,
+                        "mode": profile.mode,
+                        "hookMode": profile.openclaw_hook_mode,
                     },
                 }
             }
@@ -358,7 +390,7 @@ def install_openclaw(args: argparse.Namespace) -> None:
             f"Inspect stderr:\n{inspect.stderr}\nInspect stdout:\n{inspect.stdout}"
         )
     if inspect.returncode == 0 and inspect.stdout:
-        validate_openclaw_runtime(inspect.stdout, hook_mode=args.openclaw_hook_mode)
+        validate_openclaw_runtime(inspect.stdout, hook_mode=profile.openclaw_hook_mode)
     print("[openclaw] restart the gateway or start a new agent run after install")
 
 
@@ -392,6 +424,7 @@ def bridge_smoke(module: str, *, dry_run: bool) -> None:
 
 
 def doctor(args: argparse.Namespace) -> None:
+    profile = install_profile(args)
     command_spec("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
     command_spec("node")
     command_spec("npm")
@@ -415,7 +448,7 @@ def doctor(args: argparse.Namespace) -> None:
                     "OpenClaw runtime inspect failed during doctor. "
                     f"Inspect stderr:\n{inspect.stderr}\nInspect stdout:\n{inspect.stdout}"
                 )
-            validate_openclaw_runtime(inspect.stdout, hook_mode=args.openclaw_hook_mode)
+            validate_openclaw_runtime(inspect.stdout, hook_mode=profile.openclaw_hook_mode)
 
 
 def parse_args() -> argparse.Namespace:
@@ -427,16 +460,31 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--openclaw-profile", default="", help="Optional OpenClaw profile name")
     parser.add_argument("--openclaw-workspace", default="", help="Optional OpenClaw default SparseRead workspaceRoot")
     parser.add_argument(
+        "--sparseread-mode",
+        choices=["auto", "advisory"],
+        default="auto",
+        help=(
+            "User-facing SparseRead mode. auto is the default: gate-controlled interception for "
+            "high-benefit reads. advisory registers tools/prompts only and never intercepts native reads."
+        ),
+    )
+    parser.add_argument(
         "--openclaw-hook-mode",
         choices=["off", "prompt", "trace", "enforce"],
-        default="enforce",
-        help="OpenClaw runtime hook mode. Production default is enforce: auto-gated before_tool_call interception.",
+        default=None,
+        help=argparse.SUPPRESS,
     )
-    parser.add_argument("--policy", choices=["observe", "advisory", "enforce", "native", "auto"], default="auto")
+    parser.add_argument(
+        "--policy",
+        choices=["observe", "advisory", "enforce", "native", "auto"],
+        default=None,
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument(
         "--mode",
         choices=["auto", "bench_protocol", "force", "force_sro", "native", "advisory"],
-        default="auto",
+        default=None,
+        help=argparse.SUPPRESS,
     )
     parser.add_argument("--skip-build", action="store_true", help="Skip npm install/build for plugin packages")
     parser.add_argument("--doctor", action="store_true", help="Run bridge/CLI checks after install")

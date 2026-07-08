@@ -82,6 +82,41 @@ def test_bridge_invocation_wraps_cmd_after_full_args() -> None:
     ]
 
 
+def test_public_install_mode_auto_maps_to_internal_defaults() -> None:
+    installer = load_installer()
+
+    profile = installer.install_profile(SimpleNamespace(sparseread_mode="auto"))
+
+    assert profile.policy == "auto"
+    assert profile.mode == "auto"
+    assert profile.openclaw_hook_mode == "enforce"
+
+
+def test_public_install_mode_advisory_disables_openclaw_interception() -> None:
+    installer = load_installer()
+
+    profile = installer.install_profile(SimpleNamespace(sparseread_mode="advisory"))
+
+    assert profile.policy == "advisory"
+    assert profile.mode == "auto"
+    assert profile.openclaw_hook_mode == "prompt"
+
+
+def test_installer_help_only_exposes_public_sparse_read_mode() -> None:
+    proc = subprocess.run(
+        [sys.executable, str(INSTALLER_PATH), "--help"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    assert "--sparseread-mode" in proc.stdout
+    assert "--policy" not in proc.stdout
+    assert "--openclaw-hook-mode" not in proc.stdout
+    assert " --mode " not in proc.stdout
+
+
 def test_install_opencode_writes_persistent_workspace_config(monkeypatch, tmp_path: Path) -> None:
     installer = load_installer()
     workspace = tmp_path / "workspace"
@@ -93,8 +128,7 @@ def test_install_opencode_writes_persistent_workspace_config(monkeypatch, tmp_pa
         SimpleNamespace(
             opencode_workspace=str(workspace),
             opencode_cmd="opencode",
-            policy="auto",
-            mode="auto",
+            sparseread_mode="auto",
             skip_build=True,
             dry_run=False,
         )
@@ -157,9 +191,7 @@ def test_openclaw_install_patch_defaults_enforce_hook_mode(monkeypatch, tmp_path
             openclaw_cmd="openclaw",
             openclaw_profile="",
             openclaw_workspace=str(tmp_path),
-            policy="auto",
-            mode="auto",
-            openclaw_hook_mode="enforce",
+            sparseread_mode="auto",
             skip_build=True,
             dry_run=False,
         )
@@ -174,6 +206,55 @@ def test_openclaw_install_patch_defaults_enforce_hook_mode(monkeypatch, tmp_path
     assert entry["hooks"]["allowConversationAccess"] is True
     assert any(cmd[-2:] == ["sparseread-openclaw", "--force"] for cmd in calls)
     assert any(cmd[-3:] == ["registry", "--refresh", "--json"] for cmd in calls)
+
+
+def test_openclaw_install_patch_advisory_mode_has_no_before_tool_call_policy(monkeypatch, tmp_path: Path) -> None:
+    installer = load_installer()
+    patches: list[dict] = []
+
+    monkeypatch.setattr(installer, "command_spec", lambda *_args, **_kwargs: installer.CommandSpec("/bin/true"))
+    monkeypatch.setattr(installer, "npm_install_and_build", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(installer, "normalized_openclaw_load_paths", lambda _profile: [str(installer.OPENCLAW_PLUGIN)])
+
+    def fake_run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
+        if cmd[-3:] == ["config", "patch", "--stdin"]:
+            patches.append(json.loads(kwargs["input_text"]))
+        if cmd[-5:] == ["plugins", "inspect", "sparseread-openclaw", "--runtime", "--json"]:
+            return subprocess.CompletedProcess(
+                cmd,
+                0,
+                json.dumps(
+                    {
+                        "status": "loaded",
+                        "plugin": {"rootDir": str(installer.OPENCLAW_PLUGIN)},
+                        "install": {"sourcePath": str(installer.OPENCLAW_PLUGIN)},
+                        "toolNames": list(installer.OPENCLAW_RUNTIME_TOOLS),
+                        "hookCount": 2,
+                        "hookNames": ["before_prompt_build", "agent_end"],
+                    }
+                ),
+                "",
+            )
+        return subprocess.CompletedProcess(cmd, 0, "{}", "")
+
+    monkeypatch.setattr(installer, "run", fake_run)
+
+    installer.install_openclaw(
+        SimpleNamespace(
+            openclaw_cmd="openclaw",
+            openclaw_profile="",
+            openclaw_workspace=str(tmp_path),
+            sparseread_mode="advisory",
+            skip_build=True,
+            dry_run=False,
+        )
+    )
+
+    entry = patches[1]["plugins"]["entries"]["sparseread-openclaw"]
+    assert entry["config"]["policy"] == "advisory"
+    assert entry["config"]["mode"] == "auto"
+    assert entry["config"]["hookMode"] == "prompt"
+    assert entry["hooks"] == {"allowPromptInjection": True, "allowConversationAccess": True}
 
 
 def test_validate_openclaw_runtime_accepts_hookless_production_payload() -> None:

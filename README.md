@@ -49,7 +49,7 @@ sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 当前默认安装形态是：用户本机已有 OpenCode 或 OpenClaw CLI，然后从本仓库源码加装 SparseRead。完整 fresh-machine 指南见
 [`docs/sparseread_installation.md`](docs/sparseread_installation.md)。
 
-Windows 默认推荐路径是 **PowerShell 原生安装**。OpenClaw 生产模式默认使用 `hookMode=enforce`，并由 `policy=auto` / `mode=auto` 的 gate 决定是否接管：高收益的长文档、PDF、日志和审计证据包会拦截 broad native read/search/dump；收益不清晰的任务只提示或保持原生工具。OpenCode 生产安装不再依赖 `.env + source`。
+Windows 默认推荐路径是 **PowerShell 原生安装**。用户只需要选择一个 SparseRead 模式：默认 `auto` 会在高收益任务上自动接管大文件/证据包读取；`advisory` 只注册工具和提示，不拦截原生读取。OpenCode 生产安装不再依赖 `.env + source`。
 
 ```bash
 git clone https://github.com/Zedong-Liu/SparseReading.git
@@ -73,8 +73,6 @@ OpenCode workspace 安装：
 python3 scripts/install_sparseread.py \
   --platform opencode \
   --opencode-workspace /path/to/your/project \
-  --policy auto \
-  --mode auto \
   --doctor
 ```
 
@@ -85,8 +83,6 @@ OpenClaw profile 安装：
 ```bash
 python3 scripts/install_sparseread.py \
   --platform openclaw \
-  --policy auto \
-  --mode auto \
   --doctor
 ```
 

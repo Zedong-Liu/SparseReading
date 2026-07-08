@@ -38,13 +38,13 @@ Command-security bundles use `advisory + one_collect_then_write`: preview first,
 then exactly one collection `collect` only when slots are explicit, write once
 ready, and allow small template or named unresolved-slot native reads.
 
-Production installs use `policy=auto`, `mode=auto`, and `hookMode=enforce`.
-The plugin registers SparseRead tools, the SparseRead skill, prompt preflight,
-and native tool lifecycle hooks.  The lifecycle hook is still gate-controlled:
-high-confidence long documents/PDFs/logs and compact audit closures are routed
-to `sro_preview`, while advisory/native cases keep using OpenClaw tools.  Use
-`hookMode=prompt` or `hookMode=off` only as a compatibility fallback when the
-local OpenClaw environment cannot grant lifecycle-hook permissions.
+Production installs expose one user-facing mode. The default
+`--sparseread-mode auto` registers SparseRead tools, the SparseRead skill,
+prompt preflight, and gate-controlled native tool interception. High-confidence
+long documents/PDFs/logs and compact audit closures are routed to
+`sro_preview`, while low-benefit cases keep OpenClaw tools. Use
+`--sparseread-mode advisory` when you want guidance only and no native tool
+interception.
 
 ## Install
 
@@ -85,9 +85,9 @@ export SPARSEREAD_POLICY=auto
 export SPARSEREAD_OPENCLAW_HOOK_MODE=enforce
 ```
 
-Use `SPARSEREAD_POLICY=enforce` only for controlled tests that force every
-eligible high-confidence case through SparseRead. Production should keep
-`SPARSEREAD_POLICY=auto` with `SPARSEREAD_OPENCLAW_HOOK_MODE=enforce`.
+Use the source installer for normal installs. These environment variables are
+developer overrides only; production users should choose `--sparseread-mode
+auto` or `--sparseread-mode advisory`.
 
 Legacy path compatibility remains available through `openclaw_pilot/` symlinks,
 but new development should use `integrations/openclaw/`.

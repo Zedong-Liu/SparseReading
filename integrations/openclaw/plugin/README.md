@@ -8,13 +8,12 @@ keeps one bridge per OpenClaw session key.  The Python bridge owns artifact ids,
 ready state, and trace aggregation while delegating all reading logic to the
 existing SparseRead core.
 
-Default install policy is `auto`, default mode is `auto`, and default
-`hookMode` is `enforce`. Production use starts with gate-controlled interception:
-high-confidence long-document/PDF/log and compact audit-closure reads are
-redirected to `sro_preview`, while advisory/native cases keep OpenClaw tools.
-`sro_card` is retained for compatibility/debugging and `bench_protocol`. Use
-`hookMode=prompt` or `hookMode=off` only when the local OpenClaw environment
-cannot grant lifecycle-hook permissions.
+The source installer exposes one public mode. Default `--sparseread-mode auto`
+uses gate-controlled interception: high-confidence long-document/PDF/log and
+compact audit-closure reads are redirected to `sro_preview`, while low-benefit
+cases keep OpenClaw tools. `--sparseread-mode advisory` registers guidance only
+and does not intercept native reads. `sro_card` is retained for
+compatibility/debugging and `bench_protocol`.
 
 For normal source installs, run this from the repository root instead of
 manually editing OpenClaw config:

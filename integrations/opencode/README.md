@@ -52,8 +52,6 @@ installed:
 python3 scripts/install_sparseread.py \
   --platform opencode \
   --opencode-workspace /path/to/project \
-  --policy auto \
-  --mode auto \
   --doctor
 ```
 

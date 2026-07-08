@@ -51,13 +51,12 @@ Windows 上如果 `npm`、`openclaw` 等入口实际是 `.cmd/.exe/.bat`，安�
 
 OpenClaw 插件声明的 host 版本要求是 `openclaw >= 2026.5.17`。更旧版本只有在保留相同 plugin/tool API 时才可能可用。
 
-OpenClaw `2026.6.11` 上，生产安装默认使用 `hookMode=enforce`，同时保持 `policy=auto`、`mode=auto`。这不是把所有读取都强行改成 SparseRead，而是让插件注册 `before_tool_call`、`after_tool_call` 和 `before_prompt_build`，再由 SparseRead gate 决定：
+用户安装时只需要选择一个 SparseRead 模式：
 
-- `enforce`：长文档、PDF、日志、compact audit closure 等高置信收益场景，拦截 broad native read/search/exec-dump，要求先走 `sro_preview`。
-- `advisory`：命令安全、边界集合、收益不稳定的诊断包，只提示 SparseRead 可用，不阻断原生工具。
-- `native`：小文件、脚本、配置、全表计算等低收益场景不受 SparseRead 影响。
+- `auto`：默认模式。SparseRead 会在高收益任务上自动接管大文件、PDF、日志和审计证据包的 broad read/search/dump；小文件、脚本、配置、全表计算等低收益任务保持原生工具。
+- `advisory`：只注册 SparseRead 工具和提示，不拦截原生读取，依靠模型自然选择是否使用 SparseRead。
 
-Windows 上如果 OpenClaw 权限策略没有允许插件 lifecycle hook，可能表现为工具调用被隔离或 `doctor` 检查失败。这是本地 OpenClaw 配置/权限问题，不是生产模式应降级为 prompt-only 的证据。推荐先修正 OpenClaw 插件权限；只有在无法放开权限时，才临时使用 `--openclaw-hook-mode prompt` 或 `--openclaw-hook-mode off` 作为兼容降级。
+不传 `--sparseread-mode` 时就是 `auto`。OpenClaw `2026.6.11` 的 `auto` 会自动配置必要的 lifecycle hook 权限；如果 `doctor` 报告 hook 未加载，优先检查 OpenClaw 插件权限或 profile 配置。只有明确想关闭拦截时，才使用 `--sparseread-mode advisory`。
 
 ## 支持矩阵
 
@@ -105,8 +104,6 @@ uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio pytest nanob
 python3 scripts/install_sparseread.py \
   --platform opencode \
   --opencode-workspace /path/to/your/project \
-  --policy auto \
-  --mode auto \
   --doctor
 ```
 
@@ -127,7 +124,7 @@ opencode run "Use SparseRead to inspect the large report and answer the question
 Windows PowerShell：
 
 ```powershell
-py scripts/install_sparseread.py --platform opencode --opencode-workspace D:\path\to\your\project --policy auto --mode auto --doctor
+py scripts/install_sparseread.py --platform opencode --opencode-workspace D:\path\to\your\project --doctor
 Set-Location D:\path\to\your\project
 opencode run "请自动使用 SparseRead 阅读长报告并回答问题"
 ```
@@ -157,8 +154,6 @@ sro_preview, sro_raw, sro_card, sro_read, sro_trace
 ```bash
 python3 scripts/install_sparseread.py \
   --platform openclaw \
-  --policy auto \
-  --mode auto \
   --doctor
 ```
 
@@ -199,7 +194,7 @@ OpenClaw 的 provider/model/key 仍由 OpenClaw 自己配置。SparseRead 不安
 Windows PowerShell：
 
 ```powershell
-py scripts/install_sparseread.py --platform openclaw --policy auto --mode auto --doctor
+py scripts/install_sparseread.py --platform openclaw --doctor
 ```
 
 ## 同时安装两个框架
@@ -210,8 +205,16 @@ py scripts/install_sparseread.py --platform openclaw --policy auto --mode auto -
 python3 scripts/install_sparseread.py \
   --platform both \
   --opencode-workspace /path/to/your/project \
-  --policy auto \
-  --mode auto \
+  --doctor
+```
+
+如需关闭拦截、只让模型自然选择 SparseRead：
+
+```bash
+python3 scripts/install_sparseread.py \
+  --platform both \
+  --opencode-workspace /path/to/your/project \
+  --sparseread-mode advisory \
   --doctor
 ```
 
@@ -229,7 +232,7 @@ doctor 会做两层检查：
 - bridge smoke：用临时 markdown fixture 启动对应 Python bridge，验证 `sro_preview` 能返回 FileCard 和 L0 预览；
 - 已安装集成检查：
   - OpenCode 验证 `.opencode/plugins/sparseread.ts` 和 `.opencode/sparseread.json`；
-  - OpenClaw 验证 `plugins inspect --runtime --json` 中的 SparseRead 工具面；生产 `hookMode=enforce` 下还会检查 `before_tool_call` 已注册。
+  - OpenClaw 验证 `plugins inspect --runtime --json` 中的 SparseRead 工具面；默认 `auto` 下还会检查拦截 hook 已注册，`advisory` 下会检查没有 native tool 拦截 hook。
 
 ## 日常使用建议
 
@@ -302,5 +305,5 @@ uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
 
 历史 benchmark 和旧脚本可能还统计 `sro_card -> sro_read`。这条路径保留，并可通过 `SPARSEREAD_MODE=bench_protocol` 或 `SparseReadConfig(mode="bench_protocol")` 使用。
 
-生产安装应使用 `policy=auto`、`mode=auto`，OpenClaw 默认 `hookMode=enforce`。用户侧用自然语言要求 agent 自动使用 SparseRead；框架内部仍以 `sro_preview` 作为第一入口。
+生产安装默认就是 `--sparseread-mode auto`。用户侧用自然语言要求 agent 自动使用 SparseRead；框架内部仍以 `sro_preview` 作为第一入口。需要只提示不拦截时，安装时改用 `--sparseread-mode advisory`。
 OpenCode benchmark runner 里的 `plugin_auto` 才对应这个生产安装形态；`plugin_nudge` 和 `plugin_replace_truncation_experimental` 只是兼容/调试对照行，不是用户安装后的默认模式。
