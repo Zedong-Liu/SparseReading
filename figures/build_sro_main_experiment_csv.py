@@ -2,11 +2,11 @@
 """Build the canonical 17-task, five-model main-experiment CSV.
 
 The source runsets are the paired Native/SR executions produced on 2026-07-15
-and 2026-07-16.
+through 2026-07-18.
 The builder records one score-only correction for a T12 run whose LLM judge
 returned an empty response despite all automated checks passing. It also
 records the post-fix GLM Kaima rerun and the post-fix structured-scenario
-reruns; the original results remain in their source runsets.
+and audit-scenario reruns; the original results remain in their source runsets.
 """
 
 from __future__ import annotations
@@ -36,6 +36,19 @@ STRUCTURED_TASKS = {
     "task_00073_2026_new_issuance_p_l_decomposition_and_year_over_year_analysis",
     "task_spreadsheetbench_verified_49333_trimmed_vlookup",
     "task_spreadsheetbench_verified_11276_weekday_row_fix",
+}
+
+AUDIT_TASKS = {
+    "task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check",
+    "task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix",
+    "task_00086_command_prefix_security_analysis",
+    "task_00094_exam_monitor_system_audit_cron_sync_bug_rate_limit_gap_and_site",
+    "task_00098_diagnose_scheduled_book_recommendation_failure",
+}
+
+AUDIT_RUNSETS = {
+    "DeepSeek-V4-Flash": "audit_final_paired_dsv4flash_20260718",
+    "Qwen3.6-Plus": "audit_final_paired_qwen36plus_20260718",
 }
 
 # The structured scenario was rerun after the generic sparse-plan/compute and
@@ -313,6 +326,29 @@ def main() -> int:
                     f"structured convergence rerun: Native {baseline_runset}; "
                     f"SR {gate_runset}"
                 )
+            if task_id in AUDIT_TASKS and model in AUDIT_RUNSETS:
+                audit_runset = AUDIT_RUNSETS[model]
+                baseline_result = read_result(
+                    QCB / audit_runset / "baseline" / task_id / "result.json"
+                )
+                gate_result = read_result(
+                    QCB / audit_runset / "gate" / task_id / "result.json"
+                )
+                if baseline_result["model"] != model or gate_result["model"] != model:
+                    raise ValueError(f"audit result model mismatch for {model} {task_id}")
+                source.update(
+                    {
+                        "baseline_score": baseline_result["score"],
+                        "sro_score": gate_result["score"],
+                        "baseline_tokens": baseline_result["tokens"],
+                        "sro_tokens": gate_result["tokens"],
+                        "baseline_req": baseline_result["req"],
+                        "sro_req": gate_result["req"],
+                        "baseline_seconds": baseline_result["seconds"],
+                        "sro_seconds": gate_result["seconds"],
+                    }
+                )
+                note = f"audit convergence paired rerun: {audit_runset}"
             result_override = RESULT_OVERRIDES.get((model, task_id))
             if result_override:
                 corrected = read_result(result_override[0])

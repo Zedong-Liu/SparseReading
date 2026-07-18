@@ -14,6 +14,7 @@ class SparseCommandPolicy:
 
     def __init__(self, sro: object | None = None) -> None:
         self._failed: dict[tuple[str, str], int] = {}
+        self._ready_shell_runs: dict[tuple[str, str], int] = {}
         self._sro = sro
 
     def guard(self, command: str, cwd: str) -> str | None:
@@ -21,6 +22,17 @@ class SparseCommandPolicy:
         if not cmd:
             return None
         key = (str(Path(cwd).resolve()), cmd)
+        shell_target = self._shell_script_target(cmd, cwd)
+        if (
+            shell_target
+            and self._has_ready_collection()
+            and self._ready_shell_runs.get((key[0], shell_target), 0) >= 2
+        ):
+            return (
+                "Error: this generated shell deliverable has already had two bounded checks after the collection "
+                "became ready. Use the existing result, fix one reported issue directly, or finish the task; "
+                "do not keep rerunning near-duplicate shell commands."
+            )
         if self._failed.get(key, 0) >= 1 and not self._is_rerunnable_script_command(cmd):
             return (
                 "Error: exact same command already failed in this task. "
@@ -130,6 +142,10 @@ class SparseCommandPolicy:
         return out
 
     def record_result(self, command: str, cwd: str, result: str) -> None:
+        shell_target = self._shell_script_target(command.strip(), cwd)
+        if shell_target and self._has_ready_collection():
+            key = (str(Path(cwd).resolve()), shell_target)
+            self._ready_shell_runs[key] = self._ready_shell_runs.get(key, 0) + 1
         if self._is_rerunnable_script_command(command.strip()):
             return
         if "Exit code: 0" in result:
@@ -138,6 +154,20 @@ class SparseCommandPolicy:
             return
         key = (str(Path(cwd).resolve()), command.strip())
         self._failed[key] = self._failed.get(key, 0) + 1
+
+    def _has_ready_collection(self) -> bool:
+        checker = getattr(self._sro, "has_ready_collection", None) if self._sro is not None else None
+        return bool(callable(checker) and checker())
+
+    def _shell_script_target(self, command: str, cwd: str) -> str:
+        for token in self._split(command):
+            cleaned = token.strip().strip("'\"")
+            if not cleaned.lower().endswith(".sh"):
+                continue
+            target = self._resolve(cleaned, cwd)
+            if target is not None:
+                return str(target)
+        return ""
 
     def _is_large_dump(self, command: str, cwd: str) -> bool:
         parts = self._split(command)

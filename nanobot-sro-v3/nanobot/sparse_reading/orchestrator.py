@@ -211,11 +211,6 @@ class SparseReadingOrchestrator:
             return False
         ready_child_artifact = self._ready_collection_child_artifact(path)
         if ready_child_artifact:
-            if self._required_outputs_pending(ready_child_artifact):
-                return True
-            if self._collection_ready_guard_count(ready_child_artifact) >= 1:
-                self._mark_native_escape_collection(ready_child_artifact)
-                return False
             return True
         if self._collection_child_guard(path):
             return True
@@ -929,12 +924,16 @@ class SparseReadingOrchestrator:
         ready = self._ready_collection_artifacts.get(artifact_id)
         if not ready:
             return None
-        if self._collection_ready_guard_count(artifact_id) >= 1 and not self._required_outputs_pending(artifact_id):
-            self._mark_native_escape_collection(artifact_id)
-            return self._native_escape_pack(artifact_id, mode)
         self._record_ready_collection_guard(artifact_id)
         allowed_next = ready.get("allowed_next") or ["write_file"]
-        evidence = list(self._ready_collection_evidence.get(artifact_id, [])) if self._required_outputs_pending(artifact_id) else []
+        # The first ready response already carried the complete closure. Keep
+        # repeated protocol calls tiny so parallel child-read retries do not
+        # multiply the same evidence across the conversation.
+        evidence = (
+            list(self._ready_collection_evidence.get(artifact_id, []))
+            if self._required_outputs_pending(artifact_id)
+            else []
+        )
         instruction = ready.get(
             "instruction",
             "Use the existing ready collection digest to write the deliverable; do not reread resolved sources.",
@@ -1238,11 +1237,11 @@ class SparseReadingOrchestrator:
         artifact_id = self._ready_collection_child_artifact(path)
         if not artifact_id:
             return False
-        if self._collection_ready_guard_count(artifact_id) >= 1 and not self._required_outputs_pending(artifact_id):
-            self._mark_native_escape_collection(artifact_id)
-            return False
         self._record_ready_collection_guard(artifact_id)
         return True
+
+    def has_ready_collection(self) -> bool:
+        return bool(self._ready_collection_artifacts)
 
     def _collection_child_guard(self, path: str | Path) -> str:
         try:
@@ -1257,9 +1256,6 @@ class SparseReadingOrchestrator:
         if self._is_native_escape_collection(artifact_id):
             return ""
         if key in self._ready_collection_child_guards:
-            if self._collection_ready_guard_count(artifact_id) >= 1 and not self._required_outputs_pending(artifact_id):
-                self._mark_native_escape_collection(artifact_id)
-                return ""
             self._record_ready_collection_guard(artifact_id)
         ready = self._ready_collection_artifacts.get(artifact_id, {})
         required = self._required_outputs_by_artifact.get(artifact_id, set())

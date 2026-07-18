@@ -197,6 +197,7 @@ class CollectionReader:
         security_closure = self._command_security_closure(source_texts, hint)
         closure = self._diagnostic_closure(source_texts, hint)
         audit_closure = self._audit_closure(source_texts, hint, items)
+        configuration_audit_closure = self._configuration_audit_closure(source_texts, hint)
         panel_closure = self._panel_did_closure(source_texts, panel_hint)
         compute_closure, compute_sources, compute_excluded = self._structured_compute_plan(items, hint)
         rule_script_closure = self._rule_table_script_closure(source_texts, hint)
@@ -206,10 +207,16 @@ class CollectionReader:
             blocks = [EvidenceBlock("collection_command_security_closure", security_closure, 12.0)]
             covered_sources = sorted(source_texts)
         elif closure:
-            blocks.insert(0, EvidenceBlock("collection_diagnosis_closure", closure, 12.0))
-            blocks = [block for block in blocks if block.anchor == "collection_diagnosis_closure" or self._is_diagnostic_source_anchor(block.anchor)]
+            # A ready cross-file diagnosis must stay compact enough to be used
+            # directly. Returning the source excerpts as well can overflow the
+            # tool-result boundary and tempt the model into rereading them.
+            blocks = [EvidenceBlock("collection_diagnosis_closure", closure, 12.0)]
+            covered_sources = sorted(source_texts)
         elif audit_closure:
             blocks = [EvidenceBlock("collection_audit_closure", audit_closure, 12.0)]
+            covered_sources = sorted(source_texts)
+        elif configuration_audit_closure:
+            blocks = [EvidenceBlock("collection_configuration_audit_closure", configuration_audit_closure, 12.0)]
             covered_sources = sorted(source_texts)
         elif panel_closure:
             blocks = [EvidenceBlock("collection_panel_did_closure", panel_closure, 12.0)]
@@ -238,9 +245,11 @@ class CollectionReader:
                 "command_classifications.json from it now; do not reread resolved source files."
             )
         elif closure:
+            allowed_next = ["write_file", "apply one explicit configuration fix", "initialize requested repository"]
             instruction = (
                 "The diagnosis closure already cross-checks logs, config, and scripts. "
-                "Use it to write the deliverable; verify only one named missing fact."
+                "Use it to write the requested deliverables and apply only the explicit fix it identifies; "
+                "do not reread covered sources."
             )
         elif audit_closure:
             allowed_next = ["write_file"]
@@ -250,6 +259,12 @@ class CollectionReader:
                 "Do not verify or reread resolved source facts."
             )
             slot_digest = self._audit_slot_digest(artifact_id, audit_closure)
+        elif configuration_audit_closure:
+            allowed_next = ["write_file"]
+            instruction = (
+                "The configuration-audit closure already cross-checks inventory, schedules, limits, and code usage. "
+                "Write the requested audit/status deliverable now; do not reread covered source files."
+            )
         elif panel_closure:
             allowed_next = ["exec generated analysis script", "write_file"]
             instruction = (
@@ -305,7 +320,7 @@ class CollectionReader:
                     else []
                 ),
                 "overall_status": (
-                    "ready" if security_closure or audit_closure or rule_script_closure or (ledger_compact and ledger_ready)
+                    "ready" if security_closure or closure or audit_closure or configuration_audit_closure or rule_script_closure or (ledger_compact and ledger_ready)
                     else "ready_for_compute" if panel_closure or (compute_closure and not ledger_compact)
                     else None
                 ),
@@ -1004,10 +1019,15 @@ class CollectionReader:
     def _diagnostic_closure(self, source_texts: dict[str, str], hint: HintSpec) -> str:
         if not self._goal_wants_diagnosis(hint):
             return ""
-        log_text = "\n".join(text for name, text in source_texts.items() if name.endswith(".log"))
+        log_sources = {
+            name: text for name, text in source_texts.items()
+            if name.endswith(".log") or "log" in Path(name).parts or "history" in Path(name).name.lower()
+        }
+        log_text = "\n".join(log_sources.values())
         config_text = "\n".join(
             text for name, text in source_texts.items()
-            if Path(name).suffix.lower() in {".yaml", ".yml", ".json", ".toml", ".ini", ".cfg", ".conf"}
+            if name not in log_sources
+            and Path(name).suffix.lower() in {".yaml", ".yml", ".json", ".toml", ".ini", ".cfg", ".conf"}
         )
         script_text = "\n".join(
             text for name, text in source_texts.items()
@@ -1018,10 +1038,73 @@ class CollectionReader:
 
         findings: list[str] = ["FILE: collection_diagnosis_closure", "KIND: diagnostic_closure"]
 
+        error_counts_by_source: dict[str, int] = {}
+        for text in source_texts.values():
+            try:
+                parsed = json.loads(text)
+            except Exception:
+                continue
+            if isinstance(parsed, dict) and isinstance(parsed.get("errors_by_source"), dict):
+                for key, value in parsed["errors_by_source"].items():
+                    if isinstance(value, int):
+                        error_counts_by_source[str(key)] = value
+
+        enabled_by_name: dict[str, list[tuple[str, bool]]] = {}
+        enabled_flags_by_source: dict[str, list[tuple[str, bool]]] = {}
+        for name, text in source_texts.items():
+            enabled_flags_by_source[name] = self._named_enabled_flags(text)
+            for source_key, enabled in enabled_flags_by_source[name]:
+                enabled_by_name.setdefault(source_key, []).append((name, enabled))
+        for source_key, observations in sorted(enabled_by_name.items()):
+            values = {enabled for _, enabled in observations}
+            if len(values) < 2:
+                continue
+            rendered = ", ".join(f"{name}={str(enabled).lower()}" for name, enabled in observations)
+            authority_counts = [
+                sum(1 for _, enabled in enabled_flags_by_source.get(name, []) if enabled)
+                for name, enabled in observations if enabled is False
+            ]
+            count_fact = f"; authoritative_enabled_count={authority_counts[0]}" if authority_counts else ""
+            error_fact = (
+                f"; observed_error_count={error_counts_by_source[source_key]}"
+                if source_key in error_counts_by_source else ""
+            )
+            metadata: list[str] = []
+            for name, _ in observations:
+                text = source_texts[name]
+                start = text.find(source_key)
+                block = text[start:start + 700] if start >= 0 else ""
+                for field, value in re.findall(
+                    r"[\"'](override_reason|note|disabled_reason)[\"']\s*:\s*[\"']([^\"']+)", block
+                ):
+                    metadata.append(f"{name}.{field}={value}")
+            metadata_fact = f"; metadata={' | '.join(metadata)}" if metadata else ""
+            findings.append(
+                f"configuration_override_conflict: priority=critical; key={source_key}; {rendered}"
+                f"{count_fact}{error_fact}{metadata_fact}; "
+                "fix=disable the conflicting runtime override or align it with the authoritative source definition"
+            )
+
+        tracker_findings = self._tracker_schema_findings(source_texts)
+        findings.extend(tracker_findings)
+        findings.extend(self._json_error_summary_findings(source_texts, log_sources))
+
         retry_after = self._first_int(r"retry_after\s*[=:]\s*(\d+)", log_text)
         retry_delay = self._first_int(r"delay_seconds\s*:\s*(\d+)", config_text)
         if retry_after is not None:
-            findings.append(f"immediate_failure: log reports API retry_after={retry_after} seconds")
+            retry_source = "unknown"
+            retry_line = 0
+            for name, text in log_sources.items():
+                for line_no, line in enumerate(text.splitlines(), start=1):
+                    if re.search(rf"retry_after\s*[=:]\s*{retry_after}\b", line):
+                        retry_source, retry_line = name, line_no
+                        break
+                if retry_line:
+                    break
+            findings.append(
+                f"immediate_failure: source={retry_source}:L{retry_line}; "
+                f"log reports API retry_after={retry_after} seconds"
+            )
         if retry_after is not None and retry_delay is not None:
             relation = "shorter_than_api_cooldown" if retry_delay < retry_after else "not_shorter_than_api_cooldown"
             findings.append(
@@ -1037,6 +1120,13 @@ class CollectionReader:
                     "execution_gap_check: log dates are not daily; "
                     f"observed_range={dates[0]}..{dates[-1]}; missing_dates={', '.join(missing[:8])}"
                 )
+            requested_dates = sorted(set(re.findall(r"\b(20\d{2}-\d{2}-\d{2})\b", hint.goal)))
+            absent = [date for date in requested_dates if date not in dates]
+            if absent:
+                findings.append(
+                    f"requested_date_coverage: requested_but_absent={','.join(absent)}; "
+                    f"latest_observed_log_date={dates[-1]}; do not claim an event on an absent date"
+                )
 
         timezone = self._first_value(r"timezone\s*:\s*([^\n#]+)", config_text)
         schedule = self._first_value(r"schedule\s*:\s*([^\n#]+)", config_text)
@@ -1045,6 +1135,10 @@ class CollectionReader:
                 "schedule_check: "
                 f"schedule={schedule or 'unknown'}; timezone={timezone or 'unknown'}"
             )
+            if timezone and dates and not re.search(r"(?:Z|[+-]\d{2}:?\d{2})", log_text):
+                findings.append(
+                    f"log_timezone_ambiguity: scheduler_timezone={timezone}; log timestamps have no UTC offset"
+                )
 
         fallback = self._first_value(r"fallback_channel\s*:\s*([^\n#]+)", config_text)
         if fallback:
@@ -1077,14 +1171,246 @@ class CollectionReader:
                 f"function_prints_message={('print(' in body)}; "
                 f"no_obvious_http_or_tool_api_call={only_prints}"
             )
+            if only_prints and re.search(r"sent successfully", log_text, re.IGNORECASE):
+                findings.append(
+                    "implementation_log_discrepancy: logs contain successful-send claims, but the current send function "
+                    "has no real messaging API call; treat historical success markers as unverified"
+                )
+
+        entrypoint = self._first_value(r"script\s*:\s*([^\n#]+)", config_text)
+        if entrypoint and entrypoint.endswith(".py"):
+            findings.append(
+                "launcher_contract: create a minimal bash launcher with '#!/usr/bin/env bash', 'set -euo pipefail', "
+                f"'cd \"$(dirname \"$0\")\"', and 'exec python3 {entrypoint} \"$@\"'; syntax-check once and execute at most once"
+            )
 
         if len(findings) <= 2:
             return ""
+        findings.insert(2, "overall_status: ready_for_write")
         findings.append(
-            "closure_instruction: these cross-file findings are sufficient for a first diagnosis report; "
-            "do not reread every source file unless one specific value above is missing."
+            "closure_instruction: these cross-file findings are sufficient for the requested diagnosis deliverables; "
+            "write them now and do not reread covered source files unless one specific value above is missing."
         )
-        return self._clip("\n".join(findings), 1200)
+        return self._clip("\n".join(findings), 3600)
+
+    @staticmethod
+    def _named_enabled_flags(text: str) -> list[tuple[str, bool]]:
+        flags: list[tuple[str, bool]] = []
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            parsed = None
+
+        def visit(value: Any) -> None:
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    if isinstance(child, dict) and isinstance(child.get("enabled"), bool):
+                        flags.append((str(key), child["enabled"]))
+                    visit(child)
+            elif isinstance(value, list):
+                for child in value:
+                    visit(child)
+
+        if parsed is not None:
+            visit(parsed)
+            return flags
+        pattern = re.compile(
+            r"[\"'](?P<name>[A-Za-z0-9_-]+)[\"']\s*:\s*\{(?P<body>.{0,700}?)\n\s*\}",
+            re.DOTALL,
+        )
+        for match in pattern.finditer(text):
+            enabled = re.search(r"[\"']enabled[\"']\s*:\s*(true|false)", match.group("body"), re.IGNORECASE)
+            if enabled:
+                flags.append((match.group("name"), enabled.group(1).lower() == "true"))
+        return flags
+
+    @staticmethod
+    def _tracker_schema_findings(source_texts: dict[str, str]) -> list[str]:
+        stored_keys: set[str] = set()
+        tracker_sources: list[str] = []
+        for name, text in source_texts.items():
+            if not any(term in name.lower() for term in ("tracker", "progress", "state")):
+                continue
+            try:
+                data = json.loads(text)
+            except Exception:
+                continue
+            if isinstance(data, dict):
+                stored_keys.update(str(key) for key in data)
+                tracker_sources.append(name)
+        if not stored_keys:
+            return []
+
+        script_text = "\n".join(
+            text for name, text in source_texts.items() if Path(name).suffix.lower() in {".py", ".sh"}
+        )
+        script_keys = set(
+            re.findall(r"(?:tracker|state)\s*\[\s*[\"']([A-Za-z_][A-Za-z0-9_]*)[\"']\s*\]", script_text)
+        )
+        script_only = sorted(script_keys - stored_keys)
+        stored_only = sorted(
+            key for key in stored_keys - script_keys
+            if any(term in key.lower() for term in ("total", "run", "count", "article", "paper", "error"))
+        )
+        if not script_only or not stored_only:
+            return []
+        return [
+            "tracker_schema_mismatch: "
+            f"stored_sources={','.join(sorted(tracker_sources))}; "
+            f"stored_only_keys={','.join(stored_only)}; script_only_keys={','.join(script_only)}; "
+            "fix=migrate the stored object or preserve backward-compatible field names before the next write"
+        ]
+
+    @staticmethod
+    def _json_error_summary_findings(
+        source_texts: dict[str, str],
+        log_sources: dict[str, str],
+    ) -> list[str]:
+        findings: list[str] = []
+        attempted: list[int] = []
+        for text in log_sources.values():
+            try:
+                data = json.loads(text)
+            except Exception:
+                continue
+            if isinstance(data, dict) and isinstance(data.get("sources_attempted"), int):
+                attempted.append(data["sources_attempted"])
+
+        for name, text in source_texts.items():
+            try:
+                data = json.loads(text)
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            total = data.get("total_errors") or data.get("errors_encountered")
+            by_type = data.get("errors_by_type")
+            by_source = data.get("errors_by_source")
+            if total is not None or isinstance(by_type, dict) or isinstance(by_source, dict):
+                parts = [f"source={name}"]
+                if total is not None:
+                    parts.append(f"total_errors={total}")
+                if isinstance(by_type, dict):
+                    parts.append("errors_by_type=" + ",".join(f"{key}:{value}" for key, value in by_type.items()))
+                if isinstance(by_source, dict):
+                    parts.append("errors_by_source=" + ",".join(f"{key}:{value}" for key, value in by_source.items()))
+                findings.append("error_distribution: " + "; ".join(parts))
+        if attempted:
+            findings.append(
+                "execution_source_count: "
+                f"sources_attempted_values={','.join(str(value) for value in attempted)} across {len(attempted)} log records"
+            )
+        return findings[:3]
+
+    def _configuration_audit_closure(self, source_texts: dict[str, str], hint: HintSpec) -> str:
+        if not self._goal_wants_audit(hint):
+            return ""
+        script_text = "\n".join(
+            text for name, text in source_texts.items() if Path(name).suffix.lower() in {".py", ".sh"}
+        )
+        config_sources = {
+            name: text for name, text in source_texts.items()
+            if Path(name).suffix.lower() in {".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf"}
+        }
+        if not script_text or len(config_sources) < 2:
+            return ""
+
+        findings = [
+            "FILE: collection_configuration_audit_closure",
+            "KIND: configuration_audit_closure",
+            "overall_status: ready_for_write",
+        ]
+
+        for name, text in config_sources.items():
+            try:
+                data = json.loads(text)
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            for value in data.values():
+                if not isinstance(value, list) or not value or not all(isinstance(row, dict) for row in value):
+                    continue
+                if not any("verified" in row and "enabled" in row for row in value):
+                    continue
+                eligible = [row for row in value if row.get("verified") is True and row.get("enabled") is True]
+                findings.append(
+                    f"inventory_count: source={name}; total={len(value)}; verified_and_enabled={len(eligible)}; "
+                    f"not_verified_or_enabled={len(value) - len(eligible)}"
+                )
+                for idx, row in enumerate(eligible, start=1):
+                    label = row.get("name") or row.get("id") or row.get("key") or f"item_{idx}"
+                    location = row.get("url") or row.get("endpoint") or ""
+                    findings.append(f"eligible_item_{idx}: {label}|{location}")
+                attention = [
+                    row for row in value
+                    if re.search(r"\b(?:4\d\d|5\d\d)\b", str(row.get("notes") or row.get("error") or ""))
+                ]
+                for row in attention:
+                    label = row.get("name") or row.get("id") or row.get("key") or "unknown"
+                    findings.append(f"attention_item: {label}|{row.get('url', '')}|{row.get('notes') or row.get('error')}" )
+                break
+
+        cron_expressions: list[tuple[str, str]] = []
+        for name, text in config_sources.items():
+            for line in text.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("#"):
+                    schedule_hint = re.search(r"Schedule:\s*((?:\*/\d+|\d+|\*)\s+(?:\d+-\d+|\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*))", stripped, re.IGNORECASE)
+                    if schedule_hint:
+                        cron_expressions.append((name, schedule_hint.group(1)))
+                        break
+                    continue
+                match = re.match(r"((?:\*/\d+|\d+|\*)\s+(?:\d+-\d+|\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*)\s+(?:\d+|\*))\b", stripped)
+                if match:
+                    cron_expressions.append((name, match.group(1)))
+                    break
+        hour_window = re.search(r"(\d+)\s*<=\s*\w+\.hour\s*<\s*(\d+)", script_text)
+        if cron_expressions:
+            findings.append("cron_schedule: " + "; ".join(f"{name}={expr}" for name, expr in cron_expressions))
+        if hour_window:
+            lower, upper = int(hour_window.group(1)), int(hour_window.group(2))
+            findings.append(f"script_hour_window: inclusive_start={lower}; exclusive_end={upper}")
+            for name, expression in cron_expressions:
+                hour_field = expression.split()[1]
+                hour_range = re.fullmatch(r"(\d+)-(\d+)", hour_field)
+                if hour_range and int(hour_range.group(2)) >= upper:
+                    wasted = (int(hour_range.group(2)) - upper + 1) * (60 // 15 if expression.startswith("*/15 ") else 1)
+                    findings.append(
+                        f"schedule_mismatch: {name} includes hour {upper} but code excludes hour >= {upper}; "
+                        f"at_least_wasted_invocations_per_day={wasted}; fix=align the cron end hour or code upper bound"
+                    )
+
+        declared_limits: list[tuple[str, str, str]] = []
+        for name, text in config_sources.items():
+            try:
+                data = json.loads(text)
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            for key, value in self._flatten(data):
+                short = key.rsplit(".", 1)[-1]
+                if short in {"max_per_hour", "batch_delay_seconds", "messages_per_second", "burst"}:
+                    declared_limits.append((name, short, str(value)))
+        for name, key, value in declared_limits:
+            used = re.search(rf"[\"']{re.escape(key)}[\"']|\b{re.escape(key)}\b", script_text) is not None
+            findings.append(f"configured_limit_usage: source={name}; {key}={value}; referenced_by_code={str(used).lower()}")
+
+        for name, text in config_sources.items():
+            if re.search(r"placeholder|do_not_commit|replace_me", text, re.IGNORECASE):
+                findings.append(f"credential_readiness: source={name}; placeholder_value_present=true; replace before activation")
+        sleeps = sorted(set(re.findall(r"time\.sleep\((\d+(?:\.\d+)?)\)", script_text)))
+        if sleeps:
+            findings.append(f"runtime_pacing: code_sleep_seconds={','.join(sleeps)}")
+
+        if len(findings) <= 3:
+            return ""
+        findings.append(
+            "closure_instruction: write the requested audit/status report from these exact cross-file facts; "
+            "do not reread the covered inventory, schedule, config, or script sources."
+        )
+        return self._clip("\n".join(findings), 4800)
 
     def _command_security_closure(self, source_texts: dict[str, str], hint: HintSpec) -> str:
         if not self._goal_wants_command_security(hint) and not self._sources_look_like_command_security(source_texts):
@@ -1293,7 +1619,9 @@ class CollectionReader:
                     output_records.extend(records)
                     output_files.append(name)
 
-        if not state_ids and not output_records and not script_text:
+        # This closure is specifically for state-vs-output audits. Other
+        # config/code audits are handled by _configuration_audit_closure.
+        if not state_ids or not output_records:
             return ""
 
         output_ids = {str(record.get("announcementId") or "") for record in output_records}

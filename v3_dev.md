@@ -407,3 +407,52 @@ Kimi model decision and result:
   `0.750 / 2,463,512 / 132` SR. Its four Native long-reading failures are
   retained: two 300-second timeouts and two 50-tool-call caps; all four paired
   SR runs scored 1.00 in four requests.
+
+## 2026-07-18: Multi-file audit convergence repair
+
+Checkpoint before this work: `bacb43b` (`Converge typed and structured
+SparseRead paths`).
+
+Trajectory diagnosis:
+
+- T55 and T98 had task-shaped Native exclusions, while T86 commonly entered
+  SR after broad reads, so the gate missed the actual sparse space.
+- A ready collection closure blocked one read but then escaped to Native.
+- Large closure payloads were persisted and reread; repeated ready calls also
+  duplicated evidence in the conversation.
+- T98 could repeatedly execute near-identical generated shell verification
+  commands after the diagnostic evidence was already closed.
+
+Generic implementation:
+
+- Route configuration/log/code diagnoses and scheduled code-plus-config audits
+  to a compact collection closure without task IDs or fixture-specific values.
+- Close common config/state/log/source/output contradictions in the collection
+  reader, keep ready artifacts closed, and make repeated ready responses short.
+- Allow at most two generated-shell checks after a collection becomes ready.
+- Preserve required-output handling and direct writing of requested fixes.
+
+Final paired runsets:
+
+- `audit_final_paired_dsv4flash_20260718`
+- `audit_final_paired_qwen36plus_20260718`
+
+Five-task aggregate (`T12`, `T55`, `T86`, `T94`, `T98`):
+
+| Model | Native mean score / tokens / req / s | Final SR mean score / tokens / req / s | Delta |
+| --- | --- | --- | --- |
+| DeepSeek-V4-Flash | 0.572 / 3,334,747 / 124 / 828.3 | 0.917 / 1,485,942 / 66 / 400.9 | Score +0.345; tokens -55.4%; req -46.8%; time -51.6% |
+| Qwen3.6-Plus | 0.798 / 1,107,624 / 75 / 949.9 | 0.976 / 794,019 / 57 / 603.8 | Score +0.178; tokens -28.3%; req -24.0%; time -36.4% |
+
+Boundary: T98 is not a strict Pareto positive in either model on this single
+run. Flash saves cost with a 0.069 score loss; Qwen gains 0.148 score but uses
+roughly twice the tokens. This is recorded as an executable-repair boundary,
+not hidden in the aggregate.
+
+Verification:
+
+- Full SparseReading suite: `177 passed in 1.07s` after the implementation was
+  finalized.
+- Canonical data and all main/v2 figures were regenerated from the mixed
+  provenance builder, with the two gold-model audit rows sourced from the final
+  paired runsets.

@@ -892,11 +892,13 @@ def test_collection_collect_adds_audit_closure(tmp_path, monkeypatch):
     assert payload["next_action"]["tool"] == "write_file"
 
     policy = SparseCommandPolicy(sro)
-    assert policy.guard("cat run_scheduled_fetch.py", str(tmp_path)) is None
-    assert policy.guard("python3 -c \"print(open('run_scheduled_fetch.py').read())\"", str(tmp_path)) is None
+    blocked = policy.guard("cat run_scheduled_fetch.py", str(tmp_path))
+    assert blocked is not None
+    assert "already covered" in blocked
+    assert policy.guard("python3 -c \"print(open('run_scheduled_fetch.py').read())\"", str(tmp_path)) is not None
     grep = GrepTool(workspace=tmp_path, sro=sro)
     grep_result = asyncio.run(grep.execute(pattern="deduplicate", path="run_scheduled_fetch.py", output_mode="content"))
-    assert "deduplicate" in grep_result
+    assert "already covered" in grep_result
 
 
 def test_collection_collect_audit_closure_beats_expand_selected_sources(tmp_path, monkeypatch):
@@ -1231,8 +1233,86 @@ def test_access_handoff_ignores_small_log_inside_native_bundle(tmp_path, monkeyp
     (tmp_path / "scripts" / "send.py").write_text("print('send')\n", encoding="utf-8")
     sro = SparseReadingOrchestrator(tmp_path, macro_available=False)
 
-    assert sro.benefit_gate.decide(sro.inspect(tmp_path)).mode == "native"
-    assert not sro.should_handoff_read(log)
+    assert sro.benefit_gate.decide(sro.inspect(tmp_path)).mode == "force_sro"
+    assert sro.should_handoff_read(log)
+
+
+def test_cross_file_diagnosis_builds_override_and_schema_closure(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "cron_logs").mkdir()
+    (tmp_path / "results").mkdir()
+    (tmp_path / "cron_config.json").write_text(
+        '{"source_overrides":{"source_a":{"enabled":true}}}', encoding="utf-8"
+    )
+    (tmp_path / "scripts" / "sources.py").write_text(
+        'SOURCES = {"source_a": {\n  "enabled": False,\n}}\n', encoding="utf-8"
+    )
+    (tmp_path / "scripts" / "worker.py").write_text(
+        'tracker["total_articles"] = len(tracker["articles"])\ntracker["runs"].append({})\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "results" / "progress_tracker.json").write_text(
+        '{"total_papers_found":47,"retrieval_runs":12,"errors_encountered":57}', encoding="utf-8"
+    )
+    (tmp_path / "results" / "run_history.json").write_text(
+        '{"total_errors":57,"errors_by_source":{"source_a":21}}', encoding="utf-8"
+    )
+    (tmp_path / "cron_logs" / "execution.json").write_text(
+        '{"sources_attempted":6,"errors":["source_a 429"]}', encoding="utf-8"
+    )
+
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(tmp_path)
+    assert card.recommended_mode == "collect"
+    pack = sro.read({"artifact_id": card.artifact_id}, "collect", {
+        "goal": "Diagnose root causes across logs, tracker, scripts, and configuration",
+        "needles": ["override", "schema", "errors"],
+        "want": "fact", "type_hint": "collection",
+    })
+    text = "\n".join(block.text for block in pack.evidence)
+    assert "configuration_override_conflict" in text
+    assert "source_a" in text and "true" in text and "false" in text
+    assert "tracker_schema_mismatch" in text
+    assert "total_papers_found" in text and "total_articles" in text
+    assert pack.next_action["overall_status"] == "ready"
+    assert pack.next_action["allowed_next"][0] == "write_file"
+
+
+def test_scheduled_configuration_audit_builds_inventory_schedule_and_limit_closure(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "sites.json").write_text(
+        '{"sites":['
+        '{"name":"A","url":"https://a","verified":true,"enabled":true},'
+        '{"name":"B","url":"https://b","verified":false,"enabled":false,"notes":"returned 502"}'
+        ']}', encoding="utf-8",
+    )
+    (tmp_path / "config" / "notifications.json").write_text(
+        '{"notification_settings":{"max_per_hour":20,"batch_delay_seconds":5},'
+        '"app_secret":"PLACEHOLDER_DO_NOT_COMMIT_REAL_SECRET"}', encoding="utf-8",
+    )
+    (tmp_path / "config" / "cron_schedule.conf").write_text(
+        '# Schedule: */15 9-19 * * *\n*/15 9-19 * * * python monitor.py\n', encoding="utf-8",
+    )
+    (tmp_path / "monitor.py").write_text(
+        'if not (9 <= now.hour < 19):\n    return\ntime.sleep(2)\n', encoding="utf-8",
+    )
+
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(tmp_path)
+    assert card.recommended_mode == "collect"
+    pack = sro.read({"artifact_id": card.artifact_id}, "collect", {
+        "goal": "Audit the scheduled monitoring configuration and write a status report",
+        "needles": ["verified enabled", "working hours", "notification limit"],
+        "want": "fact", "type_hint": "collection",
+    })
+    text = "\n".join(block.text for block in pack.evidence)
+    assert "inventory_count" in text and "verified_and_enabled=1" in text
+    assert "schedule_mismatch" in text and "wasted_invocations_per_day=4" in text
+    assert "max_per_hour=20; referenced_by_code=false" in text
+    assert "attention_item: B" in text and "502" in text
+    assert pack.next_action["overall_status"] == "ready"
 
 
 def test_shell_policy_requests_lazy_macro_activation(tmp_path, monkeypatch):
@@ -1417,7 +1497,7 @@ def test_collection_collect_guards_covered_child_reads(tmp_path, monkeypatch):
     assert payload["next_action"]["tool"] == "write_file"
 
 
-def test_ready_collection_repeated_sro_read_escapes_to_native(tmp_path, monkeypatch):
+def test_ready_collection_repeated_sro_read_stays_closed(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     source = _write_ready_audit_bundle(tmp_path)
     sro = SparseReadingOrchestrator(tmp_path)
@@ -1435,12 +1515,12 @@ def test_ready_collection_repeated_sro_read_escapes_to_native(tmp_path, monkeypa
     second_repeat = sro.read({"artifact_id": card.artifact_id}, "collect", hint)
 
     assert first_repeat.next_action["guard"] == "ready_collection_artifact"
-    assert second_repeat.next_action["guard"] == "native_escape"
+    assert second_repeat.next_action["guard"] == "ready_collection_artifact"
     assert second_repeat.evidence == []
-    assert not sro.should_handoff_read(source)
+    assert sro.should_handoff_read(source)
 
 
-def test_ready_collection_child_guard_is_one_shot_then_native(tmp_path, monkeypatch):
+def test_ready_collection_child_guard_remains_closed(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     source = _write_ready_audit_bundle(tmp_path)
     sro = SparseReadingOrchestrator(tmp_path)
@@ -1462,8 +1542,7 @@ def test_ready_collection_child_guard_is_one_shot_then_native(tmp_path, monkeypa
     second = asyncio.run(tool.execute(path=str(source)))
 
     assert json.loads(first)["sro_guard"] is True
-    assert "sro_guard" not in second
-    assert "deduplicate" in second
+    assert json.loads(second)["sro_guard"] is True
 
 
 def test_exec_policy_blocks_exact_repeated_failure(tmp_path, monkeypatch):
@@ -1476,6 +1555,34 @@ def test_exec_policy_blocks_exact_repeated_failure(tmp_path, monkeypatch):
 
     assert "Exit code:" in first
     assert "exact same command already failed" in second
+
+
+def test_ready_collection_caps_generated_shell_verification(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    _write_ready_audit_bundle(tmp_path)
+    launcher = tmp_path / "launcher.sh"
+    launcher.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(tmp_path)
+    sro.read(
+        {"artifact_id": card.artifact_id},
+        "collect",
+        {
+            "goal": "Audit fetch state vs output and write the deliverables",
+            "needles": ["seen_ids", "csv_summary", "important"],
+            "want": "fact", "type_hint": "collection",
+        },
+    )
+    policy = SparseCommandPolicy(sro)
+
+    assert policy.guard("bash launcher.sh", str(tmp_path)) is None
+    policy.record_result("bash launcher.sh", str(tmp_path), "Exit code: 0")
+    assert policy.guard("bash -n launcher.sh", str(tmp_path)) is None
+    policy.record_result("bash -n launcher.sh", str(tmp_path), "Exit code: 0")
+
+    blocked = policy.guard("bash launcher.sh 2>&1", str(tmp_path))
+    assert blocked is not None
+    assert "two bounded checks" in blocked
 
 
 def test_exec_policy_allows_rerunning_python_scripts(tmp_path, monkeypatch):

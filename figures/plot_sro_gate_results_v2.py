@@ -542,6 +542,7 @@ def generate_readme(df: pd.DataFrame) -> None:
         "- Includes QwenClawBench, LooGLE, SpreadsheetBench Verified, and one explicitly labeled derived multi-PDF integration task.",
         "- Every pair records score, tokens, and requests; valid paired wall-clock seconds are retained, while confirmed provider stalls are marked `n/a`.",
         "- The four structured rows per model use the post-convergence paired reruns; row-level provenance is retained in the CSV.",
+        "- The five audit rows for DeepSeek-V4-Flash and Qwen3.6-Plus use the final paired closure-convergence reruns.",
         "- The remaining score-only judge correction and the post-fix GLM Kaima rerun are annotated in each affected CSV row.",
         "- Boundary cases are retained; the figures do not filter regressions or zero-score outcomes.",
         "",
