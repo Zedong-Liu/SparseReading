@@ -48,7 +48,10 @@ AUDIT_TASKS = {
 
 AUDIT_RUNSETS = {
     "DeepSeek-V4-Flash": "audit_final_paired_dsv4flash_20260718",
+    "DeepSeek-V4-Pro": "audit_final_paired_dsv4pro_20260718",
     "Qwen3.6-Plus": "audit_final_paired_qwen36plus_20260718",
+    "GLM-5.1": "audit_final_paired_glm51_20260718",
+    "Kimi-K2.5": "audit_final_paired_kimik25_20260718",
 }
 
 # The structured scenario was rerun after the generic sparse-plan/compute and
@@ -358,7 +361,7 @@ def main() -> int:
                 source["sro_seconds"] = corrected["seconds"]
                 note += f"; {result_override[1]}"
             override = SCORE_OVERRIDES.get((model, task_id))
-            if override:
+            if override and not (task_id in AUDIT_TASKS and model in AUDIT_RUNSETS):
                 source["sro_score"] = override[0]
                 note += f"; {override[1]}"
             baseline_override = BASELINE_SCORE_OVERRIDES.get((model, task_id))

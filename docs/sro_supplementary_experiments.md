@@ -36,42 +36,37 @@ is now reachable, but its paired structured run was unstable: three Native
 runs reached the 50-request cap and SR still looped on T58. It is therefore not
 used in the paper table; the stable Kimi-K2.5 run remains the approved result.
 
-The four structured rows for every model are replaced by clean paired
-post-convergence runs. The five audit rows for the two gold models,
-DeepSeek-V4-Flash and Qwen3.6-Plus, are also replaced by final paired reruns
-after the generic collection-closure convergence repair. Other rows remain on
-their original main runsets. The canonical CSV records this mixed provenance
-per row and includes Native/SR wall-clock seconds in addition to score, tokens,
-and requests.
+The four structured rows and five audit rows for every model are replaced by
+clean paired post-convergence runs. Other rows remain on their original main
+runsets. The canonical CSV records this mixed provenance per row and includes
+Native/SR wall-clock seconds in addition to score, tokens, and requests.
 
 | Model | Native mean score / tokens / req / s | SR mean score / tokens / req / s | Interpretation |
 | --- | --- | --- | --- |
 | DeepSeek-V4-Flash | 0.734 / 8,060,557 / 334 / 2,594.3 | 0.896 / 3,506,749 / 163 / 1,084.3 | Score +0.162; tokens -56.5%; requests -51.2%; time -58.2% |
-| DeepSeek-V4-Pro | 0.849 / 5,988,619 / 272 / 3,390.4 | 0.908 / 3,079,565 / 152 / 1,790.1 | Score +0.059; tokens -48.6%; requests -44.1%; time -47.2% |
+| DeepSeek-V4-Pro | 0.800 / 5,485,735 / 258 / 2,921.6 | 0.918 / 2,281,879 / 119 / 1,247.0 | Score +0.118; tokens -58.4%; requests -53.9%; time -57.3% |
 | Qwen3.6-Plus | 0.800 / 3,656,606 / 243 / 3,178.4* | 0.917 / 1,869,255 / 142 / 1,629.4* | Score +0.117; tokens -48.9%; requests -41.6%; paired time -48.7%* |
-| GLM-5.1 | 0.811 / 6,196,208 / 314 / 5,116.9 | 0.835 / 3,736,406 / 192 / 2,648.9 | Score +0.024; tokens -39.7%; requests -38.9%; time -48.2% |
-| Kimi-K2.5 | 0.500 / 6,925,826 / 342 / 3,338.1 | 0.828 / 2,055,570 / 114 / 1,434.4 | Score +0.329; tokens -70.3%; requests -66.7%; time -57.0% |
+| GLM-5.1 | 0.849 / 6,684,543 / 341 / 5,458.7 | 0.906 / 2,600,316 / 142 / 2,243.2 | Score +0.057; tokens -61.1%; requests -58.4%; time -58.9% |
+| Kimi-K2.5 | 0.565 / 6,105,243 / 317 / 3,051.8 | 0.873 / 1,782,004 / 104 / 1,231.2 | Score +0.308; tokens -70.8%; requests -67.2%; time -59.7% |
 
 `*` Qwen time aggregates contain 16 valid pairs. T58 is omitted from both
 Native and SR wall-clock sums because the SR execution had a confirmed
 provider-side stall; its score, token, and request measurements remain valid.
 
 The aggregate result is deliberately not the primary claim. Across all 85
-paired runs, mean score changes from 0.739 to 0.877, combined tokens fall from
-30,827,816 to 14,247,545 (-53.8%), and requests fall from 1,505 to 763
-(-49.3%). Across the 84 valid timed pairs, wall-clock time falls from 17,618.0
-to 8,587.1 seconds (-51.3%). The
+paired runs, mean score changes from 0.750 to 0.902, combined tokens fall from
+29,992,684 to 12,040,203 (-59.9%), and requests fall from 1,493 to 670
+(-55.1%). Across the 84 valid timed pairs, wall-clock time falls from 17,204.8
+to 7,435.0 seconds (-56.8%). The
 long-context/PDF scenario is the consistent signal: all 25 SR
 task runs score 1.00, compared with a 0.798 Native mean; combined tokens fall
 from 9,659,035 to 1,295,257 (-86.6%) and requests from 524 to 104 (-80.2%).
 Per-model long-context/PDF token reductions are 86.6% (Flash), 81.8% (Pro),
 76.9% (Qwen3.6-Plus), 78.9% (GLM-5.1), and 92.9% (Kimi-K2.5).
 
-The other scenarios preserve the intended boundary. Multi-file audit and
-diagnosis improves mean score by 0.174 while reducing tokens by 33.1% and
-requests by 26.5% across the five-model table. The two repaired gold-model
-subsets are stronger than the unchanged older runs: Flash reduces tokens by
-55.4%, and Qwen3.6-Plus by 28.3%, with higher mean score in both cases.
+The other scenarios preserve the intended boundary. After all five audit
+models were rerun, multi-file audit and diagnosis improves mean score by 0.223
+while reducing tokens by 49.7%, requests by 44.4%, and time by 49.3%.
 After the structured convergence reruns, the fixed four-task structured
 scenario improves mean score by 0.133 while reducing combined tokens by 51.7%
 and requests by 48.2%. Across its 19 valid timed pairs, time falls by 65.7%.
@@ -79,13 +74,13 @@ Native-fit controls reduce tokens by
 26.0% but lose 0.023 mean score, so they remain gate/native-first tasks rather
 than a broad SR claim.
 
-Two score-only evaluation repairs remain in the canonical table. Pro T12
-passed all six automated checks and received 1.00 on a low-concurrency judge
-recheck. Pro Native T73 also passed all six automated checks; its original
-judge response was empty, while a same-deliverable rejudge scored 1.00. Both
-repairs retain the original run's tokens, requests, and seconds. The earlier
-Flash 49333 semantic regrade is no longer needed because its replacement
-structured run receives 1.00 directly from the current grader.
+One score-only evaluation repair remains in the canonical table. Pro Native
+T73 passed all six automated checks; its original judge response was empty,
+while a same-deliverable rejudge scored 1.00. The repair retains the original
+run's tokens, requests, and seconds. Pro T12 now uses its clean paired audit
+rerun and needs no score correction. The earlier Flash 49333 semantic regrade
+is also no longer needed because its replacement structured run receives 1.00
+directly from the current grader.
 
 Kimi's four Native long-reading failures are also retained rather than
 regraded. T21 and LooGLE 10Q timed out at about 300 seconds after 43 and 46
@@ -129,25 +124,45 @@ Final paired single-run results are shown as
 | DeepSeek-V4-Flash | T86 | 0.046 / 525,185 / 17 / 162.2 | 0.896 / 213,744 / 11 / 96.3 | Strong positive; Native quality was unusually low |
 | DeepSeek-V4-Flash | T94 | 1.000 / 515,914 / 24 / 139.8 | 0.976 / 76,220 / 5 / 31.1 | Strong efficiency positive; small score delta |
 | DeepSeek-V4-Flash | T98 | 0.833 / 591,278 / 23 / 161.7 | 0.764 / 421,724 / 19 / 97.4 | Boundary: efficiency positive, score -0.069 |
+| DeepSeek-V4-Pro | T12 | 0.333 / 224,626 / 13 / 158.8 | 1.000 / 72,061 / 5 / 43.9 | Strong positive; Native judge response was empty |
+| DeepSeek-V4-Pro | T55 | 0.703 / 339,562 / 17 / 156.7 | 0.927 / 409,782 / 16 / 142.5 | Quality/time positive; tokens +20.7% |
+| DeepSeek-V4-Pro | T86 | 0.363 / 461,037 / 19 / 311.0 | 0.988 / 163,412 / 7 / 148.2 | Strong positive |
+| DeepSeek-V4-Pro | T94 | 0.950 / 116,566 / 7 / 95.4 | 0.990 / 64,522 / 4 / 42.7 | Positive |
+| DeepSeek-V4-Pro | T98 | 0.832 / 400,072 / 19 / 149.4 | 0.644 / 142,908 / 8 / 64.0 | Boundary: efficiency positive, score -0.188 |
 | Qwen3.6-Plus | T12 | 0.802 / 164,348 / 12 / 142.1 | 0.969 / 58,720 / 5 / 70.9 | Strong positive |
 | Qwen3.6-Plus | T55 | 0.673 / 388,399 / 28 / 223.7 | 0.969 / 258,275 / 17 / 189.2 | Positive |
 | Qwen3.6-Plus | T86 | 0.683 / 229,047 / 11 / 322.8 | 0.988 / 116,430 / 8 / 120.6 | Strong positive |
 | Qwen3.6-Plus | T94 | 1.000 / 170,534 / 13 / 128.2 | 0.975 / 51,354 / 5 / 48.7 | Strong efficiency positive; small score delta |
 | Qwen3.6-Plus | T98 | 0.832 / 155,296 / 11 / 133.2 | 0.979 / 309,240 / 22 / 174.4 | Quality positive, efficiency boundary |
+| GLM-5.1 | T12 | 0.905 / 287,603 / 15 / 313.1 | 0.988 / 61,402 / 4 / 77.8 | Strong positive |
+| GLM-5.1 | T55 | 0.661 / 1,152,004 / 50 / 581.5 | 0.939 / 389,745 / 19 / 248.7 | Strong positive |
+| GLM-5.1 | T86 | 0.873 / 391,237 / 17 / 385.5 | 0.988 / 187,394 / 9 / 347.5 | Positive |
+| GLM-5.1 | T94 | 1.000 / 207,421 / 13 / 277.6 | 0.984 / 51,778 / 4 / 60.6 | Strong efficiency positive |
+| GLM-5.1 | T98 | 0.836 / 788,706 / 38 / 722.3 | 0.935 / 346,932 / 17 / 196.5 | Strong positive |
+| Kimi-K2.5 | T12 | 0.667 / 130,260 / 8 / 92.0 | 0.938 / 56,759 / 4 / 52.9 | Strong positive |
+| Kimi-K2.5 | T55 | 0.637 / 158,248 / 10 / 126.6 | 0.843 / 470,035 / 22 / 224.1 | Quality positive, efficiency boundary |
+| Kimi-K2.5 | T86 | 0.508 / 151,399 / 6 / 208.6 | 0.900 / 81,880 / 4 / 135.8 | Strong positive |
+| Kimi-K2.5 | T94 | 0.750 / 498,704 / 26 / 250.2 | 0.900 / 58,983 / 4 / 56.6 | Strong positive |
+| Kimi-K2.5 | T98 | 0.792 / 205,389 / 11 / 144.3 | 0.814 / 169,406 / 10 / 69.9 | Weak positive; evidence-attribution issue remains |
 
-Gold-model aggregates:
+Five-model audit aggregates:
 
 | Model | Native mean score / tokens / req / s | Final SR mean score / tokens / req / s | Change |
 | --- | --- | --- | --- |
 | DeepSeek-V4-Flash | 0.572 / 3,334,747 / 124 / 828.3 | 0.917 / 1,485,942 / 66 / 400.9 | Score +0.345; tokens -55.4%; requests -46.8%; time -51.6% |
+| DeepSeek-V4-Pro | 0.636 / 1,541,863 / 75 / 871.4 | 0.910 / 852,685 / 40 / 441.4 | Score +0.274; tokens -44.7%; requests -46.7%; time -49.3% |
 | Qwen3.6-Plus | 0.798 / 1,107,624 / 75 / 949.9 | 0.976 / 794,019 / 57 / 603.8 | Score +0.178; tokens -28.3%; requests -24.0%; time -36.4% |
+| GLM-5.1 | 0.855 / 2,826,971 / 133 / 2,280.0 | 0.967 / 1,037,251 / 53 / 931.1 | Score +0.112; tokens -63.3%; requests -60.2%; time -59.2% |
+| Kimi-K2.5 | 0.671 / 1,144,000 / 61 / 821.7 | 0.879 / 837,063 / 44 / 539.3 | Score +0.208; tokens -26.8%; requests -27.9%; time -34.4% |
 
 T98 remains the important boundary: its diagnosis is sparse, but producing and
 validating the requested executable repair can dominate the reading savings.
-The two models trade quality and efficiency differently on this single run.
-Therefore the evidence supports the audit scenario in aggregate, not a claim
-that every diagnostic task is a strict Pareto improvement. Repeats are still
-needed to estimate the task-level variance, especially for Flash T86 and T98.
+Flash and Pro lose task-level score, while Qwen spends more tokens to improve
+quality. GLM is a strong positive and Kimi is a weak positive, although Kimi's
+trace partially attributes retry facts that were not visible in the retained
+log excerpt. Therefore the evidence supports the audit scenario in aggregate,
+not a claim that every diagnostic task is a strict Pareto improvement. Repeats
+are still needed to estimate task-level variance, especially for T98.
 
 ## Executed Structured Sparse-Plan Convergence Check
 

@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2026-07-18T14:55:29.295495</dc:date>
+    <dc:date>2026-07-18T15:49:37.300468</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -591,16 +591,16 @@ z
     <text style="fill: #f0a050; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="882.602701" transform="rotate(-0 268.0092 882.602701)">SRO win</text>
    </g>
    <g id="text_188">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="882.596794" transform="rotate(-0 377.3808 882.596794)">0.89-&gt;1.00</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="882.596794" transform="rotate(-0 377.3808 882.596794)">0.33-&gt;1.00</text>
    </g>
    <g id="text_189">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="882.596794" transform="rotate(-0 478.3392 882.596794)">569K-&gt;79K</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="882.596794" transform="rotate(-0 478.3392 882.596794)">225K-&gt;72K</text>
    </g>
    <g id="text_190">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="882.596794" transform="rotate(-0 596.124 882.596794)">25-&gt;5</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="882.596794" transform="rotate(-0 596.124 882.596794)">13-&gt;5</text>
    </g>
    <g id="text_191">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="882.596794" transform="rotate(-0 680.256 882.596794)">289.7-&gt;77.9</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="882.596794" transform="rotate(-0 680.256 882.596794)">158.8-&gt;43.9</text>
    </g>
    <g id="text_192">
     <text style="fill: #f0a050; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="883.010419" transform="rotate(-0 789.6276 883.010419)">OK</text>
@@ -612,22 +612,22 @@ z
     <text style="fill: #202833; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="175.464" y="920.614298" transform="rotate(-0 175.464 920.614298)">DeepSeek-V4-Pro</text>
    </g>
    <g id="text_195">
-    <text style="fill: #f0a050; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="920.569016" transform="rotate(-0 268.0092 920.569016)">SRO win</text>
+    <text style="fill: #f0a050; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="920.620204" transform="rotate(-0 268.0092 920.620204)">Gate/pass</text>
    </g>
    <g id="text_196">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="920.56311" transform="rotate(-0 377.3808 920.56311)">0.57-&gt;0.70</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="920.56311" transform="rotate(-0 377.3808 920.56311)">0.70-&gt;0.93</text>
    </g>
    <g id="text_197">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="920.56311" transform="rotate(-0 478.3392 920.56311)">659K-&gt;332K</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="920.56311" transform="rotate(-0 478.3392 920.56311)">340K-&gt;410K</text>
    </g>
    <g id="text_198">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="920.56311" transform="rotate(-0 596.124 920.56311)">24-&gt;16</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="920.56311" transform="rotate(-0 596.124 920.56311)">17-&gt;16</text>
    </g>
    <g id="text_199">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="920.56311" transform="rotate(-0 680.256 920.56311)">369.8-&gt;235.0</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="920.56311" transform="rotate(-0 680.256 920.56311)">156.7-&gt;142.5</text>
    </g>
    <g id="text_200">
-    <text style="fill: #f0a050; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="920.976735" transform="rotate(-0 789.6276 920.976735)">OK</text>
+    <text style="fill: #f0a050; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="920.976735" transform="rotate(-0 789.6276 920.976735)">—</text>
    </g>
    <g id="text_201">
     <text style="fill: #202833; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="24.0264" y="958.492676" transform="rotate(-0 24.0264 958.492676)">T86 command security</text>
@@ -639,16 +639,16 @@ z
     <text style="fill: #f0a050; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="958.535332" transform="rotate(-0 268.0092 958.535332)">SRO win</text>
    </g>
    <g id="text_204">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="958.529426" transform="rotate(-0 377.3808 958.529426)">0.59-&gt;0.97</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="958.529426" transform="rotate(-0 377.3808 958.529426)">0.36-&gt;0.99</text>
    </g>
    <g id="text_205">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="958.529426" transform="rotate(-0 478.3392 958.529426)">403K-&gt;312K</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="958.529426" transform="rotate(-0 478.3392 958.529426)">461K-&gt;163K</text>
    </g>
    <g id="text_206">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="958.529426" transform="rotate(-0 596.124 958.529426)">17-&gt;12</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="958.529426" transform="rotate(-0 596.124 958.529426)">19-&gt;7</text>
    </g>
    <g id="text_207">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="958.529426" transform="rotate(-0 680.256 958.529426)">349.9-&gt;193.5</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="958.529426" transform="rotate(-0 680.256 958.529426)">311.0-&gt;148.2</text>
    </g>
    <g id="text_208">
     <text style="fill: #f0a050; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="958.943051" transform="rotate(-0 789.6276 958.943051)">OK</text>
@@ -660,22 +660,22 @@ z
     <text style="fill: #202833; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="175.464" y="996.546929" transform="rotate(-0 175.464 996.546929)">DeepSeek-V4-Pro</text>
    </g>
    <g id="text_211">
-    <text style="fill: #f0a050; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="996.446523" transform="rotate(-0 268.0092 996.446523)">Boundary</text>
+    <text style="fill: #f0a050; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="996.501648" transform="rotate(-0 268.0092 996.501648)">SRO win</text>
    </g>
    <g id="text_212">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="996.495742" transform="rotate(-0 377.3808 996.495742)">1.00-&gt;0.87</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="996.495742" transform="rotate(-0 377.3808 996.495742)">0.95-&gt;0.99</text>
    </g>
    <g id="text_213">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="996.495742" transform="rotate(-0 478.3392 996.495742)">146K-&gt;408K</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="996.495742" transform="rotate(-0 478.3392 996.495742)">117K-&gt;65K</text>
    </g>
    <g id="text_214">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="996.495742" transform="rotate(-0 596.124 996.495742)">10-&gt;18</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="996.495742" transform="rotate(-0 596.124 996.495742)">7-&gt;4</text>
    </g>
    <g id="text_215">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="996.495742" transform="rotate(-0 680.256 996.495742)">115.1-&gt;205.3</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="996.495742" transform="rotate(-0 680.256 996.495742)">95.4-&gt;42.7</text>
    </g>
    <g id="text_216">
-    <text style="fill: #f0a050; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="996.909367" transform="rotate(-0 789.6276 996.909367)">~</text>
+    <text style="fill: #f0a050; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="996.909367" transform="rotate(-0 789.6276 996.909367)">OK</text>
    </g>
    <g id="text_217">
     <text style="fill: #202833; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="24.0264" y="1034.425308" transform="rotate(-0 24.0264 1034.425308)">T98 book diagnosis</text>
@@ -687,16 +687,16 @@ z
     <text style="fill: #f0a050; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="1034.412839" transform="rotate(-0 268.0092 1034.412839)">Boundary</text>
    </g>
    <g id="text_220">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="1034.462058" transform="rotate(-0 377.3808 1034.462058)">0.95-&gt;0.83</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="1034.462058" transform="rotate(-0 377.3808 1034.462058)">0.83-&gt;0.64</text>
    </g>
    <g id="text_221">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="1034.462058" transform="rotate(-0 478.3392 1034.462058)">268K-&gt;520K</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="1034.462058" transform="rotate(-0 478.3392 1034.462058)">400K-&gt;143K</text>
    </g>
    <g id="text_222">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="1034.462058" transform="rotate(-0 596.124 1034.462058)">13-&gt;22</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="1034.462058" transform="rotate(-0 596.124 1034.462058)">19-&gt;8</text>
    </g>
    <g id="text_223">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="1034.462058" transform="rotate(-0 680.256 1034.462058)">215.7-&gt;272.9</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="1034.462058" transform="rotate(-0 680.256 1034.462058)">149.4-&gt;64.0</text>
    </g>
    <g id="text_224">
     <text style="fill: #f0a050; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="1034.875683" transform="rotate(-0 789.6276 1034.875683)">~</text>
@@ -1404,16 +1404,16 @@ z
     <text style="fill: #8b6fc0; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="2173.457437" transform="rotate(-0 268.0092 2173.457437)">SRO win</text>
    </g>
    <g id="text_459">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2173.451531" transform="rotate(-0 377.3808 2173.451531)">0.83-&gt;0.99</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2173.451531" transform="rotate(-0 377.3808 2173.451531)">0.91-&gt;0.99</text>
    </g>
    <g id="text_460">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2173.451531" transform="rotate(-0 478.3392 2173.451531)">290K-&gt;52K</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2173.451531" transform="rotate(-0 478.3392 2173.451531)">288K-&gt;61K</text>
    </g>
    <g id="text_461">
     <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2173.451531" transform="rotate(-0 596.124 2173.451531)">15-&gt;4</text>
    </g>
    <g id="text_462">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2173.451531" transform="rotate(-0 680.256 2173.451531)">508.4-&gt;84.8</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2173.451531" transform="rotate(-0 680.256 2173.451531)">313.1-&gt;77.8</text>
    </g>
    <g id="text_463">
     <text style="fill: #8b6fc0; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="2173.865156" transform="rotate(-0 789.6276 2173.865156)">OK</text>
@@ -1425,22 +1425,22 @@ z
     <text style="fill: #202833; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="175.464" y="2211.417847" transform="rotate(-0 175.464 2211.417847)">GLM-5.1</text>
    </g>
    <g id="text_466">
-    <text style="fill: #8b6fc0; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="2211.368628" transform="rotate(-0 268.0092 2211.368628)">Boundary</text>
+    <text style="fill: #8b6fc0; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="2211.423753" transform="rotate(-0 268.0092 2211.423753)">SRO win</text>
    </g>
    <g id="text_467">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2211.417847" transform="rotate(-0 377.3808 2211.417847)">0.69-&gt;0.00</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2211.417847" transform="rotate(-0 377.3808 2211.417847)">0.66-&gt;0.94</text>
    </g>
    <g id="text_468">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2211.417847" transform="rotate(-0 478.3392 2211.417847)">1249K-&gt;1166K</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2211.417847" transform="rotate(-0 478.3392 2211.417847)">1152K-&gt;390K</text>
    </g>
    <g id="text_469">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2211.417847" transform="rotate(-0 596.124 2211.417847)">50-&gt;50</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2211.417847" transform="rotate(-0 596.124 2211.417847)">50-&gt;19</text>
    </g>
    <g id="text_470">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2211.417847" transform="rotate(-0 680.256 2211.417847)">526.1-&gt;306.7</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2211.417847" transform="rotate(-0 680.256 2211.417847)">581.5-&gt;248.7</text>
    </g>
    <g id="text_471">
-    <text style="fill: #8b6fc0; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="2211.831472" transform="rotate(-0 789.6276 2211.831472)">~</text>
+    <text style="fill: #8b6fc0; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="2211.831472" transform="rotate(-0 789.6276 2211.831472)">OK</text>
    </g>
    <g id="text_472">
     <text style="fill: #202833; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="24.0264" y="2249.347413" transform="rotate(-0 24.0264 2249.347413)">T86 command security</text>
@@ -1452,16 +1452,16 @@ z
     <text style="fill: #8b6fc0; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="2249.390069" transform="rotate(-0 268.0092 2249.390069)">SRO win</text>
    </g>
    <g id="text_475">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2249.384163" transform="rotate(-0 377.3808 2249.384163)">0.25-&gt;0.98</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2249.384163" transform="rotate(-0 377.3808 2249.384163)">0.87-&gt;0.99</text>
    </g>
    <g id="text_476">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2249.384163" transform="rotate(-0 478.3392 2249.384163)">169K-&gt;138K</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2249.384163" transform="rotate(-0 478.3392 2249.384163)">391K-&gt;187K</text>
    </g>
    <g id="text_477">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2249.384163" transform="rotate(-0 596.124 2249.384163)">7-&gt;8</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2249.384163" transform="rotate(-0 596.124 2249.384163)">17-&gt;9</text>
    </g>
    <g id="text_478">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2249.384163" transform="rotate(-0 680.256 2249.384163)">491.0-&gt;277.3</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2249.384163" transform="rotate(-0 680.256 2249.384163)">385.5-&gt;347.5</text>
    </g>
    <g id="text_479">
     <text style="fill: #8b6fc0; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="2249.797788" transform="rotate(-0 789.6276 2249.797788)">OK</text>
@@ -1473,22 +1473,22 @@ z
     <text style="fill: #202833; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="175.464" y="2287.350479" transform="rotate(-0 175.464 2287.350479)">GLM-5.1</text>
    </g>
    <g id="text_482">
-    <text style="fill: #8b6fc0; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="2287.407572" transform="rotate(-0 268.0092 2287.407572)">Gate/pass</text>
+    <text style="fill: #8b6fc0; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="2287.356385" transform="rotate(-0 268.0092 2287.356385)">SRO win</text>
    </g>
    <g id="text_483">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2287.350479" transform="rotate(-0 377.3808 2287.350479)">0.98-&gt;0.94</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2287.350479" transform="rotate(-0 377.3808 2287.350479)">1.00-&gt;0.98</text>
    </g>
    <g id="text_484">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2287.350479" transform="rotate(-0 478.3392 2287.350479)">319K-&gt;283K</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2287.350479" transform="rotate(-0 478.3392 2287.350479)">207K-&gt;52K</text>
    </g>
    <g id="text_485">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2287.350479" transform="rotate(-0 596.124 2287.350479)">18-&gt;14</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2287.350479" transform="rotate(-0 596.124 2287.350479)">13-&gt;4</text>
    </g>
    <g id="text_486">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2287.350479" transform="rotate(-0 680.256 2287.350479)">184.8-&gt;334.6</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2287.350479" transform="rotate(-0 680.256 2287.350479)">277.6-&gt;60.6</text>
    </g>
    <g id="text_487">
-    <text style="fill: #8b6fc0; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="2287.764104" transform="rotate(-0 789.6276 2287.764104)">—</text>
+    <text style="fill: #8b6fc0; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="2287.764104" transform="rotate(-0 789.6276 2287.764104)">OK</text>
    </g>
    <g id="text_488">
     <text style="fill: #202833; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="24.0264" y="2325.280044" transform="rotate(-0 24.0264 2325.280044)">T98 book diagnosis</text>
@@ -1497,22 +1497,22 @@ z
     <text style="fill: #202833; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="175.464" y="2325.316794" transform="rotate(-0 175.464 2325.316794)">GLM-5.1</text>
    </g>
    <g id="text_490">
-    <text style="fill: #8b6fc0; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="2325.267576" transform="rotate(-0 268.0092 2325.267576)">Boundary</text>
+    <text style="fill: #8b6fc0; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="2325.322701" transform="rotate(-0 268.0092 2325.322701)">SRO win</text>
    </g>
    <g id="text_491">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2325.316794" transform="rotate(-0 377.3808 2325.316794)">0.88-&gt;0.72</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2325.316794" transform="rotate(-0 377.3808 2325.316794)">0.84-&gt;0.94</text>
    </g>
    <g id="text_492">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2325.316794" transform="rotate(-0 478.3392 2325.316794)">312K-&gt;534K</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2325.316794" transform="rotate(-0 478.3392 2325.316794)">789K-&gt;347K</text>
    </g>
    <g id="text_493">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2325.316794" transform="rotate(-0 596.124 2325.316794)">16-&gt;27</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2325.316794" transform="rotate(-0 596.124 2325.316794)">38-&gt;17</text>
    </g>
    <g id="text_494">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2325.316794" transform="rotate(-0 680.256 2325.316794)">227.7-&gt;333.4</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2325.316794" transform="rotate(-0 680.256 2325.316794)">722.2-&gt;196.5</text>
    </g>
    <g id="text_495">
-    <text style="fill: #8b6fc0; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="2325.730419" transform="rotate(-0 789.6276 2325.730419)">~</text>
+    <text style="fill: #8b6fc0; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="2325.730419" transform="rotate(-0 789.6276 2325.730419)">OK</text>
    </g>
    <g id="text_496">
     <text style="fill: #202833; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="24.0264" y="2363.28311" transform="rotate(-0 24.0264 2363.28311)">T58 DiD</text>
@@ -1812,16 +1812,16 @@ z
     <text style="fill: #2a9d8f; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="2818.884806" transform="rotate(-0 268.0092 2818.884806)">SRO win</text>
    </g>
    <g id="text_595">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2818.8789" transform="rotate(-0 377.3808 2818.8789)">0.00-&gt;0.91</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2818.8789" transform="rotate(-0 377.3808 2818.8789)">0.67-&gt;0.94</text>
    </g>
    <g id="text_596">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2818.8789" transform="rotate(-0 478.3392 2818.8789)">1234K-&gt;61K</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2818.8789" transform="rotate(-0 478.3392 2818.8789)">130K-&gt;57K</text>
    </g>
    <g id="text_597">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2818.8789" transform="rotate(-0 596.124 2818.8789)">50-&gt;4</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2818.8789" transform="rotate(-0 596.124 2818.8789)">8-&gt;4</text>
    </g>
    <g id="text_598">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2818.8789" transform="rotate(-0 680.256 2818.8789)">401.4-&gt;58.6</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2818.8789" transform="rotate(-0 680.256 2818.8789)">92.0-&gt;52.9</text>
    </g>
    <g id="text_599">
     <text style="fill: #2a9d8f; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="2819.292525" transform="rotate(-0 789.6276 2819.292525)">OK</text>
@@ -1836,16 +1836,16 @@ z
     <text style="fill: #2a9d8f; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="2856.795997" transform="rotate(-0 268.0092 2856.795997)">Boundary</text>
    </g>
    <g id="text_603">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2856.845215" transform="rotate(-0 377.3808 2856.845215)">0.46-&gt;0.49</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2856.845215" transform="rotate(-0 377.3808 2856.845215)">0.64-&gt;0.84</text>
    </g>
    <g id="text_604">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2856.845215" transform="rotate(-0 478.3392 2856.845215)">271K-&gt;489K</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2856.845215" transform="rotate(-0 478.3392 2856.845215)">158K-&gt;470K</text>
    </g>
    <g id="text_605">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2856.845215" transform="rotate(-0 596.124 2856.845215)">14-&gt;23</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2856.845215" transform="rotate(-0 596.124 2856.845215)">10-&gt;22</text>
    </g>
    <g id="text_606">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2856.845215" transform="rotate(-0 680.256 2856.845215)">208.8-&gt;251.9</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2856.845215" transform="rotate(-0 680.256 2856.845215)">126.6-&gt;224.1</text>
    </g>
    <g id="text_607">
     <text style="fill: #2a9d8f; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="2857.25884" transform="rotate(-0 789.6276 2857.25884)">~</text>
@@ -1857,22 +1857,22 @@ z
     <text style="fill: #202833; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="175.464" y="2894.811531" transform="rotate(-0 175.464 2894.811531)">Kimi-K2.5</text>
    </g>
    <g id="text_610">
-    <text style="fill: #2a9d8f; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="2894.868625" transform="rotate(-0 268.0092 2894.868625)">Gate/pass</text>
+    <text style="fill: #2a9d8f; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="2894.817437" transform="rotate(-0 268.0092 2894.817437)">SRO win</text>
    </g>
    <g id="text_611">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2894.811531" transform="rotate(-0 377.3808 2894.811531)">0.38-&gt;0.86</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2894.811531" transform="rotate(-0 377.3808 2894.811531)">0.51-&gt;0.90</text>
    </g>
    <g id="text_612">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2894.811531" transform="rotate(-0 478.3392 2894.811531)">150K-&gt;139K</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2894.811531" transform="rotate(-0 478.3392 2894.811531)">151K-&gt;82K</text>
    </g>
    <g id="text_613">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2894.811531" transform="rotate(-0 596.124 2894.811531)">5-&gt;5</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2894.811531" transform="rotate(-0 596.124 2894.811531)">6-&gt;4</text>
    </g>
    <g id="text_614">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2894.811531" transform="rotate(-0 680.256 2894.811531)">236.8-&gt;155.5</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2894.811531" transform="rotate(-0 680.256 2894.811531)">208.6-&gt;135.8</text>
    </g>
    <g id="text_615">
-    <text style="fill: #2a9d8f; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="2895.225156" transform="rotate(-0 789.6276 2895.225156)">—</text>
+    <text style="fill: #2a9d8f; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="2895.225156" transform="rotate(-0 789.6276 2895.225156)">OK</text>
    </g>
    <g id="text_616">
     <text style="fill: #202833; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="24.0264" y="2932.777847" transform="rotate(-0 24.0264 2932.777847)">T94 exam audit</text>
@@ -1881,22 +1881,22 @@ z
     <text style="fill: #202833; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="175.464" y="2932.777847" transform="rotate(-0 175.464 2932.777847)">Kimi-K2.5</text>
    </g>
    <g id="text_618">
-    <text style="fill: #2a9d8f; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="2932.834941" transform="rotate(-0 268.0092 2932.834941)">Gate/pass</text>
+    <text style="fill: #2a9d8f; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="2932.783753" transform="rotate(-0 268.0092 2932.783753)">SRO win</text>
    </g>
    <g id="text_619">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2932.777847" transform="rotate(-0 377.3808 2932.777847)">0.68-&gt;0.82</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2932.777847" transform="rotate(-0 377.3808 2932.777847)">0.75-&gt;0.90</text>
    </g>
    <g id="text_620">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2932.777847" transform="rotate(-0 478.3392 2932.777847)">175K-&gt;182K</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2932.777847" transform="rotate(-0 478.3392 2932.777847)">499K-&gt;59K</text>
    </g>
    <g id="text_621">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2932.777847" transform="rotate(-0 596.124 2932.777847)">10-&gt;10</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2932.777847" transform="rotate(-0 596.124 2932.777847)">26-&gt;4</text>
    </g>
    <g id="text_622">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2932.777847" transform="rotate(-0 680.256 2932.777847)">100.4-&gt;105.7</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2932.777847" transform="rotate(-0 680.256 2932.777847)">250.2-&gt;56.6</text>
    </g>
    <g id="text_623">
-    <text style="fill: #2a9d8f; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="2933.191472" transform="rotate(-0 789.6276 2933.191472)">—</text>
+    <text style="fill: #2a9d8f; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="2933.191472" transform="rotate(-0 789.6276 2933.191472)">OK</text>
    </g>
    <g id="text_624">
     <text style="fill: #202833; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="24.0264" y="2970.707413" transform="rotate(-0 24.0264 2970.707413)">T98 book diagnosis</text>
@@ -1905,22 +1905,22 @@ z
     <text style="fill: #202833; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="175.464" y="2970.744163" transform="rotate(-0 175.464 2970.744163)">Kimi-K2.5</text>
    </g>
    <g id="text_626">
-    <text style="fill: #2a9d8f; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="2970.694944" transform="rotate(-0 268.0092 2970.694944)">Boundary</text>
+    <text style="fill: #2a9d8f; font: 700 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="268.0092" y="2970.750069" transform="rotate(-0 268.0092 2970.750069)">SRO win</text>
    </g>
    <g id="text_627">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2970.744163" transform="rotate(-0 377.3808 2970.744163)">0.73-&gt;0.54</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="377.3808" y="2970.744163" transform="rotate(-0 377.3808 2970.744163)">0.79-&gt;0.81</text>
    </g>
    <g id="text_628">
-    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2970.744163" transform="rotate(-0 478.3392 2970.744163)">135K-&gt;240K</text>
+    <text style="font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="478.3392" y="2970.744163" transform="rotate(-0 478.3392 2970.744163)">205K-&gt;169K</text>
    </g>
    <g id="text_629">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2970.744163" transform="rotate(-0 596.124 2970.744163)">7-&gt;12</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="596.124" y="2970.744163" transform="rotate(-0 596.124 2970.744163)">11-&gt;10</text>
    </g>
    <g id="text_630">
-    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2970.744163" transform="rotate(-0 680.256 2970.744163)">160.7-&gt;170.9</text>
+    <text style="fill: #6b7280; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="680.256" y="2970.744163" transform="rotate(-0 680.256 2970.744163)">144.3-&gt;69.9</text>
    </g>
    <g id="text_631">
-    <text style="fill: #2a9d8f; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="2971.157788" transform="rotate(-0 789.6276 2971.157788)">~</text>
+    <text style="fill: #2a9d8f; font: 500 10px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="789.6276" y="2971.157788" transform="rotate(-0 789.6276 2971.157788)">OK</text>
    </g>
    <g id="text_632">
     <text style="fill: #202833; font: 500 8.4px 'Arial', 'Helvetica Neue', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="24.0264" y="3008.710479" transform="rotate(-0 24.0264 3008.710479)">T58 DiD</text>

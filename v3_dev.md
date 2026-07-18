@@ -435,24 +435,35 @@ Generic implementation:
 Final paired runsets:
 
 - `audit_final_paired_dsv4flash_20260718`
+- `audit_final_paired_dsv4pro_20260718`
 - `audit_final_paired_qwen36plus_20260718`
+- `audit_final_paired_glm51_20260718`
+- `audit_final_paired_kimik25_20260718`
 
 Five-task aggregate (`T12`, `T55`, `T86`, `T94`, `T98`):
 
 | Model | Native mean score / tokens / req / s | Final SR mean score / tokens / req / s | Delta |
 | --- | --- | --- | --- |
 | DeepSeek-V4-Flash | 0.572 / 3,334,747 / 124 / 828.3 | 0.917 / 1,485,942 / 66 / 400.9 | Score +0.345; tokens -55.4%; req -46.8%; time -51.6% |
+| DeepSeek-V4-Pro | 0.636 / 1,541,863 / 75 / 871.4 | 0.910 / 852,685 / 40 / 441.4 | Score +0.274; tokens -44.7%; req -46.7%; time -49.3% |
 | Qwen3.6-Plus | 0.798 / 1,107,624 / 75 / 949.9 | 0.976 / 794,019 / 57 / 603.8 | Score +0.178; tokens -28.3%; req -24.0%; time -36.4% |
+| GLM-5.1 | 0.855 / 2,826,971 / 133 / 2,280.0 | 0.967 / 1,037,251 / 53 / 931.1 | Score +0.112; tokens -63.3%; req -60.2%; time -59.2% |
+| Kimi-K2.5 | 0.671 / 1,144,000 / 61 / 821.7 | 0.879 / 837,063 / 44 / 539.3 | Score +0.208; tokens -26.8%; req -27.9%; time -34.4% |
 
-Boundary: T98 is not a strict Pareto positive in either model on this single
-run. Flash saves cost with a 0.069 score loss; Qwen gains 0.148 score but uses
-roughly twice the tokens. This is recorded as an executable-repair boundary,
-not hidden in the aggregate.
+Across all 25 audit pairs, score changes from 0.706 to 0.930, tokens fall from
+9,955,205 to 5,006,960 (-49.7%), requests from 468 to 260 (-44.4%), and time
+from 5,751.4 to 2,916.6 seconds (-49.3%).
+
+Boundary: T98 is not a strict Pareto positive in every model on this single
+run. Flash and Pro save cost with score loss; Qwen gains quality while using
+more tokens. Kimi's trace also attributes retry facts not visible in the
+retained log excerpt. These are recorded as executable-repair boundaries, not
+hidden in the aggregate.
 
 Verification:
 
 - Full SparseReading suite: `177 passed in 1.07s` after the implementation was
   finalized.
 - Canonical data and all main/v2 figures were regenerated from the mixed
-  provenance builder, with the two gold-model audit rows sourced from the final
+  provenance builder, with all five models' audit rows sourced from the final
   paired runsets.
