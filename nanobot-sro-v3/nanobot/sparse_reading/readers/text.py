@@ -152,7 +152,13 @@ class TextReader:
         best = ranked[0] if ranked else None
         candidate = ""
         candidate_block = best
-        if self._slot_wants_count(slot):
+        if self._slot_wants_amount(slot):
+            for block in ranked[:8]:
+                candidate = self._extract_amount(block.text, self._slot_terms(slot))
+                if candidate:
+                    candidate_block = block
+                    break
+        if not candidate and self._slot_wants_count(slot):
             count_choice = self._best_count_candidate(slot, ranked[:8], units)
             if count_choice:
                 candidate, candidate_block = count_choice
@@ -166,7 +172,8 @@ class TextReader:
                 if candidate:
                     candidate_block = block
                     break
-        status = "resolved" if candidate else ("partial" if best else "missing")
+        quality_issue = self._candidate_quality_issue(slot, candidate, candidate_block)
+        status = "resolved" if candidate and not quality_issue else ("partial" if candidate or best else "missing")
         confidence = 0.0
         anchor = ""
         verify_ref = ""
@@ -176,7 +183,7 @@ class TextReader:
             confidence = min(0.99, max(0.35, candidate_block.score / 12.0))
             if status == "resolved":
                 confidence = max(confidence, 0.8)
-        return {
+        result = {
             "id": slot.id,
             "status": status,
             "candidate": candidate,
@@ -184,6 +191,29 @@ class TextReader:
             "confidence": round(confidence, 2),
             "verify_ref": verify_ref,
         }
+        if quality_issue:
+            result["needs_verify_reason"] = quality_issue
+        return result
+
+    @staticmethod
+    def _candidate_quality_issue(
+        slot: SlotSpec,
+        candidate: str,
+        candidate_block: EvidenceBlock | None,
+    ) -> str:
+        if not candidate:
+            return ""
+        compact = re.sub(r"\s+", " ", candidate).strip()
+        if re.search(r"(?:^|\s)\d+\s*/\s*\d+(?:\s|$)", compact) and len(compact) <= 120:
+            return "candidate looks like document pagination or cover boilerplate"
+        if candidate_block is None or candidate_block.score < 3.0:
+            return "candidate has weak query evidence"
+        expected = f"{slot.expected} {slot.question}".lower()
+        if any(term in expected for term in ("table", "structured", "comparison")):
+            numeric_values = re.findall(r"\b\d[\d,.]*\b", candidate)
+            if "\n" not in candidate and len(numeric_values) < 2:
+                return "candidate does not match the requested structured answer shape"
+        return ""
 
     def _best_count_candidate(
         self,
@@ -282,7 +312,7 @@ class TextReader:
                     score += 12.0
             for term in terms:
                 if term in hay:
-                    score += 1.5
+                    score += 3.0 if re.search(r"[\u3400-\u9fff]", term) else 1.5
             sentence_overlap = self._best_sentence_overlap(unit.text, terms)
             if sentence_overlap >= 2:
                 score += sentence_overlap * 2.0
@@ -683,7 +713,7 @@ class TextReader:
     def _slot_terms(self, slot: SlotSpec) -> list[str]:
         raw = " ".join([slot.id, slot.question, slot.expected, *slot.aliases]).lower()
         return [
-            token for token in re.findall(r"[a-z0-9_.:/-]{3,}", raw)
+            token for token in re.findall(r"[a-z0-9_.:/-]{3,}|[\u3400-\u9fff]{2,}", raw)
             if token not in self._STOPWORDS
         ][:12]
 
@@ -714,6 +744,34 @@ class TextReader:
     def _slot_wants_count(slot: SlotSpec) -> bool:
         text = f"{slot.expected} {slot.question}".lower()
         return any(term in text for term in ("count", "how many", "how long", "duration", "number", "total", "remained"))
+
+    @staticmethod
+    def _slot_wants_amount(slot: SlotSpec) -> bool:
+        text = f"{slot.expected} {slot.question}".lower()
+        return any(term in text for term in ("amount", "currency", "yuan", "dollar", "usd", "eur", "金额", "元"))
+
+    @staticmethod
+    def _extract_amount(text: str, terms: list[str]) -> str:
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        total_markers = ("total", "amount", "合计", "总额")
+        amount_pattern = re.compile(r"(?<!\d)(-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+\.\d{2,})(?!\d)")
+        candidates: list[tuple[int, str]] = []
+        for index, line in enumerate(lines):
+            low = line.lower()
+            relevance = sum(1 for term in terms if term and term in low)
+            marker = any(item in low for item in total_markers)
+            search_lines = [line, *lines[index + 1 : index + 3]]
+            for offset, candidate_line in enumerate(search_lines):
+                match = amount_pattern.search(candidate_line)
+                if not match:
+                    continue
+                score = relevance * 3 + (6 if marker else 0) - offset
+                candidates.append((score, match.group(1)))
+                break
+        if not candidates:
+            return ""
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        return candidates[0][1]
 
     @staticmethod
     def _slot_wants_location(slot: SlotSpec) -> bool:

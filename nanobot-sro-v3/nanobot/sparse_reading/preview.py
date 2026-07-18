@@ -8,6 +8,7 @@ import re
 import xml.etree.ElementTree as ET
 import zipfile
 from collections import Counter
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -56,7 +57,7 @@ class PreviewBuilder:
             }
         summary = str(payload.get("summary") or "")
         visible_bytes = int(payload.get("visible_bytes") or self._visible_size(payload))
-        next_action = self._next_action(card)
+        next_action = self._next_action(card, payload)
         return PreviewPack(
             artifact_id=card.artifact_id,
             card=self._minimal_card(card),
@@ -79,7 +80,6 @@ class PreviewBuilder:
     def _minimal_card(card: FileCard) -> dict[str, Any]:
         allows_targeted_read = card.sparse_recommended or card.recommended_mode not in {"native", "native_read"}
         return {
-            "path": card.path,
             "artifact_id": card.artifact_id,
             "type": card.type,
             "size_bytes": card.size_bytes,
@@ -92,7 +92,59 @@ class PreviewBuilder:
         }
 
     @staticmethod
-    def _next_action(card: FileCard) -> dict[str, Any]:
+    def _next_action(card: FileCard, payload: dict[str, Any]) -> dict[str, Any]:
+        if card.structured:
+            signals = list(payload.get("signals") or [])
+            structure = dict(payload.get("structure") or {})
+            formulas = list(structure.get("formula_samples") or [])
+            fill_candidates = list(structure.get("formula_fill_candidates") or [])
+            if card.type == "xlsx" and fill_candidates:
+                candidate = fill_candidates[0]
+                return {
+                    "allowed_next": ["use_preview", "native"],
+                    "overall_status": "ready_for_edit",
+                    "instruction": (
+                        "The preview identifies a formula anchor and a contiguous source band. If the task asks to "
+                        "apply or copy that formula across the row, fill the entire candidate range "
+                        f"{candidate['fill_range']}, not only {candidate['anchor_cell']}. Preserve relative references "
+                        "with openpyxl.formula.translate.Translator or explicit per-cell formulas, save the requested "
+                        "output, then verify every formula/result cell across that range once. Do not call sro_read or "
+                        "rescan the source workbook."
+                    ),
+                }
+            has_lookup_formula = any(
+                any(term in str(item.get("formula") or "").upper() for term in ("VLOOKUP", "XLOOKUP", "MATCH("))
+                for item in formulas
+            )
+            has_whitespace = any(signal.get("kind") == "surrounding_whitespace" for signal in signals)
+            if card.type == "xlsx" and has_lookup_formula and has_whitespace:
+                return {
+                    "allowed_next": ["use_preview", "native"],
+                    "overall_status": "ready_for_edit",
+                    "instruction": (
+                        "The preview already shows a lookup formula plus surrounding whitespace in a lookup source. "
+                        "Treat that as a complete edit diagnosis: write one bounded workbook-edit script, save the requested "
+                        "output, and verify only the edited cells. Do not request full worksheet rows or scan the lookup table. "
+                        "Use python3 (not python). For formulas containing $ absolute references, write a Python script file "
+                        "and execute it; never put the formula inside a double-quoted python -c shell command, because it "
+                        "corrupts $A$1-style ranges. After exit code 0, make one compact check of formulas/formatting in the "
+                        "generated output and stop; do not reopen the source or run a separate ls check."
+                    ),
+                }
+            allowed = ["use_preview", "native"]
+            if card.sparse_recommended or card.recommended_mode not in {"native", "native_read"}:
+                allowed.insert(1, "sro_read_with_goal")
+            return {
+                "allowed_next": allowed,
+                "instruction": (
+                    "Use this preview as the schema/sample inspection. For workbook edits or full-table "
+                    "calculations, run one bounded local script and one focused verification; do not dump "
+                    "or preview the same source again. Call sro_read only when a named target needed for the "
+                    "task is absent from the preview. For Excel formulas containing $ absolute references, "
+                    "write a Python script file and execute it; never put the formula inside a double-quoted "
+                    "python -c shell command, because the shell will expand and corrupt $A$1-style ranges."
+                ),
+            }
         allowed = ["use_preview", "sro_raw"]
         if card.sparse_recommended or card.recommended_mode not in {"native", "native_read"}:
             allowed.insert(1, "sro_read_with_goal")
@@ -141,34 +193,122 @@ class PreviewBuilder:
         except ImportError:
             return self._xlsx_zip(path)
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        formula_wb = openpyxl.load_workbook(path, read_only=True, data_only=False)
         sheets = []
         samples: list[dict[str, Any]] = []
+        formula_samples: list[dict[str, Any]] = []
+        formula_fill_candidates: list[dict[str, Any]] = []
+        whitespace_signals: list[dict[str, Any]] = []
         try:
             for ws in wb.worksheets[:12]:
-                rows_iter = ws.iter_rows(values_only=True)
-                headers = [self._cell(value) for value in next(rows_iter, ())]
+                formula_ws = formula_wb[ws.title]
+                for formula_row in formula_ws.iter_rows(min_row=1, max_row=min(formula_ws.max_row, 8)):
+                    for cell in formula_row:
+                        formula = cell.value
+                        if isinstance(formula, str) and formula.startswith("="):
+                            formula_samples.append({
+                                "sheet": ws.title,
+                                "cell": cell.coordinate,
+                                "formula": formula,
+                            })
+                            candidate = self._horizontal_formula_fill_candidate(ws, cell, formula)
+                            if candidate:
+                                formula_fill_candidates.append(candidate)
+                        if len(formula_samples) >= 8:
+                            break
+                    if len(formula_samples) >= 8:
+                        break
+                leading_rows = list(ws.iter_rows(min_row=1, max_row=min(ws.max_row, 8), values_only=True))
+                header_offset, header_values = max(
+                    enumerate(leading_rows, start=1),
+                    key=lambda item: sum(bool(self._cell(value).strip()) for value in item[1]),
+                    default=(1, ()),
+                )
+                headers = [self._cell(value) for value in header_values]
                 first_rows = []
-                for row in rows_iter:
+                whitespace_columns: set[str] = set()
+                whitespace_examples: list[str] = []
+                for row in ws.iter_rows(min_row=header_offset + 1, values_only=True):
                     values = [self._cell(value) for value in row]
                     if any(values):
-                        first_rows.append({header: values[idx] if idx < len(values) else "" for idx, header in enumerate(headers)})
-                    if len(first_rows) >= 5:
+                        first_rows.append({
+                            header: values[idx] if idx < len(values) else ""
+                            for idx, header in enumerate(headers[:12])
+                        })
+                        for idx, value in enumerate(values[:12]):
+                            if value and value != value.strip():
+                                whitespace_columns.add(headers[idx] if idx < len(headers) else f"column_{idx + 1}")
+                                if len(whitespace_examples) < 3:
+                                    whitespace_examples.append(repr(value))
+                    if len(first_rows) >= 3:
                         break
+                if whitespace_columns:
+                    whitespace_signals.append({
+                        "kind": "surrounding_whitespace",
+                        "sheet": ws.title,
+                        "columns": sorted(whitespace_columns),
+                        "examples": whitespace_examples,
+                    })
                 sheets.append({
                     "name": ws.title,
                     "rows": ws.max_row,
                     "columns": ws.max_column,
+                    "header_row": header_offset,
                     "headers": headers,
                 })
                 samples.append({"sheet": ws.title, "rows": first_rows})
         finally:
             wb.close()
+            formula_wb.close()
         return {
             "recipe": "l0_xlsx_sheet_schema_sample",
             "summary": f"XLSX workbook with {len(sheets)} sheets",
-            "structure": {"sheets": sheets, "script_native_ok": True},
+            "structure": {
+                "sheets": sheets,
+                "formula_samples": formula_samples[:8],
+                "formula_fill_candidates": formula_fill_candidates[:4],
+                "script_native_ok": True,
+            },
             "samples": samples[:4],
-            "signals": [],
+            "signals": (
+                ([{"kind": "formula_samples", "count": len(formula_samples[:8])}] if formula_samples else [])
+                + [
+                    {
+                        "kind": "horizontal_formula_fill",
+                        "sheet": item["sheet"],
+                        "anchor_cell": item["anchor_cell"],
+                        "fill_range": item["fill_range"],
+                        "reference_range": item["reference_range"],
+                    }
+                    for item in formula_fill_candidates[:4]
+                ]
+                + whitespace_signals
+            ),
+        }
+
+    @staticmethod
+    def _horizontal_formula_fill_candidate(ws: Any, cell: Any, formula: str) -> dict[str, Any] | None:
+        if cell.row >= ws.max_row:
+            return None
+        references = re.findall(r"(?<![A-Z0-9_])\$?([A-Z]{1,3})\$?(\d+)", formula.upper())
+        if not any(column == cell.column_letter and int(row) == cell.row + 1 for column, row in references):
+            return None
+        end_column = cell.column
+        while end_column <= ws.max_column:
+            value = ws.cell(row=cell.row + 1, column=end_column).value
+            if not isinstance(value, (date, datetime)):
+                break
+            end_column += 1
+        end_column -= 1
+        if end_column - cell.column + 1 < 3:
+            return None
+        end_letter = ws.cell(row=cell.row, column=end_column).column_letter
+        return {
+            "sheet": ws.title,
+            "anchor_cell": cell.coordinate,
+            "formula": formula,
+            "fill_range": f"{cell.coordinate}:{end_letter}{cell.row}",
+            "reference_range": f"{cell.column_letter}{cell.row + 1}:{end_letter}{cell.row + 1}",
         }
 
     def _xlsx_zip(self, path: Path) -> dict[str, Any]:

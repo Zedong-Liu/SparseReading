@@ -107,7 +107,9 @@ def test_benefit_gate_core_decisions(tmp_path, monkeypatch):
     (did / "data" / "firm_metadata.csv").write_text("firm_id,industry\nF001,Manufacturing\n", encoding="utf-8")
     (did / "data" / "data_dictionary.json").write_text('{"ATT":3.5}', encoding="utf-8")
     (did / "scripts" / "did_regression.py").write_text("# regression script\n", encoding="utf-8")
-    assert sro.benefit_gate.decide(sro.inspect(did)).mode == "native"
+    did_decision = sro.benefit_gate.decide(sro.inspect(did))
+    assert did_decision.mode == "force_sro"
+    assert did_decision.recommended_mode == "collect_then_native_compute"
 
     query = tmp_path / "query_bundle"
     (query / "docs").mkdir(parents=True)
@@ -151,6 +153,29 @@ def test_sro_card_and_artifact_followup_for_csv(tmp_path, monkeypatch):
     )
     assert focus.artifact_id == card.artifact_id
     assert any("West" in block.text for block in focus.evidence)
+
+
+def test_csv_focus_does_not_stop_at_early_numeric_rows(tmp_path):
+    csv_path = tmp_path / "events.csv"
+    csv_path.write_text(
+        "event_id,value\n"
+        + "".join(f"event-{idx},{idx}\n" for idx in range(80))
+        + "target-991,42\n",
+        encoding="utf-8",
+    )
+    sro = SparseReadingOrchestrator(tmp_path)
+
+    result = sro.read(
+        {"path": str(csv_path)},
+        "focus",
+        _hint(
+            goal="Find target-991 and return event_id and value",
+            needles=["target-991", "event_id", "value"],
+        ),
+    )
+
+    assert any("target-991" in block.text for block in result.evidence)
+    assert result.unresolved == []
 
 
 def test_refine_requires_artifact(tmp_path):
@@ -231,6 +256,7 @@ def test_large_structured_read_defaults_to_native_advisory(tmp_path, monkeypatch
     card = sro.card(path)
     assert card.recommended_mode == "sro_optional"
     assert not card.sparse_recommended
+    assert not SparseReadingOrchestrator.disabled_for_low_sparse_workspace(tmp_path)
 
 
 def test_read_file_long_pdf_hands_off(tmp_path, monkeypatch):
@@ -909,7 +935,7 @@ def test_collection_collect_audit_closure_beats_expand_selected_sources(tmp_path
     assert pack.next_action["allowed_next"] == ["write_file"]
 
 
-def test_panel_did_bundle_uses_native_gate(tmp_path, monkeypatch):
+def test_panel_did_bundle_builds_sparse_contract_then_computes_locally(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     (tmp_path / "data").mkdir()
     (tmp_path / "scripts").mkdir()
@@ -935,13 +961,34 @@ def test_panel_did_bundle_uses_native_gate(tmp_path, monkeypatch):
     )
     sro = SparseReadingOrchestrator(tmp_path)
     card = sro.card(tmp_path)
-    assert card.recommended_mode == "native_read"
+    assert card.recommended_mode == "collect_then_native_compute"
+
+    child_preview = sro.preview({"path": str(tmp_path / "data" / "panel_data.csv")})
+    assert child_preview.artifact_id == card.artifact_id
+    assert child_preview.structure["requested_child"] == "data/panel_data.csv"
+    assert child_preview.signals[0]["kind"] == "parent_collection_binding"
+    assert "Difference-in-Differences" in child_preview.next_action["hint"]["goal"]
+
+    shape_only_pack = sro.read(
+        {"artifact_id": card.artifact_id},
+        "collect",
+        {
+            "goal": "Use the provided analysis script template",
+            "needles": ["did_regression.py"],
+            "want": "schema",
+            "type_hint": "collection",
+        },
+    )
+    assert [block.anchor for block in shape_only_pack.evidence] == ["collection_panel_did_closure"]
+    assert shape_only_pack.unresolved == []
+    assert shape_only_pack.next_action["overall_status"] == "ready_for_compute"
+
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(tmp_path)
 
     tool = ListDirTool(workspace=tmp_path, sro=sro)
     listing = asyncio.run(tool.execute(path=str(tmp_path), recursive=True))
-    assert "sro_handoff" not in listing
-    assert "data/panel_data.csv" in listing
-    assert not sro.should_handoff_read(tmp_path / "data" / "panel_data.csv")
+    assert "sro_handoff" in listing
 
     pack = sro.read(
         {"artifact_id": card.artifact_id},
@@ -954,12 +1001,143 @@ def test_panel_did_bundle_uses_native_gate(tmp_path, monkeypatch):
         },
     )
 
-    assert pack.summary.startswith("low-sparse fallback")
+    assert [block.anchor for block in pack.evidence] == ["collection_panel_did_closure"]
+    assert "panel_file=data/panel_data.csv" in pack.evidence[0].text
+    assert "true_planted_ATT=3.5" in pack.evidence[0].text
+    assert "merge_collision_contract" in pack.evidence[0].text
+    assert "treated_x/treated_y" in pack.evidence[0].text
+    assert "Exact metadata merge columns: firm_id, firm_name" in pack.evidence[0].text
+    assert "minimal_implementation_recipe" in pack.evidence[0].text
+    assert "serialization_contract" in pack.evidence[0].text
+    assert "numeric parallel-trends" in pack.evidence[0].text
+    assert "serially correlated errors" in pack.evidence[0].text
+    assert "two-way fixed-effects estimator" in pack.evidence[0].text
     assert pack.next_action is not None
-    assert "native read listed files" in pack.next_action["allowed_next"]
+    assert pack.next_action["overall_status"] == "ready_for_compute"
+    assert pack.next_action["allowed_next"] == ["exec generated analysis script", "write_file"]
+    assert pack.next_action["required_outputs"] == ["did_regression.py", "did_results_summary.md"]
+    assert "did_regression_output.txt" in pack.next_action["instruction"]
+    child_retry = sro.read(
+        {"path": str(tmp_path / "data" / "panel_data.csv")},
+        "scout",
+        {"goal": "reread panel rows", "want": "schema", "type_hint": "csv"},
+    )
+    assert child_retry.artifact_id == card.artifact_id
+    assert "already ready" in child_retry.summary
 
 
-def test_native_workspace_still_intercepts_intrinsically_sparse_child(tmp_path, monkeypatch):
+def test_current_and_historical_transaction_analysis_selects_compute_sources(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    (tmp_path / "data").mkdir()
+    (tmp_path / "config").mkdir()
+    (tmp_path / "data" / "current_issuance_transactions.csv").write_text(
+        "deal_id,underwriting_fee,trading_result,total_result\nD1,10,-2,8\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "data" / "historical_transactions.csv").write_text(
+        "deal_id,total_result\nH1,5\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "data" / "current_issuance_transactions.json").write_text(
+        '[{"deal_id":"D1","underwriting_fee":10,"trading_result":-2,"total_result":8}]',
+        encoding="utf-8",
+    )
+    (tmp_path / "data" / "client_contacts.csv").write_text(
+        "client_id,email\nC1,a@example.com\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "data" / "deal_pipeline.json").write_text(
+        '{"deals":[{"status":"prospect"}]}',
+        encoding="utf-8",
+    )
+    (tmp_path / "config" / "calculation_schema.json").write_text(
+        '{"total_result":"underwriting_fee + trading_result"}',
+        encoding="utf-8",
+    )
+
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(tmp_path)
+
+    assert card.recommended_mode == "collect_then_native_compute"
+    pack = sro.read(
+        {"artifact_id": card.artifact_id},
+        "collect",
+        {
+            "goal": "Analyze profitable and loss-making issuance deals, decompose total profit into fees and trading, and compare prior years",
+            "needles": ["total_result", "underwriting_fee", "trading_result", "historical comparison"],
+            "want": "fact",
+            "type_hint": "collection",
+        },
+    )
+
+    assert [block.anchor for block in pack.evidence] == ["collection_structured_compute_plan"]
+    assert pack.next_action["overall_status"] == "ready_for_compute"
+    assert pack.next_action["selected_sources"] == [
+        "data/historical_transactions.csv",
+        "data/current_issuance_transactions.csv",
+        "config/calculation_schema.json",
+    ]
+    assert "data/current_issuance_transactions.json" in pack.next_action["excluded_sources"]
+    assert "data/client_contacts.csv" in pack.next_action["excluded_sources"]
+    assert "data/deal_pipeline.json" in pack.next_action["excluded_sources"]
+    assert "total_result=underwriting_fee + trading_result" in pack.evidence[0].text
+
+
+def test_transaction_compute_plan_pins_exact_metric_columns(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    (tmp_path / "current_transactions.csv").write_text(
+        "deal_id,issuer_name,underwriting_fee_mm,trading_pnl_mm,total_pnl_mm\n"
+        "D1,Alpha,10,-2,8\nD2,Beta,3,-8,-5\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "historical_transactions.csv").write_text(
+        "deal_id,total_pnl_mm\nH1,5\n",
+        encoding="utf-8",
+    )
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(tmp_path)
+
+    pack = sro.read(
+        {"artifact_id": card.artifact_id},
+        "collect",
+        {
+            "goal": "Analyze P&L performance and compare historical results",
+            "needles": ["underwriting fee", "trading P&L", "total P&L", "historical comparison"],
+            "want": "schema",
+            "type_hint": "collection",
+        },
+    )
+
+    text = pack.evidence[0].text
+    assert "exact_column_contract" in text
+    assert "underwriting_fee_mm, trading_pnl_mm, total_pnl_mm" in text
+    assert "never invent, shorten, or silently alias" in text
+    assert "only a subset of the primary metrics" in text
+    assert "coherent cross-year table" in text
+    assert "every historical deal was profitable" in text
+    assert "computed_primary_validation" in text
+    assert "positive_total=1; negative_total=1" in text
+    assert "fee_subsidized_profitable_ids=D1" in text
+    assert "D2|Beta|total=-5.00|fee=3.00|trading=-8.00" in text
+    assert "computed_historical_validation" in text
+    assert "loss-making means total_pnl_mm < 0" in text
+
+
+def test_file_created_after_orchestrator_start_is_not_reprocessed_as_source(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    source = tmp_path / "source_report.md"
+    source.write_text("# Source\n\n" + ("evidence line\n" * 500), encoding="utf-8")
+    sro = SparseReadingOrchestrator(tmp_path, macro_available=True)
+
+    generated = tmp_path / "script_output.txt"
+    generated.write_text("regression summary\n" + ("result line\n" * 500), encoding="utf-8")
+
+    assert sro.should_handoff_read(source)
+    assert not sro.should_handoff_read(generated)
+    assert not sro.macro_requested
+
+
+def test_compute_plan_workspace_still_intercepts_intrinsically_sparse_child(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     (tmp_path / "data").mkdir()
     (tmp_path / "scripts").mkdir()
@@ -978,15 +1156,16 @@ def test_native_workspace_still_intercepts_intrinsically_sparse_child(tmp_path, 
     root_card = sro.card(tmp_path)
     child_card = sro.card(long_report)
 
-    assert root_card.recommended_mode == "native_read"
-    assert SparseReadingOrchestrator.disabled_for_low_sparse_workspace(tmp_path)
+    assert root_card.recommended_mode == "collect_then_native_compute"
+    assert not SparseReadingOrchestrator.disabled_for_low_sparse_workspace(tmp_path)
     assert child_card.recommended_mode == "collect_if_multi_fact_else_scout"
     assert sro.should_handoff_read(long_report)
 
     reader = ReadFileTool(workspace=tmp_path, sro=sro)
     payload = json.loads(asyncio.run(reader.execute(path="docs/long_report.md")))
     assert payload["sro_handoff"] is True
-    assert payload["file_card"]["type"] in {"text", "md", "markdown"}
+    assert payload["file_card"]["type"] == "collection"
+    assert payload["next_action"]["mode"] == "collect"
 
 
 def test_access_handoff_requests_lazy_macro_activation(tmp_path, monkeypatch):
@@ -1346,6 +1525,17 @@ def test_policy_blocks_package_install_in_sro_runs(tmp_path):
     assert "package installation is blocked" in blocked
 
 
+def test_policy_blocks_shell_expansion_of_excel_absolute_references(tmp_path):
+    policy = SparseCommandPolicy()
+    blocked = policy.guard(
+        'python3 -c "cell.value = \'=VLOOKUP(F2,Sheet3!$A$2:$D$300,2,FALSE)\'"',
+        str(tmp_path),
+    )
+    assert blocked
+    assert "shell would expand" in blocked
+    assert "write_file" in blocked
+
+
 def test_policy_blocks_python_direct_large_file_reads(tmp_path):
     policy = SparseCommandPolicy()
     csv_path = tmp_path / "quarterly_sales.csv"
@@ -1365,6 +1555,35 @@ def test_policy_blocks_python_direct_large_file_reads(tmp_path):
     )
     assert blocked
     assert "direct Python read" in blocked
+
+
+def test_policy_allows_one_local_workbook_edit_after_preview(tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+    path = tmp_path / "workbook.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["name", "value"])
+    for idx in range(300):
+        ws.append([f"item-{idx}", idx])
+    wb.save(path)
+    wb.close()
+
+    sro = SparseReadingOrchestrator(tmp_path)
+    sro.preview({"path": str(path)})
+    policy = SparseCommandPolicy(sro)
+
+    allowed = policy.guard(
+        "python3 - <<'EOF'\nfrom openpyxl import load_workbook\nwb = load_workbook('workbook.xlsx')\nEOF",
+        str(tmp_path),
+    )
+    assert allowed is None
+
+    blocked_probe = policy.guard(
+        "python3 - <<'EOF'\nfrom openpyxl import load_workbook\nwb = load_workbook('workbook.xlsx')\nprint(list(wb.active.values))\nEOF",
+        str(tmp_path),
+    )
+    assert blocked_probe
+    assert "only prints/scans source rows" in blocked_probe
 
 
 def test_policy_blocks_head_on_large_supported_file(tmp_path):
@@ -1716,6 +1935,42 @@ def test_small_xlsx_focus_returns_calc_ready_payload(tmp_path):
     assert "Alice Chen	Engineering	1250" in Path(pack.calc_ready["tables"][0]["tsv_path"]).read_text(encoding="utf-8")
     assert "Engineering	27000" in Path(pack.calc_ready["tables"][1]["tsv_path"]).read_text(encoding="utf-8")
     assert pack.unresolved == []
+
+
+def test_xlsx_multi_sheet_full_value_request_keeps_large_sheet_unresolved(tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+
+    xlsx_path = tmp_path / "lookups.xlsx"
+    wb = openpyxl.Workbook()
+    small = wb.active
+    small.title = "Sheet1"
+    small.append(["NAME", "VALUE"])
+    small.append(["Alice", 1])
+    large = wb.create_sheet("Sheet3")
+    large.append(["NAME", "VALUE"])
+    for idx in range(40):
+        large.append([f"Person {idx}", idx])
+    wb.save(xlsx_path)
+    wb.close()
+
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(xlsx_path)
+    pack = sro.read(
+        {"artifact_id": card.artifact_id},
+        "focus",
+        {
+            "goal": "Get all NAME values from Sheet1 and Sheet3",
+            "want": "table",
+            "scope": "expand",
+            "artifact": card.artifact_id,
+            "type_hint": "xlsx",
+        },
+    )
+
+    assert pack.calc_ready is not None
+    assert [table["name"] for table in pack.calc_ready["tables"]] == ["Sheet1"]
+    assert "complete rows: Sheet3" in pack.unresolved
+    assert pack.next_action is None
 
 
 def test_hintspec_coerces_string_needles():

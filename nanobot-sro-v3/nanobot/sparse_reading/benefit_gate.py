@@ -71,6 +71,13 @@ class BenefitGate:
                 0.85,
                 "native_read",
             )
+        if info.type == "xlsx":
+            return BenefitDecision(
+                "force_sro",
+                "large workbook; inspect formulas, sheets, and target neighborhoods sparsely before local edit or calculation",
+                0.86,
+                "preview_then_focus_or_native_compute",
+            )
         if info.type in self._TEXT_TYPES:
             return BenefitDecision(
                 "force_sro",
@@ -103,6 +110,14 @@ class BenefitGate:
         names = " ".join(item.name.lower() for item in items)
         kinds = {item.kind for item in items}
 
+        if any(item.kind == "pdf" and item.size >= 4096 for item in items):
+            return BenefitDecision(
+                "force_sro",
+                "collection includes long PDF children; select a child artifact and use its typed reader",
+                0.9,
+                "collect_if_multi_fact_else_scout",
+            )
+
         if self._is_small_rule_table_bundle(items, total_size):
             return BenefitDecision(
                 "native",
@@ -126,17 +141,17 @@ class BenefitGate:
             )
         if self._is_full_analysis_pnl_bundle(names, kinds, len(items)):
             return BenefitDecision(
-                "native",
-                "P&L/full-table analysis bundle; local code over complete transaction tables is cheaper than SRO negotiation",
+                "force_sro",
+                "structured performance bundle; select authoritative tables and calculation definitions sparsely, then compute all selected rows locally",
                 0.88,
-                "native_read",
+                "collect_then_native_compute",
             )
         if self._is_full_analysis_panel_did_bundle(names, kinds, len(items)):
             return BenefitDecision(
-                "native",
-                "panel/DID regression bundle; local script over full structured files is cheaper than SRO negotiation",
+                "force_sro",
+                "panel analysis bundle; build a compact data/model contract, then run the full regression locally",
                 0.88,
-                "native_read",
+                "collect_then_native_compute",
             )
         if self._is_small_query_spec_bundle(items, names, total_size):
             return BenefitDecision(
@@ -238,9 +253,11 @@ class BenefitGate:
             return False
         has_transactions = "transactions" in names and bool(kinds & {"csv", "json", "xlsx"})
         has_pnl = any(term in names for term in ("pnl", "p_l", "p&l", "profit", "loss"))
-        has_new_issuance = "new_issuance" in names or ("issuance" in names and "deal" in names)
+        has_issuance_transactions = "issuance" in names and "transactions" in names
+        has_new_issuance = "new_issuance" in names or ("issuance" in names and "deal" in names) or has_issuance_transactions
         has_history_or_pipeline = any(term in names for term in ("historical", "pipeline", "client_contacts", "summary"))
-        return has_transactions and has_pnl and has_new_issuance and has_history_or_pipeline
+        has_current_and_history = has_issuance_transactions and "historical_transactions" in names
+        return has_transactions and has_new_issuance and has_history_or_pipeline and (has_pnl or has_current_and_history)
 
     @staticmethod
     def _is_full_analysis_panel_did_bundle(names: str, kinds: set[str], item_count: int) -> bool:

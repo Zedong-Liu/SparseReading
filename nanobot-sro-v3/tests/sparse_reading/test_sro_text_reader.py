@@ -1,5 +1,6 @@
 from nanobot.sparse_reading.models import HintSpec
 from nanobot.sparse_reading.orchestrator import SparseReadingOrchestrator
+from nanobot.sparse_reading.readers.text import TextUnit
 
 
 def test_hintspec_allows_multi_fact_pdf_queries():
@@ -709,6 +710,116 @@ def test_collect_readiness_gate_allows_format_mismatch_verify(tmp_path):
     assert second.slot_digest is not None
     assert "broad collect/focus suppressed" not in second.summary
     assert second.slot_digest["slots"][0]["candidate"] == "AI & LLMs: 287"
+
+
+def test_pdf_verify_does_not_promote_unchanged_boilerplate_candidate_to_ready(tmp_path, monkeypatch):
+    path = tmp_path / "report.pdf"
+    path.write_bytes(b"%PDF-1.4\nplaceholder\n")
+    sro = SparseReadingOrchestrator(tmp_path)
+    monkeypatch.setattr(
+        sro.text_reader,
+        "_load_pdf_units",
+        lambda _path: (
+            [TextUnit("p1:L1-L2", "2021 Annual Report 1 / 153")],
+            ["p1 2021 Annual Report"],
+            "pdf",
+        ),
+    )
+    card = sro.card(path)
+    hint = {
+        "goal": "Extract the requested report evidence",
+        "artifact": card.artifact_id,
+        "slots": [
+            {
+                "id": "requested_evidence",
+                "question": "What detailed evidence does the report provide?",
+                "expected": "table",
+                "aliases": ["report evidence"],
+            }
+        ],
+    }
+
+    first = sro.read({"artifact_id": card.artifact_id}, "collect", hint)
+    second = sro.read({"artifact_id": card.artifact_id}, "verify", hint)
+    third = sro.read({"artifact_id": card.artifact_id}, "verify", hint)
+
+    assert first.slot_digest["overall_status"] != "ready"
+    assert second.slot_digest["overall_status"] == "stalled"
+    assert second.slot_digest["slots"][0]["status"] == "unresolved"
+    assert "unchanged" in second.slot_digest["slots"][0]["needs_verify_reason"]
+    assert "suppressed" in third.summary
+    assert third.slot_digest["allowed_next"] == ["write_file"]
+
+
+def test_pdf_collect_extracts_unicode_labeled_total_amount_without_task_rules(tmp_path, monkeypatch):
+    path = tmp_path / "report.pdf"
+    path.write_bytes(b"%PDF-1.4\nplaceholder\n")
+    sro = SparseReadingOrchestrator(tmp_path)
+    monkeypatch.setattr(
+        sro.text_reader,
+        "_load_pdf_units",
+        lambda _path: (
+            [
+                TextUnit(
+                    "p8:L20-L28",
+                    "项目投入情况表\n单位：元\n本期费用化投入\n5,000.00\n"
+                    "本期资本化投入\n7,345.67\n项目投入合计\n12,345.67",
+                )
+            ],
+            ["p8 项目投入情况表"],
+            "pdf",
+        ),
+    )
+    card = sro.card(path)
+    pack = sro.read(
+        {"artifact_id": card.artifact_id},
+        "collect",
+        {
+            "goal": "Extract the requested amount",
+            "artifact": card.artifact_id,
+            "slots": [
+                {
+                    "id": "total_amount",
+                    "question": "What is the total project investment (项目投入)?",
+                    "expected": "amount in yuan",
+                }
+            ],
+        },
+    )
+
+    assert pack.slot_digest["overall_status"] == "ready"
+    assert pack.slot_digest["slots"][0]["candidate"] == "12,345.67"
+
+
+def test_near_ready_digest_allows_one_concrete_focus_fallback(tmp_path):
+    path = tmp_path / "report.md"
+    path.write_text("封面 1 / 50\n\n目标证据\n精确值 12,345.67\n", encoding="utf-8")
+    sro = SparseReadingOrchestrator(tmp_path)
+    card = sro.card(path)
+    collect_hint = {
+        "goal": "Extract report evidence",
+        "artifact": card.artifact_id,
+        "slots": [
+            {
+                "id": "evidence",
+                "question": "What detailed report evidence is available?",
+                "expected": "table",
+            }
+        ],
+    }
+    first = sro.read({"artifact_id": card.artifact_id}, "collect", collect_hint)
+    focus_hint = {
+        "goal": "Find the exact evidence",
+        "needles": ["目标证据", "精确值"],
+        "want": "fact",
+        "artifact": card.artifact_id,
+    }
+    second = sro.read({"artifact_id": card.artifact_id}, "focus", focus_hint)
+    third = sro.read({"artifact_id": card.artifact_id}, "focus", focus_hint)
+
+    assert first.slot_digest["overall_status"] in {"needs_refine", "needs_verify"}
+    assert any("12,345.67" in block.text for block in second.evidence)
+    assert "suppressed" in third.summary
 
 
 def test_collect_readiness_gate_suppresses_malformed_followup(tmp_path):

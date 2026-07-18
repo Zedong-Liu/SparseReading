@@ -32,6 +32,7 @@ env:
   BENCH_MODEL=DeepSeek-V4-Flash
   API_BASE_URL=https://llmapi.paratera.com/v1
   TIMEOUT_MULTIPLIER=1
+  SPARSEREAD_MODE=auto      current production-facing preview/read path
 
 options:
   --dry-run               print planned directories and commands only
@@ -166,6 +167,7 @@ write_manifest() {
     printf '  "bench_model": "%s",\n' "$(json_escape "$BENCH_MODEL")"
     printf '  "timeout_multiplier": "%s",\n' "$(json_escape "$TIMEOUT_MULTIPLIER")"
     printf '  "sro_enabled": "%s",\n' "$(json_escape "${SRO_ENABLED:-}")"
+    printf '  "sparseread_mode": "%s",\n' "$(json_escape "${SPARSEREAD_MODE:-auto}")"
     printf '  "sro_benefit_gate_override": "%s",\n' "$(json_escape "${SRO_BENEFIT_GATE_OVERRIDE:-}")"
     printf '  "sro_collection_closures_enabled": "%s",\n' "$(json_escape "${SRO_COLLECTION_CLOSURES_ENABLED:-}")"
     printf '  "sro_disabled_closure_families": "%s",\n' "$(json_escape "${SRO_DISABLED_CLOSURE_FAMILIES:-}")"
@@ -219,7 +221,7 @@ _run_one_task() {
   echo "=== PLAN $mode $task ==="
   echo "source: $src"
   echo "dest:   $dst"
-  echo "env:    SRO_ENABLED=${SRO_ENABLED:-} SRO_BENEFIT_GATE_OVERRIDE=${SRO_BENEFIT_GATE_OVERRIDE:-} SRO_COLLECTION_CLOSURES_ENABLED=${SRO_COLLECTION_CLOSURES_ENABLED:-} SRO_DISABLED_CLOSURE_FAMILIES=${SRO_DISABLED_CLOSURE_FAMILIES:-}"
+  echo "env:    SRO_ENABLED=${SRO_ENABLED:-} SPARSEREAD_MODE=${SPARSEREAD_MODE:-auto} SRO_BENEFIT_GATE_OVERRIDE=${SRO_BENEFIT_GATE_OVERRIDE:-} SRO_COLLECTION_CLOSURES_ENABLED=${SRO_COLLECTION_CLOSURES_ENABLED:-} SRO_DISABLED_CLOSURE_FAMILIES=${SRO_DISABLED_CLOSURE_FAMILIES:-}"
   echo "cmd:    $command"
 
   if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -228,12 +230,14 @@ _run_one_task() {
 
   rm -rf "$dst"
   mkdir -p "$dst/results" "$dst/transcripts" "$dst/config"
-  cp -R "$src" "$dst/runtime"
+  # Dereference shared fixture links so copied run directories remain self-contained.
+  cp -RL "$src" "$dst/runtime"
 
   export PATH="$ROOT/local_bin:$PATH"
   export MODEL="$BENCH_MODEL"
   export API_BASE_URL="${API_BASE_URL:-https://llmapi.paratera.com/v1}"
   export API_KEY
+  export SPARSEREAD_MODE="${SPARSEREAD_MODE:-auto}"
   export NANOBOT_SOURCE_PATH="$ROOT/nanobot-sro-v3"
   export PYTHONPATH="$ROOT/nanobot-sro-v3${PYTHONPATH:+:$PYTHONPATH}"
   export PINCHBENCH_HISTORY_DIR="$dst/transcripts"
@@ -247,7 +251,7 @@ _run_one_task() {
 
   (
     cd "$dst/runtime/scripts"
-    uv run --with openai --with tqdm --with requests --with pyyaml python benchmark.py \
+    uv run --with openai --with tqdm --with requests --with pyyaml --with openpyxl --with formulas python benchmark.py \
       --model "$BENCH_MODEL" \
       --suite "$task" \
       --output-dir "$dst/results" \
@@ -271,7 +275,7 @@ for raw_mode in "${MODE_LIST[@]}"; do
   for task in "${TASKS[@]}"; do
     src="$QCB_ROOT/$source_mode/$task/runtime"
     dst="$QCB_ROOT/$RUNSET/$mode/$task"
-    command="uv run --with openai --with tqdm --with requests --with pyyaml python benchmark.py --model $BENCH_MODEL --suite $task --output-dir $dst/results --runs 1 --timeout-multiplier $TIMEOUT_MULTIPLIER --no-upload"
+    command="uv run --with openai --with tqdm --with requests --with pyyaml --with openpyxl --with formulas python benchmark.py --model $BENCH_MODEL --suite $task --output-dir $dst/results --runs 1 --timeout-multiplier $TIMEOUT_MULTIPLIER --no-upload"
 
     if [[ ! -d "$src" ]]; then
       echo "missing source runtime: $src" >&2
@@ -295,6 +299,7 @@ if [[ "$PARALLEL_JOBS" -le 1 ]]; then
   done
 else
   pids=()
+  failures=0
   for job in "${JOBS[@]}"; do
     # Wait for a slot if at max capacity
     while [[ ${#pids[@]} -ge $PARALLEL_JOBS ]]; do
@@ -302,9 +307,12 @@ else
       for pid in "${pids[@]}"; do
         if kill -0 "$pid" 2>/dev/null; then
           new_pids+=("$pid")
+        elif ! wait "$pid"; then
+          echo "benchmark job failed (pid=$pid)" >&2
+          failures=$((failures + 1))
         fi
       done
-      pids=("${new_pids[@]:-}")
+      pids=("${new_pids[@]}")
       [[ ${#pids[@]} -ge $PARALLEL_JOBS ]] && sleep 1
     done
 
@@ -315,6 +323,13 @@ else
 
   # Wait for remaining jobs
   for pid in "${pids[@]}"; do
-    wait "$pid" 2>/dev/null || true
+    if ! wait "$pid"; then
+      echo "benchmark job failed (pid=$pid)" >&2
+      failures=$((failures + 1))
+    fi
   done
+  if [[ "$failures" -gt 0 ]]; then
+    echo "$failures benchmark job(s) failed" >&2
+    exit 1
+  fi
 fi

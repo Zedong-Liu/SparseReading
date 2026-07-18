@@ -1,5 +1,8 @@
 import json
+from datetime import date, timedelta
 from pathlib import Path
+
+import pytest
 
 from nanobot.sparse_reading.orchestrator import SparseReadingOrchestrator
 from nanobot.sparse_reading.readers.text import TextUnit
@@ -28,6 +31,9 @@ def test_preview_csv_without_hintspec_returns_l0_card_and_raw_ref(tmp_path: Path
     assert preview.raw_ref.startswith("raw:")
     assert preview.next_action
     assert "sro_read_with_goal" in preview.next_action["allowed_next"]
+    assert "native" in preview.next_action["allowed_next"]
+    assert "sro_raw" not in preview.next_action["allowed_next"]
+    assert "one bounded local script" in preview.next_action["instruction"]
 
     raw = sro.raw(preview.raw_ref)
     assert "status,latency" in raw["content"]
@@ -55,6 +61,86 @@ def test_preview_csv_counts_large_files_without_expanding_all_rows(tmp_path: Pat
     assert preview.structure["row_count"] == 349
     assert len(preview.samples) == 5
     assert preview.samples[-1]["id"] == "5"
+
+
+def test_preview_xlsx_exposes_formulas_without_dumping_the_workbook(tmp_path: Path) -> None:
+    openpyxl = pytest.importorskip("openpyxl")
+    path = tmp_path / "formula_repair.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Input"
+    ws.append(["name", "result"])
+    ws.append(["Ada", "=VLOOKUP(A2,Lookup!A:B,2,FALSE)"])
+    lookup = wb.create_sheet("Lookup")
+    lookup.append(["name", "value"])
+    lookup.append(["Ada ", 7])
+    wb.save(path)
+    wb.close()
+
+    sro = SparseReadingOrchestrator(tmp_path)
+    preview = sro.preview({"path": str(path)})
+
+    assert preview.structure["formula_samples"] == [{
+        "sheet": "Input",
+        "cell": "B2",
+        "formula": "=VLOOKUP(A2,Lookup!A:B,2,FALSE)",
+    }]
+    assert next(signal for signal in preview.signals if signal["kind"] == "formula_samples")["count"] == 1
+    whitespace = next(signal for signal in preview.signals if signal["kind"] == "surrounding_whitespace")
+    assert whitespace["sheet"] == "Lookup"
+    assert whitespace["columns"] == ["name"]
+    assert "double-quoted" in preview.next_action["instruction"]
+    assert "$A$1" in preview.next_action["instruction"]
+    assert "python3 (not python)" in preview.next_action["instruction"]
+    assert "generated output and stop" in preview.next_action["instruction"]
+    assert preview.next_action["overall_status"] == "ready_for_edit"
+    assert "sro_read_with_goal" not in preview.next_action["allowed_next"]
+    redundant = sro.read(
+        {"artifact_id": preview.artifact_id},
+        "focus",
+        {"goal": "scan the full lookup table", "want": "table", "type_hint": "xlsx"},
+    )
+    assert redundant.evidence == []
+    assert redundant.next_action["overall_status"] == "ready_for_edit"
+
+
+def test_preview_xlsx_identifies_horizontal_formula_fill_range(tmp_path: Path) -> None:
+    openpyxl = pytest.importorskip("openpyxl")
+    path = tmp_path / "calendar.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "ATTENDENCE"
+    ws["F3"] = '=TEXT(F4,"DD")'
+    start = date(2026, 7, 1)
+    for offset, column in enumerate(range(6, 37)):
+        ws.cell(row=4, column=column, value=start + timedelta(days=offset))
+        if column > 6:
+            ws.cell(row=3, column=column, value="stale")
+    wb.save(path)
+    wb.close()
+
+    sro = SparseReadingOrchestrator(tmp_path)
+    preview = sro.preview({"path": str(path)})
+
+    assert preview.structure["formula_fill_candidates"] == [{
+        "sheet": "ATTENDENCE",
+        "anchor_cell": "F3",
+        "formula": '=TEXT(F4,"DD")',
+        "fill_range": "F3:AJ3",
+        "reference_range": "F4:AJ4",
+    }]
+    signal = next(item for item in preview.signals if item["kind"] == "horizontal_formula_fill")
+    assert signal["fill_range"] == "F3:AJ3"
+    assert preview.next_action["overall_status"] == "ready_for_edit"
+    assert "not only F3" in preview.next_action["instruction"]
+    assert "Do not call sro_read" in preview.next_action["instruction"]
+    redundant = sro.read(
+        {"artifact_id": preview.artifact_id},
+        "focus",
+        {"goal": "find other weekday formulas", "want": "fact", "type_hint": "xlsx"},
+    )
+    assert redundant.evidence == []
+    assert redundant.next_action["overall_status"] == "ready_for_edit"
 
 
 def test_preview_raw_refs_are_bounded(tmp_path: Path) -> None:

@@ -7,6 +7,7 @@ Update only that CSV, then re-run this script.
 
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 import csv
 from pathlib import Path
@@ -31,6 +32,8 @@ class Pair:
     candidate_tokens: int
     baseline_requests: float | None
     candidate_requests: float | None
+    baseline_seconds: float | None
+    candidate_seconds: float | None
     baseline_turns: float | None = None
     candidate_turns: float | None = None
     note: str = ""
@@ -38,16 +41,19 @@ class Pair:
 COLORS = {
     "Baseline": "#8A8F98",
     "Qwen": "#4A9ED6",
+    "Qwen3.6-Plus": "#4A9ED6",
     "DeepSeek": "#E05555",
     "DeepSeek-V4-Flash": "#E05555",
     "DeepSeek-V4-Pro": "#F0A050",
+    "GLM-5.1": "#8B6FC0",
+    "Kimi-K2.5": "#2A9D8F",
     "grid": "#E8EBEF",
     "text": "#202833",
     "muted": "#6B7280",
     "warn": "#A65300",
 }
 
-TITLE_KW = {"fontweight": 800, "color": COLORS["text"]}
+TITLE_KW = {"fontweight": "bold", "color": COLORS["text"]}
 BADGE_KW = {
     "boxstyle": "round,pad=0.24,rounding_size=0.12",
     "facecolor": "white",
@@ -59,6 +65,10 @@ BADGE_KW = {
 def _maybe_int(s: str) -> int | None:
     s = s.strip()
     return int(s) if s else None
+
+def _maybe_float(s: str) -> float | None:
+    s = s.strip()
+    return float(s) if s else None
 
 def _load_pairs(csv_path: Path) -> list[Pair]:
     with csv_path.open(newline="") as fh:
@@ -76,6 +86,8 @@ def _load_pairs(csv_path: Path) -> list[Pair]:
             candidate_tokens=int(r["sro_tokens"]),
             baseline_requests=_maybe_int(r.get("baseline_req", "")),
             candidate_requests=_maybe_int(r.get("sro_req", "")),
+            baseline_seconds=_maybe_float(r.get("baseline_seconds", "")),
+            candidate_seconds=_maybe_float(r.get("sro_seconds", "")),
             baseline_turns=_maybe_int(r.get("baseline_turns", "")),
             candidate_turns=_maybe_int(r.get("sro_turns", "")),
             note=r.get("note", "").strip(),
@@ -96,9 +108,9 @@ def setup() -> None:
         "font.size": 10.5,
         "font.weight": "medium",
         "axes.titlesize": 15,
-        "axes.titleweight": 800,
+        "axes.titleweight": "bold",
         "axes.labelsize": 12,
-        "axes.labelweight": 700,
+        "axes.labelweight": "bold",
         "axes.labelcolor": COLORS["text"],
         "xtick.labelsize": 10,
         "ytick.labelsize": 10,
@@ -111,6 +123,8 @@ def setup() -> None:
         "savefig.dpi": 200,
         "savefig.bbox": "tight",
         "savefig.facecolor": "white",
+        "svg.fonttype": "none",
+        "pdf.fonttype": 42,
     })
 
 def kfmt(v: int) -> str:
@@ -136,7 +150,13 @@ def fmt_optional(value: float | None) -> str:
 
 def save(fig: plt.Figure, stem: str) -> None:
     for ext in ("png", "svg"):
-        fig.savefig(OUT_DIR / f"{stem}.{ext}", bbox_inches="tight", facecolor="white")
+        path = OUT_DIR / f"{stem}.{ext}"
+        fig.savefig(path, bbox_inches="tight", facecolor="white")
+        if ext == "svg":
+            path.write_text(
+                "\n".join(line.rstrip() for line in path.read_text().splitlines())
+                + "\n"
+            )
 
 def style_axis(ax: plt.Axes) -> None:
     ax.spines["top"].set_visible(False)
@@ -145,10 +165,10 @@ def style_axis(ax: plt.Axes) -> None:
     ax.spines["bottom"].set_color("#DDE2E8")
     ax.tick_params(axis="both", colors=COLORS["text"], width=0.8, length=3.5)
     for label in ax.get_xticklabels():
-        label.set_fontweight(600)
+        label.set_fontweight("semibold")
         label.set_linespacing(0.9)
     for label in ax.get_yticklabels():
-        label.set_fontweight(600)
+        label.set_fontweight("semibold")
 
 def annotate_badge(
     ax: plt.Axes,
@@ -167,7 +187,7 @@ def annotate_badge(
         ha="center",
         va=va,
         fontsize=fontsize,
-        fontweight=800,
+        fontweight="bold",
         linespacing=0.95,
         color=color,
         clip_on=False,
@@ -180,29 +200,37 @@ def annotate_badge(
 # ---------------------------------------------------------------------------
 
 def chart_accuracy_token_trajectory(df: pd.DataFrame) -> None:
-    preferred = ["Qwen", "DeepSeek", "DeepSeek-V4-Flash", "DeepSeek-V4-Pro"]
+    preferred = [
+        "DeepSeek-V4-Flash",
+        "DeepSeek-V4-Pro",
+        "Qwen3.6-Plus",
+        "GLM-5.1",
+        "Kimi-K2.5",
+        "Qwen",
+        "DeepSeek",
+    ]
     present = list(dict.fromkeys(df.model))
     models = [model for model in preferred if model in present] + [
         model for model in present if model not in preferred
     ]
     n_models = len(models)
-    fig, axes = plt.subplots(3, n_models, figsize=(11 * n_models, 15.5), squeeze=False)
+    fig, axes = plt.subplots(n_models, 4, figsize=(23, 4.4 * n_models), squeeze=False)
     for mi, model in enumerate(models):
         sub = df[df.model == model].reset_index(drop=True)
         cand_color = COLORS[model]
-        labels = sub.label.str.replace("_", "\n", regex=False).str.replace(" ", "\n", regex=False)
+        labels = sub.label.str.split().str[0]
         width = 0.36
         x = np.arange(len(sub))
 
         # accuracy
-        tax, kax, rax = axes[0, mi], axes[1, mi], axes[2, mi]
+        tax, kax, rax, sax = axes[mi, 0], axes[mi, 1], axes[mi, 2], axes[mi, 3]
         ax = tax
         ax.bar(x - width / 2, sub.baseline_score, width, color=COLORS["Baseline"], alpha=0.82)
         bars = ax.bar(x + width / 2, sub.candidate_score, width, color=cand_color, alpha=0.96)
         ax.set_xticks(x)
         ax.set_xticklabels(labels)
         ax.set_title(f"{model}  accuracy", fontsize=16, pad=10, **TITLE_KW)
-        if mi == 0: ax.set_ylabel("Score")
+        ax.set_ylabel("Score")
         ax.set_ylim(0, 1.22)
         style_axis(ax)
         for bar, delta in zip(bars, sub.score_delta):
@@ -225,7 +253,7 @@ def chart_accuracy_token_trajectory(df: pd.DataFrame) -> None:
         ax.set_xticks(x)
         ax.set_xticklabels(labels)
         ax.set_title(f"{model}  token cost", fontsize=16, pad=10, **TITLE_KW)
-        if mi == 0: ax.set_ylabel("Tokens (K, log)")
+        ax.set_ylabel("Tokens (K, log)")
         ax.set_yscale("log")
         ymax = max(sub.baseline_tokens.max(), sub.candidate_tokens.max()) / 1000
         ymin_val = max(20, min(sub.baseline_tokens.min(), sub.candidate_tokens.min()) / 1000 * 0.6)
@@ -253,9 +281,9 @@ def chart_accuracy_token_trajectory(df: pd.DataFrame) -> None:
         ax.bar(rx - width / 2, req.baseline_requests, width, color=COLORS["Baseline"], alpha=0.82)
         bars = ax.bar(rx + width / 2, req.candidate_requests, width, color=cand_color, alpha=0.96)
         ax.set_xticks(rx)
-        ax.set_xticklabels(req.label.str.replace("_", "\n", regex=False).str.replace(" ", "\n", regex=False))
+        ax.set_xticklabels(req.label.str.split().str[0])
         ax.set_title(f"{model}  requests", fontsize=16, pad=10, **TITLE_KW)
-        if mi == 0: ax.set_ylabel("Requests")
+        ax.set_ylabel("Requests")
         ax.set_ylim(0, max(req.baseline_requests.max(), req.candidate_requests.max()) * 1.5)
         style_axis(ax)
         for bar, row in zip(bars, req.itertuples()):
@@ -270,6 +298,32 @@ def chart_accuracy_token_trajectory(df: pd.DataFrame) -> None:
                 f"{int(row.candidate_requests)}\n{pct(-row.request_ratio + 1)}{extra}",
                 "#1F7A3A" if req_down else COLORS["warn"],
                 fontsize=10 if req_down else 9,
+            )
+
+        # wall-clock execution time
+        ax = sax
+        timed = sub[pd.notna(sub.baseline_seconds) & pd.notna(sub.candidate_seconds)]
+        if len(timed) == 0:
+            ax.set_title(f"{model}: time (no data)", fontsize=16, pad=10, **TITLE_KW)
+            continue
+        tx = np.arange(len(timed))
+        ax.bar(tx - width / 2, timed.baseline_seconds, width, color=COLORS["Baseline"], alpha=0.82)
+        bars = ax.bar(tx + width / 2, timed.candidate_seconds, width, color=cand_color, alpha=0.96)
+        ax.set_xticks(tx)
+        ax.set_xticklabels(timed.label.str.split().str[0])
+        ax.set_title(f"{model}  wall-clock time", fontsize=16, pad=10, **TITLE_KW)
+        ax.set_ylabel("Seconds")
+        ax.set_ylim(0, max(timed.baseline_seconds.max(), timed.candidate_seconds.max()) * 1.5)
+        style_axis(ax)
+        for bar, row in zip(bars, timed.itertuples()):
+            time_down = row.time_ratio <= 1
+            annotate_badge(
+                ax,
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + max(2.0, ax.get_ylim()[1] * 0.012),
+                f"{row.candidate_seconds:.0f}s\n{pct(-row.time_ratio + 1)}",
+                "#1F7A3A" if time_down else COLORS["warn"],
+                fontsize=10 if time_down else 9,
             )
 
     # legend at top
@@ -301,10 +355,10 @@ def chart_accuracy_token_trajectory(df: pd.DataFrame) -> None:
     )
 
     fig.suptitle(
-        "SRO/Gate Accuracy / Token Cost / Trajectory",
+        "SRO/Gate Accuracy / Token Cost / Requests / Time",
         fontsize=23,
         y=1.012,
-        fontweight=900,
+        fontweight="bold",
         color=COLORS["text"],
     )
     fig.tight_layout(rect=(0, 0, 1, 0.965), h_pad=1.2, w_pad=1.4)
@@ -318,6 +372,17 @@ def chart_accuracy_token_trajectory(df: pd.DataFrame) -> None:
 
 def chart_benefit_map(df: pd.DataFrame) -> None:
     fig, ax = plt.subplots(figsize=(10, 7))
+    label_rows = df[
+        (df.score_delta.abs() >= 0.10) | (df.token_reduction <= -0.50)
+    ].copy()
+    label_rows["cluster"] = list(
+        zip(
+            (label_rows.token_reduction * 10).round().astype(int),
+            (label_rows.score_delta * 20).round().astype(int),
+        )
+    )
+    cluster_sizes = Counter(label_rows["cluster"])
+    cluster_seen: defaultdict[tuple[int, int], int] = defaultdict(int)
     for model, mdf in df.groupby("model", sort=False):
         color = COLORS[model]
         ax.scatter(
@@ -328,12 +393,44 @@ def chart_benefit_map(df: pd.DataFrame) -> None:
             label=model, zorder=5,
         )
         for r in mdf.itertuples():
-            dx = 4 if r.token_reduction >= 0 else -5
-            ha = "left" if r.token_reduction >= 0 else "right"
+            if r.score_delta >= 0.80 and r.token_reduction >= 0.80:
+                continue
+            if abs(r.score_delta) < 0.10 and r.token_reduction > -0.50:
+                continue
+            cluster = (
+                int(round(r.token_reduction * 10)),
+                int(round(r.score_delta * 20)),
+            )
+            idx = cluster_seen[cluster]
+            cluster_seen[cluster] += 1
+            cluster_size = cluster_sizes[cluster]
+            if r.token_reduction >= 0.80:
+                dx, ha = -6, "right"
+            elif r.token_reduction >= 0:
+                dx, ha = 4, "left"
+            else:
+                dx, ha = -5, "right"
+            if r.score_delta >= 0.80:
+                dy = -3 - idx * 9
+            elif r.score_delta <= -0.40:
+                dy = 3 + idx * 9
+            else:
+                dy = 3 + (idx - (cluster_size - 1) / 2) * 9
             ax.annotate(r.label.split()[0],
                         (r.token_reduction * 100, r.score_delta),
-                        xytext=(dx, 3), textcoords="offset points",
+                        xytext=(dx, dy), textcoords="offset points",
                         fontsize=8.0, ha=ha, color=color)
+
+    ax.annotate(
+        "High-gain recovery cluster",
+        (94, 0.99),
+        xytext=(-8, -24),
+        textcoords="offset points",
+        ha="right",
+        fontsize=8.0,
+        color=COLORS["text"],
+        arrowprops={"arrowstyle": "-", "color": COLORS["muted"], "lw": 0.6},
+    )
 
     ax.axhline(0, color=COLORS["grid"], linewidth=0.8)
     ax.axvline(0, color=COLORS["grid"], linewidth=0.8)
@@ -342,8 +439,8 @@ def chart_benefit_map(df: pd.DataFrame) -> None:
     ax.set_title("SRO/Gate benefit map")
     ax.legend(frameon=False, fontsize=8.5)
     fig.text(0.01, 0.01,
-             "Point size scales with baseline token cost. "
-             "Catastrophic zero-output failures excluded.",
+             "All 85 paired runs are shown; zero scores and timeouts are retained. "
+             "Point size scales with baseline token cost.",
              fontsize=8.0, color=COLORS["muted"])
     fig.tight_layout()
     save(fig, "sro_gate_v2_benefit_map")
@@ -362,11 +459,11 @@ def chart_outcome_board(df: pd.DataFrame) -> None:
     ax.set_ylim(0, len(rows) + 0.5)
 
     ax.text(0, len(rows) + 0.25,
-            "Accuracy, token cost, and trajectory length for all tested non-catastrophic tasks.",
+            "Accuracy, token cost, trajectory length, and wall-clock time for all 85 paired runs; zero scores and timeouts retained.",
             fontsize=9, color=COLORS["muted"])
 
-    col_heads = ["Task", "Model", "Group", "Score", "Tokens", "Reqs"]
-    col_x = [0.02, 0.22, 0.33, 0.47, 0.59, 0.74]
+    col_heads = ["Task", "Model", "Group", "Score", "Tokens", "Reqs", "Time (s)"]
+    col_x = [0.02, 0.20, 0.31, 0.44, 0.56, 0.70, 0.80]
     for cx, head in zip(col_x, col_heads):
         ax.text(cx, len(rows) + 0.05, head, fontsize=8, fontweight="bold", color=COLORS["text"])
 
@@ -374,16 +471,20 @@ def chart_outcome_board(df: pd.DataFrame) -> None:
         y = len(rows) - i - 0.5
         color = COLORS.get(row["model"], COLORS["text"])
         ax.text(0.02, y, row["label"], ha="left", va="center", fontsize=8.4, color=COLORS["text"])
-        ax.text(0.22, y, row["model"], ha="left", va="center", fontsize=8.4, color=COLORS["text"])
-        ax.text(0.33, y, row["group"], ha="left", va="center", fontsize=8.4, color=color, fontweight="bold")
-        ax.text(0.47, y, f"{row['baseline_score']:.2f}->{row['candidate_score']:.2f}",
+        ax.text(0.20, y, row["model"], ha="left", va="center", fontsize=8.4, color=COLORS["text"])
+        ax.text(0.31, y, row["group"], ha="left", va="center", fontsize=8.4, color=color, fontweight="bold")
+        ax.text(0.44, y, f"{row['baseline_score']:.2f}->{row['candidate_score']:.2f}",
                 ha="left", va="center", fontsize=8.4)
-        ax.text(0.59, y, f"{kfmt(row['baseline_tokens'])}->{kfmt(row['candidate_tokens'])}",
+        ax.text(0.56, y, f"{kfmt(row['baseline_tokens'])}->{kfmt(row['candidate_tokens'])}",
                 ha="left", va="center", fontsize=8.4)
         req_str = ""
         if pd.notna(row.get("baseline_requests")) and pd.notna(row.get("candidate_requests")):
             req_str = f"{int(row['baseline_requests'])}->{int(row['candidate_requests'])}"
-        ax.text(0.74, y, req_str, ha="left", va="center", fontsize=8.4, color=COLORS["muted"])
+        ax.text(0.70, y, req_str, ha="left", va="center", fontsize=8.4, color=COLORS["muted"])
+        time_str = ""
+        if pd.notna(row.get("baseline_seconds")) and pd.notna(row.get("candidate_seconds")):
+            time_str = f"{row['baseline_seconds']:.1f}->{row['candidate_seconds']:.1f}"
+        ax.text(0.80, y, time_str, ha="left", va="center", fontsize=8.4, color=COLORS["muted"])
         # verdict icon
         if row["group"] == "SRO win":
             verdict = "OK"
@@ -414,6 +515,8 @@ def generate_readme(df: pd.DataFrame) -> None:
         "candidate_tokens",
         "baseline_requests",
         "candidate_requests",
+        "baseline_seconds",
+        "candidate_seconds",
         "note",
         "token_change",
     ]
@@ -435,9 +538,12 @@ def generate_readme(df: pd.DataFrame) -> None:
         "## Scope",
         "",
         "- Data source: `figures/sro_experiment_data.csv`.",
-        "- Includes previously tested PinchBench and QwenClawBench tasks.",
-        "- Excludes catastrophic zero-deliverable failures `task_00020` and `task_00089` from the plotted set; they remain documented in `v3_dev.md`.",
-        "- Boundary cases are retained when they reveal SRO/gate limits without dominating the scale.",
+        "- Complete main matrix: 17 paired tasks across five models and four task-shape scenarios.",
+        "- Includes QwenClawBench, LooGLE, SpreadsheetBench Verified, and one explicitly labeled derived multi-PDF integration task.",
+        "- Every pair records score, tokens, and requests; valid paired wall-clock seconds are retained, while confirmed provider stalls are marked `n/a`.",
+        "- The four structured rows per model use the post-convergence paired reruns; row-level provenance is retained in the CSV.",
+        "- The remaining score-only judge correction and the post-fix GLM Kaima rerun are annotated in each affected CSV row.",
+        "- Boundary cases are retained; the figures do not filter regressions or zero-score outcomes.",
         "",
         "## Data",
         "",
@@ -456,6 +562,8 @@ def generate_readme(df: pd.DataFrame) -> None:
             str(row.candidate_tokens),
             fmt_optional(row.baseline_requests),
             fmt_optional(row.candidate_requests),
+            fmt_optional(row.baseline_seconds),
+            fmt_optional(row.candidate_seconds),
             row.note,
             pct1(row.token_reduction),
         ]
@@ -474,6 +582,7 @@ def main() -> None:
     df["token_ratio"] = df.candidate_tokens / df.baseline_tokens
     df["token_reduction"] = 1 - df.token_ratio
     df["request_ratio"] = df.candidate_requests / df.baseline_requests
+    df["time_ratio"] = df.candidate_seconds / df.baseline_seconds
 
     chart_accuracy_token_trajectory(df)
     chart_benefit_map(df)

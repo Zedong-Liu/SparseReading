@@ -46,10 +46,12 @@ class SparseReadingOrchestrator:
         self._artifacts: dict[str, FileInfo] = {}
         self.structured_reader = StructuredReader()
         self.collection_reader = CollectionReader()
+        self._initial_workspace_sources = self._snapshot_workspace_sources(workspace)
         self.benefit_gate = BenefitGate(self.collection_reader, override=benefit_gate_override)
         self.text_reader = TextReader()
         self.preview_builder = PreviewBuilder(self.collection_reader, self.text_reader)
         self._slot_digests: dict[str, dict[str, Any]] = {}
+        self._text_focus_fallbacks: set[str] = set()
         self._collection_child_guards: dict[str, str] = {}
         self._ready_collection_child_guards: dict[str, str] = {}
         self._collection_artifact_children: dict[str, set[str]] = {}
@@ -62,6 +64,7 @@ class SparseReadingOrchestrator:
         self._native_collection_roots: set[str] = set()
         self._diagnostic_sections: dict[str, dict[str, str]] = {}
         self._raw_refs: dict[str, Path] = {}
+        self._preview_ready_for_edit: dict[str, dict[str, Any]] = {}
         self._macro_activation_callback = macro_activation_callback
         self._macro_available = macro_available
         self._macro_requested = False
@@ -95,11 +98,39 @@ class SparseReadingOrchestrator:
         if workspace is None:
             return False
         try:
-            reader = CollectionReader()
-            decision = BenefitGate(reader).decide(inspect_file(Path(workspace)))
-            return decision.mode != "force_sro"
+            decision = cls.workspace_benefit_decision(workspace)
+            if decision is None:
+                return False
+            return decision.mode == "native"
         except Exception:
             return False
+
+    @staticmethod
+    def workspace_benefit_decision(workspace: str | Path | None) -> BenefitDecision | None:
+        if workspace is None:
+            return None
+        reader = CollectionReader()
+        return BenefitGate(reader).decide(inspect_file(Path(workspace)))
+
+    def _snapshot_workspace_sources(self, workspace: str | Path | None) -> set[str]:
+        if workspace is None:
+            return set()
+        root = Path(workspace).expanduser().resolve(strict=False)
+        if root.is_file():
+            return {str(root)}
+        try:
+            return {str(item.path.resolve(strict=False)) for item in self.collection_reader._items(root)}
+        except OSError:
+            return set()
+
+    def is_runtime_generated_artifact(self, path: str | Path) -> bool:
+        try:
+            resolved = Path(path).expanduser().resolve(strict=False)
+        except Exception:
+            return False
+        if not resolved.is_file():
+            return False
+        return str(resolved) not in self._initial_workspace_sources
 
     def inspect(self, path: str | Path) -> FileInfo:
         return inspect_file(path)
@@ -163,6 +194,8 @@ class SparseReadingOrchestrator:
         if not self.enabled():
             return False
         if self._outside_workspace(path):
+            return False
+        if self.is_runtime_generated_artifact(path):
             return False
         if self.is_calc_artifact(path):
             return False
@@ -272,9 +305,76 @@ class SparseReadingOrchestrator:
                 raw_ref="",
                 error="preview target could not be resolved",
             )
+        parent_root = self._nearest_force_collection_root(info.path)
+        if parent_root is not None and info.path != parent_root:
+            parent_card = self.card(parent_root)
+            if parent_card.recommended_mode == "collect_then_native_compute":
+                parent_info = self.inspect(parent_root)
+                raw_ref = self._raw_ref_for(parent_card.artifact_id, parent_info.path)
+                pack = self.preview_builder.build(parent_info, parent_card, raw_ref)
+                pack.summary = "Structured child is covered by a parent compute collection"
+                pack.structure = {
+                    "requested_child": str(info.path.relative_to(parent_root)),
+                    "parent_type": "collection",
+                    "recommended_mode": parent_card.recommended_mode,
+                }
+                pack.samples = []
+                pack.signals = [{
+                    "kind": "parent_collection_binding",
+                    "message": "Use one parent collection closure instead of previewing structured children separately.",
+                }]
+                pack.next_action = self._collection_compute_next_action(parent_card, info.path.name)
+                return pack
         card = self.card(info.path)
         raw_ref = self._raw_ref_for(card.artifact_id, info.path)
-        return self.preview_builder.build(info, card, raw_ref)
+        pack = self.preview_builder.build(info, card, raw_ref)
+        if pack.next_action and pack.next_action.get("overall_status") == "ready_for_edit":
+            self._preview_ready_for_edit[card.artifact_id] = dict(pack.next_action)
+        return pack
+
+    @staticmethod
+    def _collection_compute_next_action(card: FileCard, child_name: str) -> dict[str, Any]:
+        reason = card.reason.lower()
+        if "panel analysis" in reason:
+            goal = (
+                "Build the complete panel Difference-in-Differences data/model contract, including schema, "
+                "fixed effects, clustered standard errors, parallel trends, and required deliverables"
+            )
+            needles = ["panel", "Difference-in-Differences", "firm fixed effects", "parallel trends", child_name]
+        elif "structured performance" in reason:
+            goal = (
+                "Build the complete P&L source and calculation contract, including exact input columns, "
+                "historical comparison, date coverage, and required deliverable"
+            )
+            needles = ["P&L", "underwriting fee", "trading P&L", "historical comparison", child_name]
+        else:
+            goal = "Build the complete structured source and calculation contract for one local compute pass"
+            needles = [child_name]
+        return {
+            "tool": "sro_read",
+            "target": {"artifact_id": card.artifact_id},
+            "mode": "collect",
+            "instruction": (
+                "Use the parent compute collection once. After it reports ready_for_compute, run one bounded local "
+                "script over the selected files and do not preview or reread child tables."
+            ),
+            "hint": {
+                "goal": goal,
+                "needles": needles[:6],
+                "want": "schema",
+                "scope": "new",
+                "artifact": card.artifact_id,
+                "type_hint": "collection",
+            },
+        }
+
+    def has_previewed(self, path: str | Path) -> bool:
+        """Return whether a deterministic preview has already inspected this source."""
+        try:
+            target = Path(path).resolve(strict=False)
+        except Exception:
+            target = Path(path)
+        return any(candidate.resolve(strict=False) == target for candidate in self._raw_refs.values())
 
     def raw(self, raw_ref: str, *, range: dict[str, Any] | None = None, selector: str | None = None) -> dict[str, Any]:
         resolved_ref, path = self._resolve_raw_ref(str(raw_ref or ""))
@@ -378,6 +478,7 @@ class SparseReadingOrchestrator:
         parent_artifact = self._parent_collection_artifact(path)
         if parent_artifact:
             parent_info = self._artifacts[parent_artifact]
+            parent_card = self.card(parent_info.path)
             payload = {
                 "sro_handoff": True,
                 "message": (
@@ -386,8 +487,9 @@ class SparseReadingOrchestrator:
                     "Use the parent collection artifact to collect the cross-file facts."
                 ),
                 "covered_by_artifact": parent_artifact,
-                "file_card": self.card(parent_info.path).to_dict(),
-                "next_action": {
+                "file_card": self._compact_handoff_card(parent_card),
+                "next_action": self._collection_compute_next_action(parent_card, str(Path(path).name))
+                if parent_card.recommended_mode == "collect_then_native_compute" else {
                     "tool": "sro_read",
                     "target": {"artifact_id": parent_artifact},
                     "mode": "collect",
@@ -413,8 +515,9 @@ class SparseReadingOrchestrator:
                     "collect the cross-file facts once, then write the deliverable."
                 ),
                 "covered_by_artifact": parent_card.artifact_id,
-                "file_card": parent_card.to_dict(),
-                "next_action": {
+                "file_card": self._compact_handoff_card(parent_card),
+                "next_action": self._collection_compute_next_action(parent_card, str(Path(path).name))
+                if parent_card.recommended_mode == "collect_then_native_compute" else {
                     "tool": "sro_read",
                     "target": {"artifact_id": parent_card.artifact_id},
                     "mode": "collect",
@@ -432,6 +535,24 @@ class SparseReadingOrchestrator:
             return json.dumps(payload, ensure_ascii=False, indent=2)
         card = self.card(path)
         if card.structured:
+            if card.type == "xlsx":
+                payload = {
+                    "sro_handoff": True,
+                    "message": (
+                        "Large workbook detected. Inspect its sheet/formula structure with one compact preview "
+                        "before editing or running a full local calculation; do not dump the workbook into chat."
+                    ),
+                    "file_card": card.to_dict(),
+                    "next_action": {
+                        "tool": "sro_preview",
+                        "target": {"artifact_id": card.artifact_id},
+                        "instruction": (
+                            "Use the preview if it contains the target formula/range and source sample. "
+                            "Otherwise make one focused sro_read, then run one bounded local edit script."
+                        ),
+                    },
+                }
+                return json.dumps(payload, ensure_ascii=False, indent=2)
             payload = {
                 "sro_handoff": True,
                 "message": "Large structured object detected. The FileCard includes schema/row-count metadata. For calculations, regressions, joins, and aggregations, write a short script that reads the local file path directly; do not request all rows into chat. Use sro_read only for additional schema or specific row evidence.",
@@ -466,6 +587,17 @@ class SparseReadingOrchestrator:
         }
         return json.dumps(payload, ensure_ascii=False, indent=2)
 
+    @staticmethod
+    def _compact_handoff_card(card: FileCard) -> dict[str, Any]:
+        return {
+            "artifact_id": card.artifact_id,
+            "type": card.type,
+            "structured": card.structured,
+            "sparse_recommended": card.sparse_recommended,
+            "recommended_mode": card.recommended_mode,
+            "reason": card.reason,
+        }
+
     def read(self, target: Any, mode: str, hint_obj: Any) -> EvidencePack:
         if mode not in VALID_MODES:
             return EvidencePack("", mode, "unknown", "protocol error", error=f"mode must be one of {sorted(VALID_MODES)}")
@@ -492,6 +624,20 @@ class SparseReadingOrchestrator:
             return EvidencePack(artifact_id or "", mode, "unknown", "protocol error", error=err)
         if info is None:
             return EvidencePack(artifact_id or "", mode, "unknown", "protocol error", error="target could not be resolved")
+        preview_ready = self._preview_ready_for_edit.get(artifact_id)
+        if preview_ready:
+            return EvidencePack(
+                artifact_id=artifact_id,
+                mode=mode,
+                type=info.type,
+                summary="structured preview already contains a complete local-edit diagnosis",
+                next_action=preview_ready,
+            )
+        parent_ready_artifact = self._ready_collection_child_artifact(info.path)
+        if parent_ready_artifact and parent_ready_artifact != artifact_id:
+            gated = self._collection_readiness_gate(parent_ready_artifact, mode)
+            if gated:
+                return gated
         if info.type in self._TEXT or info.path.suffix.lower() in {".txt", ".md", ".markdown", ".rst", ".pdf"}:
             gated = self._text_readiness_gate(artifact_id, info.type, mode, hint)
             if gated:
@@ -522,9 +668,10 @@ class SparseReadingOrchestrator:
                 return gated
             budget = self._collection_budget(mode)
             pack = self.collection_reader.read(info.path, artifact_id, mode, hint, budget)
+            pack = self._dispatch_typed_collection_children(info, artifact_id, mode, hint, pack)
             if pack.next_action and "_diagnostic_sections" in pack.next_action:
                 self._diagnostic_sections[artifact_id] = pack.next_action.pop("_diagnostic_sections")
-            if mode == "collect" and pack.evidence:
+            if mode == "collect" and pack.evidence and pack.artifact_id == artifact_id:
                 self._remember_collection_children(info.path, artifact_id, pack)
             return pack
         budget = self._budget(mode)
@@ -533,6 +680,7 @@ class SparseReadingOrchestrator:
         if info.type in self._TEXT or info.path.suffix.lower() in {".txt", ".md", ".markdown", ".rst", ".pdf"}:
             pack = self.text_reader.read(info.path, artifact_id, mode, hint, budget)
             if pack.slot_digest:
+                pack = self._stabilize_text_verify(artifact_id, mode, pack)
                 self._slot_digests[artifact_id] = pack.slot_digest
             return pack
         return EvidencePack(artifact_id, mode, info.type, "unsupported type", error=f"SRO does not support {info.path}")
@@ -652,8 +800,46 @@ class SparseReadingOrchestrator:
             if not requested_ids or not requested_ids.issubset(existing_ids):
                 return None
         status = str(existing.get("overall_status") or "")
-        if status not in {"ready", "needs_verify"}:
+        if status not in {"ready", "needs_refine", "needs_verify", "stalled"}:
             return None
+        concrete_focus = mode == "focus" and not hint.slots and bool(hint.needles or hint.must_keep)
+        if status in {"needs_refine", "needs_verify"} and concrete_focus:
+            if artifact_id not in self._text_focus_fallbacks:
+                self._text_focus_fallbacks.add(artifact_id)
+                return None
+            digest = dict(existing)
+            digest["guard"] = "one concrete focus fallback already used; do not reread this artifact"
+            digest["allowed_next"] = ["write_file"]
+            return EvidencePack(
+                artifact_id=artifact_id,
+                mode=mode,
+                type=info_type,
+                summary="bounded focus fallback already used; repeated focus suppressed",
+                slot_digest=digest,
+                unresolved=list(existing.get("unresolved_slots", [])),
+                next_action={
+                    "allowed_next": ["write_file"],
+                    "unresolved_slots": digest.get("unresolved_slots", []),
+                },
+            )
+        if status == "needs_refine":
+            return None
+        if status == "stalled":
+            digest = dict(existing)
+            digest["guard"] = "verification stalled; preserve unresolved fields and do not reread this artifact"
+            digest["allowed_next"] = ["write_file"]
+            return EvidencePack(
+                artifact_id=artifact_id,
+                mode=mode,
+                type=info_type,
+                summary="stalled slot verification suppressed; preserve unresolved fields",
+                slot_digest=digest,
+                unresolved=list(existing.get("unresolved_slots", [])),
+                next_action={
+                    "allowed_next": ["write_file"],
+                    "unresolved_slots": digest.get("unresolved_slots", []),
+                },
+            )
         if mode == "verify" and hint.slots and self._allow_text_slot_verify(existing, hint):
             return None
         digest = dict(existing)
@@ -834,10 +1020,178 @@ class SparseReadingOrchestrator:
         self._artifacts[artifact_id] = info
         return artifact_id
 
+    def _dispatch_typed_collection_children(
+        self,
+        collection_info: FileInfo,
+        collection_artifact_id: str,
+        mode: str,
+        hint: HintSpec,
+        pack: EvidencePack,
+    ) -> EvidencePack:
+        """Delegate an otherwise-empty collection response to a typed child reader.
+
+        CollectionReader intentionally handles compact text-like children.  A PDF
+        is discoverable in a collection but must be read through TextReader.  Do
+        not fan out across several PDFs: expose registered child artifact ids so
+        the agent can choose the necessary source(s) explicitly.
+        """
+        if pack.error:
+            return pack
+        children = self.collection_reader.typed_candidates(collection_info.path, hint)
+        if not children:
+            return pack
+
+        options: list[dict[str, str]] = []
+        child_infos: list[tuple[str, FileInfo, str]] = []
+        for child in children:
+            child_info = self.inspect(child.path)
+            child_artifact_id = self._artifact_for(child_info)
+            child_infos.append((child.name, child_info, child_artifact_id))
+            options.append(
+                {
+                    "name": child.name,
+                    "type": child_info.type,
+                    "artifact_id": child_artifact_id,
+                }
+            )
+
+        typed_names = {name for name, _, _ in child_infos}
+        non_typed_evidence = [block for block in pack.evidence if block.anchor not in typed_names]
+
+        if len(child_infos) == 1 and not non_typed_evidence:
+            name, child_info, child_artifact_id = child_infos[0]
+            child_hint = hint
+            child_mode = mode
+            if mode in {"collect", "scout"} and not hint.slots:
+                child_mode = "focus"
+            elif (
+                mode in {"collect", "scout"}
+                and child_info.path.suffix.lower() == ".pdf"
+                and len(hint.slots) == 1
+            ):
+                slot = hint.slots[0]
+                needles = list(dict.fromkeys([*hint.needles, slot.question, *slot.aliases]))[:10]
+                child_hint = HintSpec(
+                    goal=hint.goal,
+                    needles=needles,
+                    want=hint.want,
+                    scope=hint.scope,
+                    artifact="",
+                    type_hint="pdf",
+                    must_keep=hint.must_keep,
+                    slots=[],
+                )
+                child_mode = "focus"
+            if child_info.type in self._TEXT:
+                child_pack = self.text_reader.read(
+                    child_info.path,
+                    child_artifact_id,
+                    child_mode,
+                    child_hint,
+                    self._budget(child_mode),
+                )
+                if child_pack.slot_digest:
+                    self._slot_digests[child_artifact_id] = child_pack.slot_digest
+                child_pack.summary = f"collection dispatch selected {name}; {child_pack.summary}"
+                return child_pack
+            if child_info.type in self._STRUCTURED:
+                child_pack = self.structured_reader.read(
+                    child_info.path,
+                    child_artifact_id,
+                    child_mode,
+                    child_hint,
+                    self._budget(child_mode),
+                )
+                child_pack.summary = f"collection dispatch selected {name}; {child_pack.summary}"
+                return child_pack
+
+        child_mode = "focus" if mode in {"collect", "scout"} and not hint.slots else mode
+        typed_evidence = [
+            EvidenceBlock(
+                anchor=option["name"],
+                text=(
+                    f"file: {option['name']}\n"
+                    f"type: {option['type']}\n"
+                    f"artifact_id: {option['artifact_id']}\n"
+                    "Use this child artifact with sro_read; do not run shell discovery or sro_card again."
+                ),
+                score=1.0,
+            )
+            for option in options
+        ]
+        evidence = [*non_typed_evidence, *typed_evidence]
+        existing_action = dict(pack.next_action or {})
+        existing_action.update(
+            {
+                "tool": "sro_read",
+                "mode": child_mode,
+                "candidate_targets": options,
+                "instruction": (
+                    "Choose the source needed for the task, then call sro_read with its artifact_id. "
+                    "For one fact use focus with concrete needles; use collect only for two or more explicit slots. "
+                    "Do not call sro_card, list_dir, or shell discovery for these files."
+                ),
+            }
+        )
+        return EvidencePack(
+            artifact_id=collection_artifact_id,
+            mode=mode,
+            type="collection",
+            summary=(
+                f"{pack.summary}; typed collection dispatch exposes {len(options)} candidate child artifacts"
+                if non_typed_evidence
+                else f"typed collection dispatch: {len(options)} candidate child artifacts; select only the needed source"
+            ),
+            skeleton=[*pack.skeleton, *[f"{option['name']}: {option['type']}" for option in options]],
+            evidence=evidence,
+            unresolved=list(hint.needles),
+            next_action=existing_action,
+        )
+
+    def _stabilize_text_verify(self, artifact_id: str, mode: str, pack: EvidencePack) -> EvidencePack:
+        if mode != "verify" or not pack.slot_digest:
+            return pack
+        existing = self._slot_digests.get(artifact_id)
+        if not existing:
+            return pack
+        previous = {str(slot.get("id")): slot for slot in existing.get("slots", []) if slot.get("id")}
+        stalled_ids: list[str] = []
+        for slot in pack.slot_digest.get("slots", []):
+            prior = previous.get(str(slot.get("id")))
+            if not prior:
+                continue
+            candidate = re.sub(r"\s+", " ", str(slot.get("candidate") or "")).strip()
+            prior_candidate = re.sub(r"\s+", " ", str(prior.get("candidate") or "")).strip()
+            if not candidate or candidate != prior_candidate or slot.get("anchor") != prior.get("anchor"):
+                continue
+            slot["status"] = "unresolved"
+            slot["confidence"] = min(float(slot.get("confidence") or 0.0), float(prior.get("confidence") or 0.0))
+            slot["needs_verify_reason"] = "verification returned an unchanged candidate and anchor"
+            stalled_ids.append(str(slot.get("id")))
+        if not stalled_ids:
+            return pack
+        digest = pack.slot_digest
+        digest["overall_status"] = "stalled"
+        digest["unresolved_slots"] = stalled_ids
+        digest["allowed_next"] = ["write_file"]
+        digest["readiness"] = (
+            "verification did not improve the evidence; preserve unresolved fields and do not reread this artifact"
+        )
+        pack.unresolved = stalled_ids
+        pack.next_action = {
+            "allowed_next": ["write_file"],
+            "unresolved_slots": stalled_ids,
+            "instruction": "Preserve uncertainty for unresolved slots; repeated reads of this artifact are suppressed.",
+        }
+        return pack
+
     def _remember_collection_children(self, root: Path, artifact_id: str, pack: EvidencePack) -> None:
         ready = (
             bool(pack.slot_digest and pack.slot_digest.get("overall_status") == "ready")
-            or bool(pack.next_action and pack.next_action.get("overall_status") == "ready")
+            or bool(
+                pack.next_action
+                and pack.next_action.get("overall_status") in {"ready", "ready_for_compute"}
+            )
         )
         if ready:
             next_action = pack.next_action or {}
@@ -1137,7 +1491,8 @@ class SparseReadingOrchestrator:
                 continue
             try:
                 info = self.inspect(parent)
-                if info.type != "collection" or not self.collection_reader._items(parent):
+                items = self.collection_reader._items(parent)
+                if info.type != "collection" or len(items) < 2:
                     continue
                 artifact_id = self._path_to_artifact.get(str(info.path))
                 if artifact_id and self._is_native_escape_collection(artifact_id):

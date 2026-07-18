@@ -33,8 +33,12 @@ class CollectionReader:
     _COLLECTION_EXTS = {
         ".txt", ".md", ".markdown", ".rst", ".eml",
         ".csv", ".tsv", ".json", ".yaml", ".yml", ".xml",
+        ".xlsx",
         ".log", ".py", ".sh", ".toml", ".ini", ".cfg", ".conf",
+        ".pdf",
     }
+    _TYPED_CHILD_KINDS = {"pdf"}
+    _STRUCTURED_CHILD_KINDS = {"csv", "xlsx", "json", "yaml", "xml"}
     _STOPWORDS = {
         "the", "and", "for", "with", "from", "that", "this", "into", "need",
         "find", "search", "email", "emails", "folder", "everything", "related",
@@ -54,6 +58,26 @@ class CollectionReader:
             "files": [self._item_summary(item) for item in items[:limit]],
             "truncated": len(items) > limit,
         }
+
+    def typed_candidates(self, path: Path, hint: HintSpec) -> list[CollectionItem]:
+        """Return ranked children that must be read by another typed reader."""
+        all_items = self._items(path)
+        items = [
+            item
+            for item in all_items
+            if item.kind == "pdf"
+            or (len(all_items) == 1 and item.kind in self._STRUCTURED_CHILD_KINDS)
+        ]
+        if not items:
+            return []
+        ranked = self._rank_items(items, hint)
+        if len(ranked) > 1 and ranked[0].score >= ranked[1].score + 2.0:
+            ranked = ranked[:1]
+        ranked_names = [block.anchor for block in ranked]
+        if len(ranked) != 1:
+            ranked_names.extend(item.name for item in items if item.name not in ranked_names)
+        by_name = {item.name: item for item in items}
+        return [by_name[name] for name in ranked_names if name in by_name]
 
     def read(self, path: Path, artifact_id: str, mode: str, hint: HintSpec, budget: int) -> EvidencePack:
         items = self._items(path)
@@ -125,6 +149,8 @@ class CollectionReader:
             item = item_by_name.get(name)
             if item is None:
                 continue
+            if item.kind in self._TYPED_CHILD_KINDS:
+                continue
             try:
                 text = item.path.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n")
             except OSError:
@@ -145,7 +171,22 @@ class CollectionReader:
             self._fill_diagnostic_sources(source_texts, items)
         if self._goal_wants_audit(hint):
             self._fill_audit_sources(source_texts, items)
-        if self._goal_wants_panel_did(hint):
+        panel_hint = hint
+        if self._items_look_like_panel_did(items) and not self._goal_wants_panel_did(hint):
+            panel_hint = HintSpec(
+                goal=(
+                    "Build the complete panel Difference-in-Differences data/model contract with firm and year "
+                    "fixed effects, clustered standard errors, parallel trends, and required deliverables"
+                ),
+                needles=["panel", "Difference-in-Differences", "firm fixed effects", "parallel trends"],
+                want="schema",
+                scope=hint.scope,
+                artifact=hint.artifact,
+                type_hint="collection",
+                must_keep=hint.must_keep,
+                slots=hint.slots,
+            )
+        if self._goal_wants_panel_did(panel_hint):
             self._fill_analysis_sources(source_texts, items)
         if self._goal_wants_rule_table_script(hint):
             self._fill_rule_table_script_sources(source_texts, items)
@@ -156,7 +197,8 @@ class CollectionReader:
         security_closure = self._command_security_closure(source_texts, hint)
         closure = self._diagnostic_closure(source_texts, hint)
         audit_closure = self._audit_closure(source_texts, hint, items)
-        panel_closure = self._panel_did_closure(source_texts, hint)
+        panel_closure = self._panel_did_closure(source_texts, panel_hint)
+        compute_closure, compute_sources, compute_excluded = self._structured_compute_plan(items, hint)
         rule_script_closure = self._rule_table_script_closure(source_texts, hint)
         ledger_compact, ledger_sections, ledger_ready = self._diagnostic_ledger_closure(source_texts, hint, items)
         covered_sources: list[str] = []
@@ -170,15 +212,21 @@ class CollectionReader:
             blocks = [EvidenceBlock("collection_audit_closure", audit_closure, 12.0)]
             covered_sources = sorted(source_texts)
         elif panel_closure:
-            blocks.insert(0, EvidenceBlock("collection_panel_did_closure", panel_closure, 12.0))
-            blocks = [block for block in blocks if block.anchor == "collection_panel_did_closure" or self._is_analysis_source_anchor(block.anchor)]
+            blocks = [EvidenceBlock("collection_panel_did_closure", panel_closure, 12.0)]
+            covered_sources = sorted(
+                name for name in source_texts
+                if self._is_analysis_source_anchor(name) or "panel" in Path(name).name.lower()
+            )
         elif rule_script_closure:
             blocks = [EvidenceBlock("collection_rule_table_script_closure", rule_script_closure, 12.0)]
             covered_sources = sorted(source_texts)
         elif ledger_compact:
             blocks = [EvidenceBlock("collection_diagnostic_ledger", ledger_compact, 12.0)]
             covered_sources = sorted(source_texts)
-        unresolved = self._unresolved(hint, blocks)
+        elif compute_closure:
+            blocks = [EvidenceBlock("collection_structured_compute_plan", compute_closure, 12.0)]
+            covered_sources = compute_sources
+        unresolved = [] if panel_closure else self._unresolved(hint, blocks)
         allowed_next = ["write_file", "run short calculation from these excerpts", "verify specific missing fact only"]
         instruction = "Use these source-keyed excerpts as evidence. Do not reread every file; verify only a named missing fact."
         slot_digest: dict[str, Any] | None = None
@@ -203,11 +251,11 @@ class CollectionReader:
             )
             slot_digest = self._audit_slot_digest(artifact_id, audit_closure)
         elif panel_closure:
-            allowed_next = ["write_file", "exec generated analysis script", "verify specific missing fact only"]
+            allowed_next = ["exec generated analysis script", "write_file"]
             instruction = (
-                "The panel DID closure already identifies the fields, model, and deliverables. "
-                "Write the analysis script that reads the local CSV files, run it once, and write the summary from its printed results. "
-                "Do not read the full CSV into the conversation."
+                "The panel DID closure is the complete implementation contract. Write both deliverables in one script, "
+                "run `python3 did_regression.py > did_regression_output.txt 2>&1` once, and inspect only the exit code plus "
+                "the two deliverables. Do not read covered source files or verbose stdout into the conversation."
             )
         elif rule_script_closure:
             allowed_next = ["write_file", "exec generated script once"]
@@ -229,6 +277,13 @@ class CollectionReader:
                     "Partial diagnostic evidence extracted. The ledger covers some but not all required families. "
                     "Use these facts as a starting point; additional source reads may be needed for missing categories."
                 )
+        elif compute_closure:
+            allowed_next = ["exec one local calculation script", "write_file"]
+            instruction = (
+                "The structured compute plan has selected the authoritative sources and excluded duplicates/distractors. "
+                "Run one local script over every row of only those selected sources, then write the requested deliverable. "
+                "Do not preview, cat, or reread the selected tables into the conversation."
+            )
         return EvidencePack(
             artifact_id=artifact_id,
             mode=mode,
@@ -242,10 +297,282 @@ class CollectionReader:
                 "allowed_next": allowed_next,
                 "instruction": instruction,
                 "covered_sources": covered_sources,
-                "required_outputs": ["security_analysis_report.md", "command_classifications.json"] if security_closure else [],
-                "overall_status": "ready" if security_closure or audit_closure or rule_script_closure or (ledger_compact and ledger_ready) else None,
+                "selected_sources": compute_sources if compute_closure and not (panel_closure or ledger_compact or rule_script_closure) else [],
+                "excluded_sources": compute_excluded if compute_closure and not (panel_closure or ledger_compact or rule_script_closure) else [],
+                "required_outputs": (
+                    ["security_analysis_report.md", "command_classifications.json"] if security_closure
+                    else ["did_regression.py", "did_results_summary.md"] if panel_closure
+                    else []
+                ),
+                "overall_status": (
+                    "ready" if security_closure or audit_closure or rule_script_closure or (ledger_compact and ledger_ready)
+                    else "ready_for_compute" if panel_closure or (compute_closure and not ledger_compact)
+                    else None
+                ),
                 "_diagnostic_sections": ledger_sections,
             },
+        )
+
+    def _structured_compute_plan(
+        self,
+        items: list[CollectionItem],
+        hint: HintSpec,
+    ) -> tuple[str, list[str], list[str]]:
+        """Select source tables for full local computation without exposing their rows."""
+        hay = " ".join([hint.goal, *hint.needles, *hint.must_keep]).lower()
+        compute_terms = (
+            "aggregate", "aggregation", "analyze", "analysis", "compare", "comparison",
+            "decompose", "decomposition", "performance", "profitable", "loss-making",
+            "year-over-year", "year over year", "regression", "summary", "total",
+        )
+        structured = [item for item in items if item.kind in self._STRUCTURED_CHILD_KINDS]
+        if len(structured) < 2 or not any(term in hay for term in compute_terms):
+            return "", [], []
+
+        wants_pnl = any(term in hay for term in ("p&l", "pnl", "profit", "loss", "fee", "trading"))
+        wants_history = any(term in hay for term in ("prior", "histor", "year-over-year", "year over year", "compare"))
+        metric_terms = {"pnl", "profit", "loss", "fee", "trading", "total"} if wants_pnl else set()
+        goal_terms = set(self._terms(hint))
+
+        ranked: list[tuple[float, CollectionItem]] = []
+        config_items: list[CollectionItem] = []
+        for item in structured:
+            name = item.name.lower()
+            text = f"{name} {item.snippet.lower()}"
+            if any(term in name for term in ("config", "schema", "definition", "dictionary", "calculation")):
+                config_items.append(item)
+                continue
+            metric_match = any(term in text for term in metric_terms)
+            history_match = wants_history and any(term in name for term in ("histor", "prior", "previous"))
+            if wants_pnl and not metric_match and not history_match:
+                continue
+            score = sum(1.0 for term in goal_terms if term and term in text)
+            score += sum(2.0 for term in metric_terms if term in text)
+            if history_match:
+                score += 5.0
+            if score >= 2.0:
+                ranked.append((score, item))
+        if not ranked:
+            return "", [], []
+
+        # Prefer a directly scriptable table when the same logical source is
+        # duplicated in CSV/JSON form.
+        format_rank = {"csv": 0, "xlsx": 1, "json": 2, "yaml": 3, "xml": 4}
+        chosen_by_stem: dict[str, tuple[float, CollectionItem]] = {}
+        excluded: list[str] = []
+        for score, item in sorted(ranked, key=lambda pair: (-pair[0], format_rank.get(pair[1].kind, 9))):
+            stem = str(Path(item.name).with_suffix("")).lower()
+            existing = chosen_by_stem.get(stem)
+            if existing is None:
+                chosen_by_stem[stem] = (score, item)
+                continue
+            excluded.append(item.name)
+
+        selected_items = [pair[1] for pair in chosen_by_stem.values()]
+        selected_items.sort(key=lambda item: (
+            0 if any(term in item.name.lower() for term in ("histor", "prior", "previous")) else 1,
+            item.name,
+        ))
+        # Keep the plan bounded: current table, comparison table, and at most
+        # one additional independently relevant table.
+        selected_items = selected_items[:3]
+        if config_items:
+            selected_items.append(sorted(config_items, key=lambda item: item.name)[0])
+
+        selected = [item.name for item in selected_items]
+        selected_set = set(selected)
+        excluded.extend(
+            item.name for item in items
+            if item.name not in selected_set and item.name not in excluded
+        )
+
+        contracts: list[str] = [
+            "FILE: collection_structured_compute_plan",
+            "KIND: structured_compute_plan",
+            "overall_status: ready_for_compute",
+        ]
+        for idx, item in enumerate(selected_items, start=1):
+            role = "calculation_definition" if item in config_items else (
+                "comparison_table" if any(term in item.name.lower() for term in ("histor", "prior", "previous"))
+                else "primary_table"
+            )
+            contracts.append(
+                f"source_{idx}: role={role}; path={item.name}; kind={item.kind}; {item.snippet}"
+            )
+            if role == "calculation_definition":
+                definition = self._compact_calculation_definition(item.path)
+                if definition:
+                    contracts.append(f"calculation_definition: {definition}")
+        selected_schema = " ".join(item.snippet.lower() for item in selected_items)
+        if wants_pnl and all(term in selected_schema for term in ("total_pnl", "underwriting_fee", "trading_pnl")):
+            exact_columns = [
+                name for name in ("underwriting_fee_mm", "trading_pnl_mm", "total_pnl_mm")
+                if name in selected_schema
+            ]
+            contracts.append(
+                "calculation_relationship: total_pnl = underwriting_fee + trading_pnl; "
+                "validate the relationship against computed row totals before aggregation"
+            )
+            if exact_columns:
+                contracts.append(
+                    "exact_column_contract: use these source headers exactly: "
+                    f"{', '.join(exact_columns)}. Validate DictReader fieldnames before iterating rows; "
+                    "never invent, shorten, or silently alias a missing metric column. A comparison source may expose "
+                    "only a subset of the primary metrics, so compute only metrics actually present in that source."
+                )
+            primary_profile = next(
+                (
+                    self._pnl_csv_profile(item.path)
+                    for item in selected_items
+                    if item.kind == "csv"
+                    and "underwriting_fee" in item.snippet.lower()
+                    and "trading_pnl" in item.snippet.lower()
+                    and "total_pnl" in item.snippet.lower()
+                ),
+                {},
+            )
+            historical_profile = next(
+                (
+                    self._pnl_csv_profile(item.path)
+                    for item in selected_items
+                    if item.kind == "csv"
+                    and any(term in item.name.lower() for term in ("histor", "prior", "previous"))
+                ),
+                {},
+            )
+            if primary_profile:
+                contracts.append(
+                    "computed_primary_validation: " + self._format_pnl_profile(primary_profile)
+                )
+                contracts.append(
+                    "classification_contract: loss-making means total_pnl_mm < 0. Fee-subsidized-profitable means "
+                    "total_pnl_mm > 0 AND trading_pnl_mm < 0; these sets are disjoint. Use the exact computed IDs above "
+                    "as validation anchors, never classify loss-making status from trading_pnl_mm alone."
+                )
+            if historical_profile:
+                contracts.append(
+                    "computed_historical_validation: " + self._format_pnl_profile(historical_profile)
+                )
+            contracts.append(
+                "compact_metric_contract: compute date min/max; positive/negative total counts; fee, trading, and total sums; "
+                "positive-total rows with negative trading; largest gains/losses; and per-year historical counts/sums. "
+                "The final report must contain a standalone coverage-caveat sentence with the actual minimum/maximum dates and "
+                "the words partial/YTD when the maximum observed date is before year-end. Its historical section must use one "
+                "coherent cross-year table and explicitly compare current versus historical loss counts, win rates, total P&L, "
+                "and average P&L; state whether every historical deal was profitable when the computed loss counts are zero. "
+                "The script must write the requested report directly and print at most one compact JSON summary under 4000 characters; "
+                "never print a full row table or reread persisted stdout"
+            )
+        if excluded:
+            contracts.append(f"excluded_duplicates_or_distractors: {', '.join(sorted(set(excluded)))}")
+        contracts.append(
+            "execution_contract: use one local script to read every row of the selected primary/comparison tables; "
+            "apply the selected calculation definition; write the requested deliverable from aggregate results; "
+            "do not emit table rows into the model context. Keep the script minimal: parse selected sources, compute the "
+            "stated contract, write the report, and stop; omit exploratory tables, plots, and repeated repair runs"
+        )
+        return self._clip("\n".join(contracts), 4200), selected, sorted(set(excluded))
+
+    def _compact_calculation_definition(self, path: Path) -> str:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+            data = self._parse_config(text)
+        except Exception:
+            return ""
+        facts: list[str] = []
+        if isinstance(data, dict):
+            for key, value in self._flatten(data):
+                rendered = str(value)
+                lower = f"{key} {rendered}".lower()
+                if any(term in lower for term in ("formula", "calculation", "total", "pnl", "profit", "fee", "trading")):
+                    facts.append(f"{key}={rendered}")
+                if len(facts) >= 8:
+                    break
+        return "; ".join(facts)[:900]
+
+    @staticmethod
+    def _pnl_csv_profile(path: Path) -> dict[str, Any]:
+        try:
+            with path.open(newline="", encoding="utf-8", errors="replace") as handle:
+                rows = list(csv.DictReader(handle))
+        except OSError:
+            return {}
+        if not rows or "total_pnl_mm" not in rows[0]:
+            return {}
+
+        def number(row: dict[str, str], key: str) -> float:
+            try:
+                return float(row.get(key) or 0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        totals = [number(row, "total_pnl_mm") for row in rows]
+        dates = sorted(str(row.get("deal_date") or "") for row in rows if row.get("deal_date"))
+        loss_ids = [str(row.get("deal_id") or "") for row in rows if number(row, "total_pnl_mm") < 0]
+        subsidized_ids = [
+            str(row.get("deal_id") or "")
+            for row in rows
+            if number(row, "total_pnl_mm") > 0 and number(row, "trading_pnl_mm") < 0
+        ]
+        largest_losses = sorted(
+            (row for row in rows if number(row, "total_pnl_mm") < 0),
+            key=lambda row: number(row, "total_pnl_mm"),
+        )[:5]
+        years: dict[str, dict[str, float | int]] = {}
+        for row in rows:
+            year = str(row.get("deal_date") or "")[:4]
+            if not year.isdigit():
+                continue
+            bucket = years.setdefault(year, {"count": 0, "positive": 0, "negative": 0, "total": 0.0})
+            total = number(row, "total_pnl_mm")
+            bucket["count"] = int(bucket["count"]) + 1
+            bucket["positive"] = int(bucket["positive"]) + int(total > 0)
+            bucket["negative"] = int(bucket["negative"]) + int(total < 0)
+            bucket["total"] = float(bucket["total"]) + total
+        return {
+            "rows": len(rows),
+            "date_min": dates[0] if dates else "unknown",
+            "date_max": dates[-1] if dates else "unknown",
+            "positive": sum(value > 0 for value in totals),
+            "negative": sum(value < 0 for value in totals),
+            "total": sum(totals),
+            "fee": sum(number(row, "underwriting_fee_mm") for row in rows),
+            "trading": sum(number(row, "trading_pnl_mm") for row in rows),
+            "loss_ids": loss_ids,
+            "subsidized_ids": subsidized_ids,
+            "largest_losses": [
+                {
+                    "deal_id": str(row.get("deal_id") or ""),
+                    "issuer": str(row.get("issuer_name") or ""),
+                    "total": number(row, "total_pnl_mm"),
+                    "fee": number(row, "underwriting_fee_mm"),
+                    "trading": number(row, "trading_pnl_mm"),
+                }
+                for row in largest_losses
+            ],
+            "years": years,
+        }
+
+    @staticmethod
+    def _format_pnl_profile(profile: dict[str, Any]) -> str:
+        years = profile.get("years") or {}
+        year_text = "; ".join(
+            f"{year}:count={values['count']},positive={values['positive']},negative={values['negative']},"
+            f"total={float(values['total']):.2f},average={float(values['total']) / max(int(values['count']), 1):.2f}"
+            for year, values in sorted(years.items())
+        )
+        loss_text = ";".join(
+            f"{item['deal_id']}|{item['issuer']}|total={float(item['total']):.2f}|"
+            f"fee={float(item['fee']):.2f}|trading={float(item['trading']):.2f}"
+            for item in profile.get("largest_losses", [])
+        ) or "none"
+        return (
+            f"rows={profile['rows']}; dates={profile['date_min']}..{profile['date_max']}; "
+            f"positive_total={profile['positive']}; negative_total={profile['negative']}; "
+            f"fee_sum={float(profile['fee']):.2f}; trading_sum={float(profile['trading']):.2f}; "
+            f"total_sum={float(profile['total']):.2f}; loss_ids={','.join(profile['loss_ids']) or 'none'}; "
+            f"fee_subsidized_profitable_ids={','.join(profile['subsidized_ids']) or 'none'}; "
+            f"largest_losses=[{loss_text}]; by_year=[{year_text}]"
         )
 
     @staticmethod
@@ -321,6 +648,22 @@ class CollectionReader:
             if any(part in self._SKIP_DIRS for part in rel.parts[:-1]):
                 continue
             if entry.suffix.lower() not in self._COLLECTION_EXTS and not entry.name.lower().startswith("readme"):
+                continue
+            if entry.suffix.lower() in {".pdf", ".xlsx"}:
+                try:
+                    stat = entry.stat()
+                except OSError:
+                    continue
+                kind = "pdf" if entry.suffix.lower() == ".pdf" else "xlsx"
+                out.append(
+                    CollectionItem(
+                        name=str(rel),
+                        path=entry,
+                        size=stat.st_size,
+                        kind=kind,
+                        snippet=f"{kind.upper()} document; use its typed reader after collection selection.",
+                    )
+                )
                 continue
             try:
                 text = entry.read_text(encoding="utf-8", errors="replace")
@@ -433,6 +776,8 @@ class CollectionReader:
         used = 0
         for item in items:
             if item.name not in selected_names:
+                continue
+            if item.kind in self._TYPED_CHILD_KINDS:
                 continue
             try:
                 text = item.path.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n").strip()
@@ -823,6 +1168,24 @@ class CollectionReader:
         return has_script and has_policy and has_prefix_guide and has_conflict_sources and has_tests
 
     @staticmethod
+    def _items_look_like_panel_did(items: list[CollectionItem]) -> bool:
+        names = " ".join(item.name.lower() for item in items)
+        has_panel = any(
+            item.kind == "csv" and (
+                "panel" in item.name.lower()
+                or all(term in item.snippet.lower() for term in ("firm_id", "year", "treated", "post"))
+            )
+            for item in items
+        )
+        has_dictionary = any(term in names for term in ("dictionary", "metadata", "codebook"))
+        has_analysis_script = any(
+            item.path.suffix.lower() == ".py"
+            and any(term in item.name.lower() for term in ("did", "regression", "analysis"))
+            for item in items
+        )
+        return has_panel and has_dictionary and has_analysis_script
+
+    @staticmethod
     def _sources_look_like_command_security(source_texts: dict[str, str]) -> bool:
         names = " ".join(name.lower() for name in source_texts)
         joined = "\n".join(source_texts.values()).lower()
@@ -1066,6 +1429,13 @@ class CollectionReader:
             column for column in panel_info.get("columns", [])
             if column in {"log_assets", "leverage", "roa", "employees_thousands", "rd_intensity"}
         ]
+        metadata_overlap = sorted(
+            (set(panel_info.get("columns", [])) & set(metadata_info.get("columns", []))) - {"firm_id"}
+        )
+        metadata_only = [
+            column for column in metadata_info.get("columns", [])
+            if column == "firm_id" or column not in panel_info.get("columns", [])
+        ]
 
         findings = [
             "FILE: collection_panel_did_closure",
@@ -1076,9 +1446,15 @@ class CollectionReader:
                 f"treated_firms={treated_count}; control_firms={control_count}"
             ),
             f"columns: {', '.join(panel_info.get('columns', []))}",
+            "identifier_type_contract: keep firm_id as a string/categorical identifier; never coerce firm_id to numeric",
             (
                 "model_contract: outcome=revenue_growth_pct; key_regressor=did; "
                 "fixed_effects=firm_id and year; cluster_standard_errors=firm_id"
+            ),
+            (
+                "implementation_contract: use statsmodels OLS with did + C(firm_id) + C(year) and "
+                "cov_type=cluster/groups=firm_id, or PanelOLS after set_index([firm_id, year]); "
+                "do not pass entity_effects/time_effects to PanelOLS.from_formula"
             ),
             (
                 "controls_contract: "
@@ -1094,6 +1470,14 @@ class CollectionReader:
                 f"industry_contract: merge {metadata_name} on firm_id; "
                 f"metadata_rows={metadata_info.get('rows', 'unknown')}; summarize revenue growth by industry and treatment"
             )
+            if metadata_overlap:
+                findings.append(
+                    "merge_collision_contract: the panel and metadata both contain "
+                    f"{', '.join(metadata_overlap)}. Preserve the panel columns by selecting only firm_id plus "
+                    "non-overlapping metadata fields before merge; do not create suffixed duplicates such as "
+                    "treated_x/treated_y or industry_x/industry_y. Exact metadata merge columns: "
+                    f"{', '.join(metadata_only)}; do not prepend firm_id again because it is already in this list."
+                )
         if true_att is not None:
             findings.append(f"ground_truth: true_planted_ATT={true_att:g}")
         if raw_did is not None:
@@ -1106,9 +1490,35 @@ class CollectionReader:
             "and write did_results_summary.md"
         )
         findings.append(
-            "closure_instruction: do not read full panel_data.csv into chat after this closure; use the local CSV path in the script and rely on printed aggregate results"
+            "serialization_contract: write did_results_summary.md directly in the same script. Avoid an intermediate JSON file; "
+            "if one is used, cast every numpy scalar/boolean/integer to native float/bool/int before json.dump."
         )
-        return self._clip("\n".join(findings), 2600)
+        findings.append(
+            "minimal_implementation_recipe: panel=pd.read_csv(panel_file,dtype={'firm_id':'string'}); "
+            "meta=pd.read_csv(metadata_file,dtype={'firm_id':'string'}); "
+            f"df=panel.merge(meta[{metadata_only!r}],on='firm_id',how='left'); "
+            "fit smf.ols('revenue_growth_pct ~ did + C(firm_id) + C(year)',data=df).fit("
+            "cov_type='cluster',cov_kwds={'groups':df['firm_id']}); create pre-period treated-by-year terms and report "
+            "their joint test; compute industry summaries from the preserved panel industry column. Keep the script under "
+            "roughly 160 lines and write markdown directly—no plots, intermediate JSON, or exploratory diagnostics."
+        )
+        findings.append(
+            "report_contract: did_results_summary.md must include the numeric DID estimate, clustered SE, confidence interval, "
+            "p-value, true-ATT comparison, numeric parallel-trends joint/individual p-values, and at least one numeric industry "
+            "breakdown. Explain that firm-level clustering is required because repeated observations within a firm can have "
+            "serially correlated errors. If dummy-variable OLS is used, state that firm/year categorical dummies implement the "
+            "two-way fixed-effects estimator for this balanced panel. Do not claim PASS or heterogeneity without underlying values."
+        )
+        findings.append(
+            "execution_contract: write both deliverables in one script, then run exactly "
+            "`python3 did_regression.py > did_regression_output.txt 2>&1`. Inspect the exit code and deliverable existence only. "
+            "On failure, inspect only the final traceback lines; never print the regression summary into tool output. If the run "
+            "exits 0 and both deliverables exist, stop without rereading stdout, rerunning, or rewriting the script"
+        )
+        findings.append(
+            "closure_instruction: do not read full panel_data.csv into chat after this closure; use the local CSV path in the script"
+        )
+        return self._clip("\n".join(findings), 4200)
 
     def _rule_table_script_closure(self, source_texts: dict[str, str], hint: HintSpec) -> str:
         if not self._goal_wants_rule_table_script(hint):

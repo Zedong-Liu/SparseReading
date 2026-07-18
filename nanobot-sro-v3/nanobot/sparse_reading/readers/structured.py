@@ -119,6 +119,7 @@ class StructuredReader:
         skeleton: list[str] = []
         evidence: list[EvidenceBlock] = []
         calc_tables: list[dict[str, Any]] = []
+        incomplete_tables: list[str] = []
         terms = self._terms(hint)
         full_table_mode = False
         for ws in wb.worksheets:
@@ -129,6 +130,8 @@ class StructuredReader:
             header = [self._cell(v) for v in next(rows_iter, ())]
             selected_headers = self._project_headers(header, hint)
             wants_full_table = self._should_return_full_table(mode, hint, max(0, ws.max_row - 1))
+            if self._requests_full_table(hint) and not wants_full_table:
+                incomplete_tables.append(ws.title)
             if header and not wants_full_table:
                 evidence.append(EvidenceBlock(f"{ws.title}!header", ", ".join(header[:40]), 0.8))
             if wants_full_table:
@@ -179,7 +182,8 @@ class StructuredReader:
         wb.close()
         evidence.sort(key=lambda b: b.score, reverse=True)
         selected = self._fit_budget(evidence, budget)
-        unresolved = [] if any(block.anchor.endswith("!rows") for block in selected) else self._unresolved(hint, selected)
+        unresolved = [] if calc_tables and not incomplete_tables else self._unresolved(hint, selected)
+        unresolved.extend(f"complete rows: {name}" for name in incomplete_tables)
         summary = f"XLSX with {len(skeleton)} sheets"
         calc_ready = self._calc_ready_payload(calc_tables) if calc_tables else None
         if full_table_mode and unresolved == []:
@@ -214,6 +218,7 @@ class StructuredReader:
         terms = self._terms(hint)
         evidence: list[EvidenceBlock] = []
         calc_tables: list[dict[str, Any]] = []
+        incomplete_tables: list[str] = []
         full_table_mode = False
         for name, rows in sheets:
             if not self._sheet_relevant(name, terms, mode):
@@ -221,6 +226,8 @@ class StructuredReader:
             header = rows[0] if rows else []
             selected_headers = self._project_headers(header, hint)
             wants_full_table = self._should_return_full_table(mode, hint, max(0, len(rows) - 1))
+            if self._requests_full_table(hint) and not wants_full_table:
+                incomplete_tables.append(name)
             if rows and not wants_full_table:
                 evidence.append(EvidenceBlock(f"{name}!header", " | ".join(rows[0]), 0.8))
             if wants_full_table:
@@ -263,7 +270,8 @@ class StructuredReader:
                     break
         evidence.sort(key=lambda b: b.score, reverse=True)
         selected = self._fit_budget(evidence, budget)
-        unresolved = [] if any(block.anchor.endswith("!rows") for block in selected) else self._unresolved(hint, selected)
+        unresolved = [] if calc_tables and not incomplete_tables else self._unresolved(hint, selected)
+        unresolved.extend(f"complete rows: {name}" for name in incomplete_tables)
         summary = f"XLSX with {len(sheets)} sheets (stdlib fallback)"
         calc_ready = self._calc_ready_payload(calc_tables) if calc_tables else None
         if full_table_mode and unresolved == []:
@@ -397,12 +405,35 @@ class StructuredReader:
 
     def _match_rows(self, rows: list[dict[str, str]], headers: list[str], hint: HintSpec, budget: int) -> list[EvidenceBlock]:
         terms = self._terms(hint)
+        header_terms = {
+            re.sub(r"[^a-z0-9]+", "", header.lower())
+            for header in headers
+            if header
+        }
+        requested_terms = [
+            term.lower().strip()
+            for term in [*hint.needles, *hint.must_keep]
+            if term and term.strip()
+        ]
+
+        def is_header_only(term: str) -> bool:
+            compact = re.sub(r"[^a-z0-9]+", "", term)
+            if not compact:
+                return True
+            if any(char.isdigit() for char in compact):
+                return compact in header_terms
+            return any(compact in header or header in compact for header in header_terms)
+
+        selector_terms = [term for term in requested_terms if not is_header_only(term)]
+        if not selector_terms:
+            selector_terms = [term for term in terms if not is_header_only(term)] or terms
         blocks: list[EvidenceBlock] = []
         for idx, row in enumerate(rows, start=2):
             text = " | ".join(f"{h}={row.get(h, '')}" for h in headers if row.get(h, ""))
-            score = self._score_text(text, terms)
-            if score > 0 or idx <= 4:
-                blocks.append(EvidenceBlock(anchor=f"row {idx}", text=self._short(text, 900), score=score or 0.1))
+            selector_score = self._score_text(text, selector_terms)
+            if selector_score > 0 or idx <= 4:
+                score = self._score_text(text, terms) if selector_score > 0 else 0.1
+                blocks.append(EvidenceBlock(anchor=f"row {idx}", text=self._short(text, 900), score=score))
             if len(blocks) >= 40:
                 break
         blocks.sort(key=lambda b: b.score, reverse=True)
@@ -445,6 +476,8 @@ class StructuredReader:
         )
         if any(phrase in hay for phrase in phrases):
             return True
+        if re.search(r"\ball\s+[\w.-]+(?:\s+[\w.-]+){0,3}\s+(?:values|entries|names)\b", hay):
+            return True
         return bool(
             re.search(r"\ball\s+\d+\s+[\w\s_-]{0,40}\b(?:rows|records)\b", hay)
         )
@@ -479,7 +512,7 @@ class StructuredReader:
         for term in terms:
             if term in hay:
                 score += 2.0
-        if re.search(r"\b\d+(?:[.,]\d+)?\b", text):
+        if score > 0 and re.search(r"\b\d+(?:[.,]\d+)?\b", text):
             score += 0.5
         return score
 

@@ -21,7 +21,7 @@ The plotting script reads from this CSV automatically. To add/update results, ed
 2. Edit `figures/sro_experiment_data.csv`:
    - Add new rows for new tasks.
    - Update existing rows when baselines or SRO/gate results change.
-   - Columns: `model, task_id, short_name, group, benchmark, baseline_score, sro_score, baseline_tokens, sro_tokens, baseline_req, sro_req, baseline_turns, sro_turns, note`
+   - Columns: `model, task_id, short_name, group, benchmark, baseline_score, sro_score, baseline_tokens, sro_tokens, baseline_req, sro_req, baseline_seconds, sro_seconds, baseline_turns, sro_turns, note`
 3. Regenerate figures:
 
 ```bash
@@ -38,7 +38,7 @@ python3 -m py_compile figures/plot_sro_gate_results_v2.py
 
 ## Plotting policy (do not change unless asked)
 
-- Compare accuracy, total token cost, trajectory length (requests; turns only when available).
+- Compare accuracy, total token cost, trajectory length (requests; turns only when available), and wall-clock execution time.
 - One color per model (Qwen = blue, DeepSeek = orange). Do not color by outcome group.
 - Keep group labels (`SRO win`, `Gate/pass`, `Boundary`) in the CSV/README but not as chart colors.
 - Exclude catastrophic zero-deliverable failures (`task_00020`, `task_00089`).

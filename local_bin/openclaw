@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="/Users/captainliu/sparse-reading"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${SRO_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 exec uv --project "$ROOT/nanobot-sro-v3" run --with openai --with pytest --with pytest-asyncio --with pymupdf python "$ROOT/local_agent_comp/openclaw_shim.py" "$@"

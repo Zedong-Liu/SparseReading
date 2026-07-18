@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from sparseread.bridge.openclaw import OpenClawBridge
 from sparseread.bridge.opencode import OpenCodeBridge
 
@@ -104,6 +106,29 @@ def test_release_fixture_csv_schema_preview(tmp_path: Path) -> None:
         assert pack["structure"]["columns"] == ["id", "status", "latency"]
         assert pack["structure"]["row_count"] == 3
         assert pack["signals"][0]["values"] == ["error"]
+
+
+def test_release_fixture_xlsx_preview_detects_banner_before_header(tmp_path: Path) -> None:
+    openpyxl = pytest.importorskip("openpyxl")
+    target = tmp_path / "attendance.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Monthly attendance"])
+    ws.append([None, "October 2026"])
+    ws.append(["weekday", "Mon", "Tue"])
+    ws.append(["employee", "2026-10-01", "2026-10-02", "status"])
+    ws.append(["Alice", "P", "P", "active"])
+    wb.save(target)
+    wb.close()
+
+    for bridge_cls in BRIDGES:
+        bridge = bridge_cls(workspace=tmp_path, mode="force")
+        pack = _preview(bridge, target)
+        sheet = pack["structure"]["sheets"][0]
+
+        assert sheet["header_row"] == 4
+        assert sheet["headers"][:4] == ["employee", "2026-10-01", "2026-10-02", "status"]
+        assert pack["samples"][0]["rows"][0]["employee"] == "Alice"
 
 
 def test_release_fixture_json_schema_preview(tmp_path: Path) -> None:

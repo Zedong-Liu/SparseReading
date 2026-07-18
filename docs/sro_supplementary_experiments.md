@@ -6,7 +6,7 @@ This document proposes the minimum supplementary experiments needed to make the 
 
 The current evidence supports a narrow claim:
 
-> SRO is a selective sparse-reading protocol. It helps when a task has high reading sparsity and a compact evidence-to-deliverable closure, and it should stay native or advisory when the task is full-table computation, low-sparsity analysis, or when the model does not comply with ready closure.
+> SRO is a selective sparse-reading protocol. It helps when a task has high reading sparsity and a compact evidence-to-deliverable closure. A task may still need a full local computation: SR should sparsely select its authoritative inputs and calculation contract, then hand off one bounded computation rather than put all rows in model context.
 
 The supplementary experiments should not try to show that SRO always wins. They should test the three paper risks directly:
 
@@ -16,18 +16,316 @@ The supplementary experiments should not try to show that SRO always wins. They 
 
 ## Current Evidence Snapshot
 
-The current CSV contains 16 non-catastrophic comparisons across Qwen and DeepSeek:
+The paper main experiment now uses 17 paired tasks in four task-shape
+scenarios. Every pair uses the same task fixture, model, endpoint, and runner;
+only `SRO_ENABLED` differs. `SPARSEREAD_MODE=auto` is explicit. The original
+main run used eight parallel workers; the structured replacement runs use four
+workers within one model and run model families sequentially.
 
-- SRO wins: `task_21`, `task_00012`, Qwen `task_00059`, Qwen `task_00086`
-- Gate/pass cases: `task_00036`, `task_00067`, `task_00073`, DeepSeek `task_00086`, DeepSeek `task_00098`
-- Boundary cases: Qwen `task_00098`, DeepSeek `task_00067`
+| Scenario | Tasks |
+| --- | --- |
+| Long-context and PDF reading | LooGLE 10Q/5Q/3Q, T21 long PDF QA, Kaima multi-PDF local fact |
+| Multi-file audit and diagnosis | T12, T55, T86, T94, T98 |
+| Structured analysis | T58, T73, SpreadsheetBench Verified 49333 and 11276 |
+| Native-fit controls | T36, T59, T67 |
 
-Key risks from the logs:
+The first four main runsets are under
+`SRO_test/qwenclawbench/main17_<model>_20260715`; the approved Kimi replacement
+runset is `main17_kimik25_20260716`. All five models have completed. Kimi-K2.6
+is now reachable, but its paired structured run was unstable: three Native
+runs reached the 50-request cap and SR still looped on T58. It is therefore not
+used in the paper table; the stable Kimi-K2.5 run remains the approved result.
 
-- `task_00012` audit closure and `task_00086` command-security closure are strong results, but can be criticized as task-shaped.
-- `task_00067` and `task_00058` show that forced SRO can add large protocol tax on low-sparse or computation-heavy tasks.
-- `task_18` shows that a structured reader can be correct only after adding `calc_ready`, but the token win is not guaranteed.
-- DeepSeek `task_00086` shows that closure compliance differs by model; a ready closure is useful only if the model stops reading and writes the deliverable.
+The four structured rows for every model are now replaced by clean paired
+post-convergence runs. All other task rows remain on the original main runsets.
+The canonical CSV records this mixed provenance per row and includes Native/SR
+wall-clock seconds in addition to score, tokens, and requests.
+
+| Model | Native mean score / tokens / req / s | SR mean score / tokens / req / s | Interpretation |
+| --- | --- | --- | --- |
+| DeepSeek-V4-Flash | 0.816 / 7,497,184 / 321 / 2,821.5 | 0.889 / 4,750,310 / 195 / 1,683.0 | Score +0.072; tokens -36.6%; requests -39.3%; time -40.3% |
+| DeepSeek-V4-Pro | 0.849 / 5,988,619 / 272 / 3,390.4 | 0.908 / 3,079,565 / 152 / 1,790.1 | Score +0.059; tokens -48.6%; requests -44.1%; time -47.2% |
+| Qwen3.6-Plus | 0.800 / 3,752,072 / 243 / 3,269.4* | 0.885 / 2,245,712 / 162 / 1,979.6* | Score +0.085; tokens -40.1%; requests -33.3%; paired time -39.5%* |
+| GLM-5.1 | 0.811 / 6,196,208 / 314 / 5,116.9 | 0.835 / 3,736,406 / 192 / 2,648.9 | Score +0.024; tokens -39.7%; requests -38.9%; time -48.2% |
+| Kimi-K2.5 | 0.500 / 6,925,826 / 342 / 3,338.1 | 0.828 / 2,055,570 / 114 / 1,434.4 | Score +0.329; tokens -70.3%; requests -66.7%; time -57.0% |
+
+`*` Qwen time aggregates contain 16 valid pairs. T58 is omitted from both
+Native and SR wall-clock sums because the SR execution had a confirmed
+provider-side stall; its score, token, and request measurements remain valid.
+
+The aggregate result is deliberately not the primary claim. Across all 85
+paired runs, mean score changes from 0.755 to 0.869, combined tokens fall from
+30,359,909 to 15,867,563 (-47.7%), and requests fall from 1,492 to 815
+(-45.4%). Across the 84 valid timed pairs, wall-clock time falls from 17,936.3
+to 9,536.1 seconds (-46.8%). The
+long-context/PDF scenario is the consistent signal: all 25 SR
+task runs score 1.00, compared with a 0.798 Native mean; combined tokens fall
+from 9,659,035 to 1,295,257 (-86.6%) and requests from 524 to 104 (-80.2%).
+Per-model long-context/PDF token reductions are 86.6% (Flash), 81.8% (Pro),
+76.9% (Qwen3.6-Plus), 78.9% (GLM-5.1), and 92.9% (Kimi-K2.5).
+
+The other scenarios preserve the intended boundary. Multi-file audit and
+diagnosis improves mean score by 0.092 while reducing tokens by 14.4%.
+After the structured convergence reruns, the fixed four-task structured
+scenario improves mean score by 0.133 while reducing combined tokens by 51.7%
+and requests by 48.2%. Across its 19 valid timed pairs, time falls by 65.7%.
+Native-fit controls reduce tokens by
+26.0% but lose 0.023 mean score, so they remain gate/native-first tasks rather
+than a broad SR claim.
+
+Two score-only evaluation repairs remain in the canonical table. Pro T12
+passed all six automated checks and received 1.00 on a low-concurrency judge
+recheck. Pro Native T73 also passed all six automated checks; its original
+judge response was empty, while a same-deliverable rejudge scored 1.00. Both
+repairs retain the original run's tokens, requests, and seconds. The earlier
+Flash 49333 semantic regrade is no longer needed because its replacement
+structured run receives 1.00 directly from the current grader.
+
+Kimi's four Native long-reading failures are also retained rather than
+regraded. T21 and LooGLE 10Q timed out at about 300 seconds after 43 and 46
+requests; LooGLE 3Q and 5Q reached the 50-tool-call cap without an answer. All
+four paired SR runs scored 1.00 in four requests. These statuses are annotated
+in the canonical CSV because they are convergence failures, not grader errors.
+
+Key risks from the logs remain:
+
+- Audit and command-security closures can be criticized as task-shaped and need held-out closure-family validation.
+- Structured tasks remain model-dependent: sparse planning removes large
+  context and repair loops, but a very efficient Native run can still make the
+  fixed preview/protocol overhead slightly token-negative.
+- Ready-closure compliance varies by model and concurrent run; a correct closure does not guarantee that the model stops reading.
+- These are single runs. The scenario result is strong across models, but task-level variance still needs repeated trials.
+
+## Executed Structured Sparse-Plan Convergence Check
+
+The post-main audit corrects an overly aggressive interpretation of structured
+tasks. T58 and T73 require calculations over all relevant rows, but they do not
+require the model to read every row. Their sparse opportunity is to select the
+authoritative sources, schema, estimator, and metric contract before one local
+script performs the full computation. SpreadsheetBench Verified 49333 and
+11276 similarly use SR for formula/sheet diagnosis before a bounded local edit.
+
+No task ids, workbook names, fixed cells, formulas, answer values, or runner
+hints were added to product routing. The retained paths are generic:
+
+- panel-data bundles: sparse schema/model closure, then full local regression;
+- transaction bundles: sparse source/metric closure, then full local aggregation;
+- formula workbooks: formula-first preview, then one bounded edit and one
+  compact output verification.
+
+Paired single-run results are shown as `score / tokens / requests / seconds`:
+
+| Model | Task | Native | Final SR | Classification |
+| --- | --- | --- | --- | --- |
+| DeepSeek-V4-Flash | T58 | 1.00 / 901,143 / 38 / 325.2 | 1.00 / 121,827 / 7 / 51.0 | Strong efficiency positive |
+| DeepSeek-V4-Flash | T73 | 0.969 / 380,655 / 14 / 221.2 | 1.00 / 405,645 / 16 / 85.9 | Quality/time positive; tokens +6.6% |
+| DeepSeek-V4-Flash | 11276 | 1.00 / 160,193 / 8 / 105.6 | 1.00 / 126,555 / 7 / 31.0 | Positive |
+| DeepSeek-V4-Flash | 49333 | 1.00 / 397,329 / 17 / 216.0 | 1.00 / 430,431 / 15 / 89.5 | Quality/time held; tokens +8.3% |
+| Qwen3.6-Plus | T58 | 1.00 / 859,012 / 47 / n/a | 1.00 / 331,072 / 21 / n/a | Strong efficiency positive; provider-stall time omitted |
+| Qwen3.6-Plus | T73 | 0.677 / 79,173 / 7 / 188.6 | 1.00 / 77,815 / 6 / 160.6 | Quality and efficiency positive |
+| Qwen3.6-Plus | 11276 | 0.00 / 11,945 / 2 / 599.2 (timeout) | 1.00 / 42,882 / 4 / 38.5 | Convergence rescue; token comparison invalid |
+| Qwen3.6-Plus | 49333 | 1.00 / 88,676 / 8 / 147.5 | 1.00 / 63,695 / 6 / 99.3 | Positive |
+| DeepSeek-V4-Pro | T58 | 0.520 / 1,076,034 / 37 / 440.8 | 0.969 / 490,627 / 20 / 162.5 | Quality and efficiency positive |
+| DeepSeek-V4-Pro | T73 | 1.00 / 285,861 / 11 / 191.2 | 1.00 / 112,137 / 6 / 100.6 | Strong efficiency positive; Native score from rejudge |
+| DeepSeek-V4-Pro | 11276 | 1.00 / 233,270 / 11 / 159.4 | 1.00 / 104,808 / 6 / 47.5 | Positive |
+| DeepSeek-V4-Pro | 49333 | 1.00 / 250,458 / 11 / 117.8 | 1.00 / 87,802 / 5 / 60.7 | Strong positive |
+| GLM-5.1 | T58 | 1.00 / 808,401 / 41 / 414.5 | 1.00 / 92,699 / 7 / 96.6 | Strong efficiency positive |
+| GLM-5.1 | T73 | 0.428 / 1,139,030 / 50 / 1,164.0 | 1.00 / 166,681 / 9 / 244.2 | Convergence rescue and strong efficiency positive |
+| GLM-5.1 | 11276 | 1.00 / 103,352 / 8 / 171.6 | 1.00 / 51,091 / 4 / 35.7 | Positive |
+| GLM-5.1 | 49333 | 1.00 / 293,517 / 13 / 324.9 | 1.00 / 531,979 / 21 / 209.4 | Quality/time held; token/request variance boundary |
+| Kimi-K2.5 | T58 | 0.875 / 87,946 / 6 / 189.9 | 0.875 / 110,538 / 6 / 95.7 | Quality/time held; tokens +25.7% |
+| Kimi-K2.5 | T73 | 0.663 / 51,858 / 4 / 172.9 | 0.938 / 105,666 / 6 / 126.9 | Quality/time positive; token boundary |
+| Kimi-K2.5 | 11276 | 1.00 / 113,997 / 9 / 71.5 | 1.00 / 62,359 / 4 / 28.1 | Positive |
+| Kimi-K2.5 | 49333 | 1.00 / 238,914 / 13 / 100.6 | 1.00 / 136,781 / 8 / 62.5 | Strong positive |
+
+The main structured score is the aggregate over exactly these four tasks:
+
+| Model | Native score sum / mean | SR score sum / mean | Native → SR tokens | requests | seconds |
+| --- | --- | --- | --- | --- | --- |
+| DeepSeek-V4-Flash | 3.969 / 0.992 | 4.000 / 1.000 | 1,839,320 → 1,084,458 (-41.0%) | 77 → 45 (-41.6%) | 868.0 → 257.4 (-70.3%) |
+| DeepSeek-V4-Pro | 3.520 / 0.880 | 3.969 / 0.992 | 1,845,623 → 795,374 (-56.9%) | 70 → 37 (-47.1%) | 909.1 → 371.2 (-59.2%) |
+| Qwen3.6-Plus | 2.677 / 0.669 | 4.000 / 1.000 | 1,038,806 → 515,464 (-50.4%) | 64 → 37 (-42.2%) | 935.3 → 298.5 (-68.1%; 3 valid pairs) |
+| GLM-5.1 | 3.428 / 0.857 | 4.000 / 1.000 | 2,344,300 → 842,450 (-64.1%) | 112 → 41 (-63.4%) | 2,075.0 → 585.9 (-71.8%) |
+| Kimi-K2.5 | 3.538 / 0.884 | 3.813 / 0.953 | 492,715 → 415,344 (-15.7%) | 32 → 24 (-25.0%) | 535.0 → 313.2 (-41.5%) |
+
+All five model families now show a positive four-task aggregate: mean score is
+preserved or improved while tokens, requests, and valid paired time decline.
+This does not imply every task-model cell is positive: GLM 49333 and Kimi T58
+remain task-level token boundaries. The appropriate claim is robust aggregate
+structured convergence with visible per-task variance, not universal per-cell
+benefit. These are single-run paired smokes and need repetition for variance.
+
+Final artifacts include `structured_no_regress_dsv4flash_20260718`, the three
+Qwen no-regression runsets recorded per row in the canonical CSV,
+`structured_postfix_dsv4pro_20260718`, `structured_postfix_glm51_20260718`,
+`structured_kimi_final_k25_20260718`, and
+`structured_kimi_convergence_k25_20260718`. The Pro/GLM paired runsets used
+four workers within one model and ran the models sequentially. Native and SR
+share the same per-model concurrency envelope, but wall-clock results remain
+single-run smoke measurements.
+
+## Executed PDF Integration Check: Multi-PDF Local Fact
+
+`task_workspacebench_lite_334_kaima_rd` is a derived integration task over the
+same four official annual-report PDFs used by Workspace-Bench-Lite 334. It is
+not an official Workspace-Bench task and its result must not be included in the
+official Workspace-Bench aggregate score.
+
+The workspace contains the 2021 annual reports for Huili B (900939), Yitai B
+Share (900948), Kaima B (900953), and Lingyun B Share (900957). The derived
+prompt asks for only one source-local fact:
+
+> Find the total R&D investment reported by Kaima B (900953) for 2021. Write
+> only the amount in yuan, with exactly two decimal places and no currency
+> symbol, to `answer.txt`.
+
+The automated check removes commas and requires the exact value
+`87122954.71`. This isolates two generic integration capabilities without
+requiring broad synthesis across all four reports:
+
+1. Select the named PDF from a collection of several large PDF children.
+2. Use the typed PDF reader to retrieve one anchored fact and stop after the
+   requested output is written.
+
+The task contains no hidden target artifact, fixed page number, diagnostic
+HintSpec, or answer-bearing benchmark hint. The target file is discoverable
+from the ordinary workspace listing and filename, while the answer must still
+be extracted from the PDF body.
+
+### DeepSeek-V4-Flash Result
+
+The validated run used the Paratera endpoint
+`https://llmapi.paratera.com/v1` and model id `DeepSeek-V4-Flash`.
+
+| Condition | Score | Total tokens | Requests | Time (s) |
+| --- | ---: | ---: | ---: | ---: |
+| Native baseline | 1.00 | 183,980 | 12 | 91.1 |
+| Current SRO gate | 1.00 | 64,407 | 5 | 26.1 |
+
+At equal score, SRO reduced total tokens by 65.0%, requests by 58.3%, and wall
+time by 71.4%. The final SRO trajectory was:
+
+```text
+list_dir -> sro_preview(selected PDF) -> sro_read(collect) -> write_file
+```
+
+The PDF reader returned `87,122,954.71` from `p11:L91-L123` in the first
+targeted collect call. The final trace contained no shell PDF extraction,
+package installation, `sro_raw` fallback, repeated verification, or file
+rediscovery loop.
+
+Artifacts:
+
+- Task definition: `SRO_test/qwenclawbench/sro_v3/task_workspacebench_lite_334_kaima_rd`
+- Native result: `SRO_test/qwenclawbench/pdf_typed_convergence_dsv4f_20260715/baseline/task_workspacebench_lite_334_kaima_rd/result.json`
+- Final SRO result: `SRO_test/qwenclawbench/pdf_typed_convergence_dsv4f_r2_20260715/gate/task_workspacebench_lite_334_kaima_rd/result.json`
+- Final SRO transcript: `SRO_test/qwenclawbench/pdf_typed_convergence_dsv4f_r2_20260715/gate/task_workspacebench_lite_334_kaima_rd/task_transcript.jsonl`
+
+Interpretation boundary: this task is a same-source integration proof for
+multi-PDF selection plus local PDF fact extraction. It does not establish that
+SRO is advantageous for the original WB-Lite 334 broad comparison task, which
+requires multiple fact classes and cross-report synthesis. The current numbers
+are single-run smoke results and should be repeated before reporting variance.
+
+### Cross-Model Single-Slot Dispatch Repair
+
+The GLM-5.1 main run exposed a generic PDF routing edge case. The model selected
+the correct 900953 PDF but supplied one `hint.slots` item for the single fact.
+Typed collection dispatch preserved `collect`, so the PDF slot extractor chose
+an unrelated amount (`42,127,356.98`) from page 9 and the task scored 0.00.
+
+The dispatch rule now treats zero or one slot on a uniquely selected PDF child
+as a single-fact request: it removes the slot wrapper, preserves the concrete
+needles and slot question, and sends the child through PDF `focus`. Only two or
+more explicit slots retain PDF `collect`. This rule does not contain a task id,
+company name, filename, page, field label, or answer value.
+
+The GLM-5.1 post-fix rerun scored `1.00 / 53,612 tokens / 4 requests`, compared
+with Native `1.00 / 54,663 / 5`. The original failed run remains under
+`main17_glm51_20260715`; the corrected result is under
+`main17_glm51_kaima_single_slot_fix_20260715` and is annotated as a post-fix
+result in the canonical CSV. The full SparseReading suite passes with
+`164 passed`.
+
+## Executed Structured Benchmark Screening: SpreadsheetBench Verified
+
+The structured-file supplement now uses native tasks from the official
+[SpreadsheetBench](https://github.com/RUCKBReasoning/SpreadsheetBench)
+Verified split. The prompt, input workbook, and official answer location are
+preserved. The only runner wrapper asks the agent to save the completed
+workbook as `answer.xlsx`. The task directories live below `qwenclawbench`
+solely to reuse the trusted local runner; they are not QwenClawBench tasks.
+
+Candidate selection happened before execution. A candidate needed a relatively
+large workbook, a small official answer region, and a local edit or lookup that
+did not require full-table aggregation. Five candidates were then run with the
+Paratera endpoint and `DeepSeek-V4-Flash`:
+
+| Task | Workbook / official target | Task shape |
+| --- | --- | --- |
+| 57033 | 146,864-byte XLSX / `Sheet4!K2:K7` | Three-way local match |
+| 49333 | 79,491-byte XLSX / `Sheet1!G2:I7` | Repair a trimmed VLOOKUP across sheets |
+| 52964 | 56,370-byte XLSX / `C2` | Local lookup and date difference |
+| 50051 | 164,915-byte XLSX / `CC2:CC33` | Score-to-line lookup formula |
+| 11276 | 409,849-byte XLSX / `F3:AJ3` | Repair and fill a weekday formula row |
+
+### Scoring Protocol
+
+SpreadsheetBench compares recalculated cell values. `openpyxl(data_only=True)`
+does not calculate formulas written by an agent, so the raw local grader reports
+zero for otherwise correct formula workbooks whose cached values are absent.
+Formula tasks were therefore checked again with a local formula evaluator
+against the official target cells. Raw `result.json` files remain unchanged;
+the table below reports the post-recalculation score where applicable.
+
+### Five-Candidate Result
+
+Native and initial gate runs are under
+`spreadsheetbench_verified_candidates_dsv4f_20260715`.
+
+| Task | Native score / tokens / req / s | Initial gate score / tokens / req / s | Classification |
+| --- | --- | --- | --- |
+| 49333 | 1.00 / 575,430 / 23 / 216.5 | 1.00 / 208,641 / 9 / 73.8 | Strong positive; actual `sro_preview -> sro_read` path |
+| 11276 | 1.00 / 210,042 / 9 / 140.3 | 1.00 / 165,861 / 7 / 106.3 | Weak positive; preview-assisted, no `sro_read` |
+| 57033 | 1.00 / 87,471 / 6 / 82.6 | 1.00 / 218,177 / 11 / 66.9 | Rejected: equal quality but tokens +149.4% and requests +83.3% |
+| 52964 | 0.00 / 412,319 / 17 / 332.3 | 1.00 / 383,230 / 13 / 186.6 | Rejected after gate repeat returned 0.00; unstable formula direction and fill range |
+| 50051 | 0.00 / 599,658 / 19 / 273.6 | 0.00 / 589,538 / 17 / 262.9 | Rejected: neither path produced the required workbook |
+
+### Accepted Additions
+
+`task_spreadsheetbench_verified_49333_trimmed_vlookup` is the strong addition.
+Trace review exposed one generic reader bug: its `sro_read` requested all NAME
+values from Sheet1 and Sheet3, but only the small Sheet1 table was materialized
+while the pack incorrectly declared the subset complete. The structured reader
+now keeps a large unmaterialized sheet in `unresolved` and withholds the
+immediate calculation action. After this fix, the current gate still scored
+1.00 after recalculation with 352,705 tokens, 12 requests, and 132.5 seconds.
+Against Native, the corrected path reduces tokens by 38.7%, requests by 47.8%,
+and time by 38.8%.
+
+`task_spreadsheetbench_verified_11276_weekday_row_fix` is retained as a weak
+addition. The original candidate audit found a non-reproduced post-fix timeout,
+but the 2026-07-17 sparse-plan audit subsequently reproduced an equal-quality
+DeepSeek efficiency win: tokens -20.9%, requests -25.0%, and time -32.2%.
+Qwen3.6-Plus also completed the SR path correctly in 91.0 seconds while its
+Native pair timed out. It remains weaker than 49333 because the prompt already
+reveals most of the repair and the benefit is model-dependent.
+
+The two generic structured-reader fixes add no task ids, workbook names, target
+cells, formulas, or answer values. Together with the PDF single-slot dispatch
+regression, the Sparse Reading suite passes with `164 passed`.
+
+Artifacts:
+
+- Task definitions: `SRO_test/qwenclawbench/{baseline,sro_v3}/task_spreadsheetbench_verified_*`
+- Five-candidate run: `SRO_test/qwenclawbench/spreadsheetbench_verified_candidates_dsv4f_20260715`
+- 52964 repeat: `SRO_test/qwenclawbench/spreadsheetbench_verified_52964_repeat_dsv4f_20260715`
+- Post-fix positive rerun: `SRO_test/qwenclawbench/spreadsheetbench_verified_positive_postfix_dsv4f_20260715`
+
+Earlier NASA, USGS, NOAA, NYC 311, and SEC local-fact pilots are constructed
+integration tasks over public data snapshots. They are useful for reader-path
+debugging, but they are not native tasks from a computer or agent benchmark and
+are not counted as new benchmark additions.
 
 ## Experiment 1: Closure Generalization
 

@@ -38,7 +38,7 @@ from nanobot.providers.base import LLMProvider
 from nanobot.session.manager import Session, SessionManager
 from nanobot.sparse_reading import SparseReadingOrchestrator
 from nanobot.sparse_reading.policy import SparseCommandPolicy
-from nanobot.sparse_reading.tools import SroCardTool, SroPreviewTool, SroRawTool, SroReadTool
+from nanobot.sparse_reading.tools import SroCardTool, SroPreviewTool, SroReadTool
 from nanobot.utils.document import extract_documents
 from nanobot.utils.helpers import image_placeholder_text
 from nanobot.utils.helpers import truncate_text as truncate_text_fn
@@ -220,12 +220,22 @@ class AgentLoop:
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
         self._sro_runtime_mode = self._read_sro_runtime_mode()
+        if self._sro_runtime_mode in {"force", "force_sro", "enforce"}:
+            self._sro_workspace_mode = "force_sro"
+        elif self._sro_runtime_mode in {"native"}:
+            self._sro_workspace_mode = "native"
+        elif self._sro_runtime_mode in {"advisory", "observe", "nudge"}:
+            self._sro_workspace_mode = "advisory"
+        else:
+            decision = SparseReadingOrchestrator.workspace_benefit_decision(workspace)
+            self._sro_workspace_mode = decision.mode if decision is not None else "advisory"
         self._sro_disabled_for_workspace = (
-            False
-            if self._sro_runtime_mode in {"force", "force_sro", "enforce"}
-            else SparseReadingOrchestrator.disabled_for_low_sparse_workspace(workspace)
+            not SparseReadingOrchestrator.enabled()
         )
-        effective_disabled_skills = list(disabled_skills or [])
+        effective_disabled_skills = self._effective_disabled_skills(
+            disabled_skills,
+            sro_disabled=self._sro_disabled_for_workspace,
+        )
         self._start_time = time.time()
         self._last_usage: dict[str, int] = {}
         self._extra_hooks: list[AgentHook] = hooks or []
@@ -316,6 +326,17 @@ class AgentLoop:
             return mode
         return None
 
+    @staticmethod
+    def _effective_disabled_skills(
+        disabled_skills: list[str] | None,
+        *,
+        sro_disabled: bool,
+    ) -> list[str]:
+        effective = list(disabled_skills or [])
+        if sro_disabled and "sparse-reading" not in effective:
+            effective.append("sparse-reading")
+        return effective
+
     def _register_default_tools(self) -> None:
         """Register the default set of tools."""
         allowed_dir = (
@@ -323,7 +344,7 @@ class AgentLoop:
         )
         extra_read = [BUILTIN_SKILLS_DIR] if allowed_dir else None
         sro: SparseReadingOrchestrator | None = None
-        if SparseReadingOrchestrator.enabled():
+        if SparseReadingOrchestrator.enabled() and not self._sro_disabled_for_workspace:
             sro = SparseReadingOrchestrator(
                 self.workspace,
                 macro_available=not self._sro_disabled_for_workspace,
@@ -383,12 +404,12 @@ class AgentLoop:
                 self.tools.register(SroReadTool(sro, discovery_tool="sro_card"))
             sro.mark_macro_available()
             return
+        # The production path has one discovery macro and one evidence macro.
+        # Keep them available even when the workspace-level recommendation is
+        # native: a later operation may still have sparse schema/source-selection
+        # value before a local full-table calculation.
         if not self.tools.has("sro_preview"):
             self.tools.register(SroPreviewTool(sro))
-        if not self.tools.has("sro_raw"):
-            self.tools.register(SroRawTool(sro))
-        if not self.tools.has("sro_card"):
-            self.tools.register(SroCardTool(sro))
         if not self.tools.has("sro_read"):
             self.tools.register(SroReadTool(sro))
         sro.mark_macro_available()
@@ -922,7 +943,6 @@ class AgentLoop:
                 message_tool.start_turn()
 
         history = session.get_history(max_messages=0)
-
         initial_messages = self.context.build_messages(
             history=history,
             current_message=msg.content,

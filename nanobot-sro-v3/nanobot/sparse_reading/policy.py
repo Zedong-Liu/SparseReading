@@ -40,6 +40,18 @@ class SparseCommandPolicy:
                 "Error: package installation is blocked in SRO benchmark runs. "
                 "Use existing local Python libraries or write a pandas/numpy fallback script; do not install dependencies."
             )
+        if self._is_shell_expanded_excel_formula(cmd):
+            return (
+                "Error: Excel formula contains $ absolute references inside a double-quoted python -c command; "
+                "the shell would expand and corrupt the range. Write the Python edit script with write_file, "
+                "then execute the script once."
+            )
+        if self._is_previewed_structured_probe(cmd, cwd):
+            return (
+                "Error: the structured source was already previewed, and this command only prints/scans source rows. "
+                "Use the preview diagnosis to run one bounded edit/calculation script instead; verification should target "
+                "the generated output artifact, not rescan the source."
+            )
         if self._is_ready_collection_source_read(cmd, cwd):
             return (
                 "Error: this source is already covered by a ready SRO collection digest. "
@@ -172,9 +184,30 @@ class SparseCommandPolicy:
                 continue
             if not self._sro_should_handoff(target):
                 continue
+            previewed = getattr(self._sro, "has_previewed", None) if self._sro is not None else None
+            if callable(previewed) and inspect_file(target).structured and previewed(target):
+                continue
             name = target.name.lower()
             full = str(target).lower()
             if name in lower or full in lower:
+                return True
+        return False
+
+    def _is_previewed_structured_probe(self, command: str, cwd: str) -> bool:
+        lower = command.lower()
+        if "python" not in lower or "print(" not in lower:
+            return False
+        if any(term in lower for term in (".save(", "to_excel(", "to_csv(", "write_text(")):
+            return False
+        if not any(term in lower for term in ("load_workbook(", "read_excel(", "read_csv(")):
+            return False
+        previewed = getattr(self._sro, "has_previewed", None) if self._sro is not None else None
+        if not callable(previewed):
+            return False
+        for target in self._supported_large_files(cwd):
+            if not inspect_file(target).structured or not previewed(target):
+                continue
+            if target.name.lower() in lower or str(target).lower() in lower:
                 return True
         return False
 
@@ -229,6 +262,13 @@ class SparseCommandPolicy:
             re.search(r"\b(?:apt|apt-get|yum|dnf|apk|brew)\s+(?:install|update)\b", lower)
             or re.search(r"\b(?:pip|pip3|python\s+-m\s+pip|python3\s+-m\s+pip)\s+install\b", lower)
             or re.search(r"\b(?:conda|mamba|micromamba)\s+install\b", lower)
+        )
+
+    @staticmethod
+    def _is_shell_expanded_excel_formula(command: str) -> bool:
+        return bool(
+            re.search(r"\bpython(?:3(?:\.\d+)?)?\s+-c\s+\"", command)
+            and re.search(r"\$[A-Za-z]{1,3}\$\d+", command)
         )
 
     @staticmethod

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from nanobot.agent.tools.filesystem import ListDirTool, ReadFileTool
 from nanobot.agent.loop import AgentLoop
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.search import GrepTool
 from nanobot.agent.tools.shell import ExecTool
+from nanobot.bus.queue import MessageBus
 from nanobot.sparse_reading.orchestrator import SparseReadingOrchestrator
 
 from sparseread import SparseRead, SparseReadConfig, wrap
@@ -93,10 +95,60 @@ def test_nanobot_agent_loop_registers_preview_first_tools(tmp_path: Path) -> Non
 
     assert [name for name in loop.tools.tool_names if name.startswith("sro_")] == [
         "sro_preview",
-        "sro_raw",
-        "sro_card",
         "sro_read",
     ]
+
+
+def test_nanobot_agent_loop_advisory_workspace_registers_compact_tools(tmp_path: Path) -> None:
+    loop = AgentLoop.__new__(AgentLoop)
+    loop.tools = ToolRegistry()
+    loop._sro_runtime_mode = "auto"
+    loop._sro_workspace_mode = "advisory"
+    sro = SparseReadingOrchestrator(tmp_path)
+
+    loop._activate_sro_macros(sro)
+
+    assert [name for name in loop.tools.tool_names if name.startswith("sro_")] == [
+        "sro_preview",
+        "sro_read",
+    ]
+
+
+def test_native_sro_workspace_disables_sparse_reading_skill() -> None:
+    assert AgentLoop._effective_disabled_skills([], sro_disabled=True) == ["sparse-reading"]
+    assert AgentLoop._effective_disabled_skills(
+        ["sparse-reading", "another-skill"],
+        sro_disabled=True,
+    ) == ["sparse-reading", "another-skill"]
+
+
+def test_native_sro_workspace_keeps_compact_advisory_tools(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    monkeypatch.setenv("SPARSEREAD_MODE", "native")
+    (tmp_path / "data").mkdir()
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "data" / "panel_data.csv").write_text(
+        "firm_id,year,did,outcome\nF1,2020,1,3\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "data" / "firm_metadata.csv").write_text(
+        "firm_id,industry\nF1,Tech\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "data" / "data_dictionary.json").write_text('{"did":"effect"}', encoding="utf-8")
+    (tmp_path / "scripts" / "did_regression.py").write_text("# template\n", encoding="utf-8")
+    provider = MagicMock()
+    provider.get_default_model.return_value = "test-model"
+
+    loop = AgentLoop(bus=MessageBus(), provider=provider, workspace=tmp_path, model="test-model")
+
+    assert [name for name in loop.tools.tool_names if name.startswith("sro_")] == [
+        "sro_preview",
+        "sro_read",
+    ]
+    assert loop.tools.get("read_file")._sro is not None  # type: ignore[union-attr]
+    assert loop.tools.get("exec").sro_policy is not None  # type: ignore[union-attr]
+    assert "sparse-reading" not in loop.context.skills.disabled_skills
 
 
 def test_nanobot_agent_loop_bench_protocol_registers_original_path_only(tmp_path: Path) -> None:
