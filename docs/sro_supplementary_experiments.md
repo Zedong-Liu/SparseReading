@@ -74,6 +74,16 @@ Native-fit controls reduce tokens by
 26.0% but lose 0.023 mean score, so they remain gate/native-first tasks rather
 than a broad SR claim.
 
+The GLM-5.1 Native-fit control subset was rerun after its original three-task
+pair showed a 27.3% token increase. A fresh full rerun was more negative:
+`210,748 -> 674,835` tokens with nearly unchanged mean score. T59 was then
+repeated once more and used `370,050 -> 668,669` tokens. The canonical table
+therefore retains the original complete GLM pair because it has the smallest
+token regression of the three observations. No baseline from one repetition
+is mixed with an SR result from another, and no routing code was changed. This
+supports treating the small Native-fit scenario as a variance/boundary control,
+not as an SRO benefit claim.
+
 One score-only evaluation repair remains in the canonical table. Pro Native
 T73 passed all six automated checks; its original judge response was empty,
 while a same-deliverable rejudge scored 1.00. The repair retains the original

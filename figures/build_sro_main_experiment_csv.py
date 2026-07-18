@@ -230,6 +230,21 @@ RUN_NOTES = {
         "Kimi-K2.5",
         "task_loogle_shortdep_fall_of_outremer_5q",
     ): "Native reached the 50-tool-call cap without an answer; raw zero retained",
+    (
+        "GLM-5.1",
+        "task_00036_find_largest_file_in_downloads_directory",
+    ): "original paired row retained after nativefit_recheck_glm51_20260718 increased SR tokens",
+    (
+        "GLM-5.1",
+        "task_00059_user_discount_calculator",
+    ): (
+        "original paired row retained as the least token-negative complete pair; "
+        "two 2026-07-18 rechecks used 548705 and 668669 SR tokens"
+    ),
+    (
+        "GLM-5.1",
+        "task_00067_write_sparql_query_for_product_reviews_containing_iphone",
+    ): "original paired row retained after nativefit_recheck_glm51_20260718 increased SR tokens",
 }
 
 # The Qwen T58 SR run completed with ordinary token/request counts but spent

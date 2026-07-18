@@ -467,3 +467,17 @@ Verification:
 - Canonical data and all main/v2 figures were regenerated from the mixed
   provenance builder, with all five models' audit rows sourced from the final
   paired runsets.
+
+## 2026-07-18: GLM Native-fit variance recheck
+
+The original GLM-5.1 T36/T59/T67 pair used `377,838 -> 481,005` tokens. The
+fresh `nativefit_recheck_glm51_20260718` full pair used
+`210,748 -> 674,835` tokens, while mean score was effectively flat. A final
+T59-only pair, `nativefit_recheck_glm51_r2_20260718`, used
+`370,050 -> 668,669` tokens. T59 was the dominant source of repeated long
+generation loops.
+
+Decision: retain the original complete pair because it is the least
+token-negative observation. Do not mix modes across repetitions and do not
+change product routing for this Native-fit boundary. The canonical CSV notes
+the retained provenance, and all figures are regenerated from that table.
