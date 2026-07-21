@@ -304,15 +304,21 @@ else
     # Wait for a slot if at max capacity
     while [[ ${#pids[@]} -ge $PARALLEL_JOBS ]]; do
       new_pids=()
+      live_count=0
       for pid in "${pids[@]}"; do
         if kill -0 "$pid" 2>/dev/null; then
-          new_pids+=("$pid")
+          new_pids[$live_count]="$pid"
+          live_count=$((live_count + 1))
         elif ! wait "$pid"; then
           echo "benchmark job failed (pid=$pid)" >&2
           failures=$((failures + 1))
         fi
       done
-      pids=("${new_pids[@]}")
+      if [[ "$live_count" -eq 0 ]]; then
+        pids=()
+      else
+        pids=("${new_pids[@]}")
+      fi
       [[ ${#pids[@]} -ge $PARALLEL_JOBS ]] && sleep 1
     done
 
