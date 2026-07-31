@@ -335,6 +335,7 @@ def run_real_opencode(run_dir: Path, task: str, mode: str, args: argparse.Namesp
             "OPENCODE_DISABLE_AUTOUPDATE": "1",
         }
     )
+    env.update(opencode_profile_env(args))
     config = opencode_config(args)
     env["OPENCODE_CONFIG_CONTENT"] = json.dumps(config)
     command = opencode_command_prefix(args) + [
@@ -404,6 +405,24 @@ def opencode_config(args: argparse.Namespace) -> dict[str, Any]:
             }
         },
     }
+
+
+def opencode_profile_env(args: argparse.Namespace) -> dict[str, str]:
+    """Return isolated OpenCode XDG paths for safe parallel model runs."""
+    raw_root = str(getattr(args, "opencode_profile_root", "") or "").strip()
+    if not raw_root:
+        return {}
+    root = Path(raw_root).expanduser().resolve()
+    paths = {
+        "XDG_DATA_HOME": root / "data",
+        "XDG_CACHE_HOME": root / "cache",
+        "XDG_CONFIG_HOME": root / "config",
+        "XDG_STATE_HOME": root / "state",
+        "UV_CACHE_DIR": root / "cache" / "uv",
+    }
+    for path in paths.values():
+        path.mkdir(parents=True, exist_ok=True)
+    return {key: str(path) for key, path in paths.items()}
 
 
 def run_offline(run_dir: Path, task: str, mode: str, args: argparse.Namespace, *, diagnostic_hints: bool = False) -> RunSummary:
@@ -1067,6 +1086,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument(
+        "--opencode-profile-root",
+        default="",
+        help="Per-runner profile root used to isolate OpenCode's XDG data, cache, config, state, and SQLite database.",
+    )
+    parser.add_argument(
         "--diagnostic-hints",
         action="store_true",
         default=False,
@@ -1099,6 +1123,9 @@ def main() -> int:
                 "opencode_plugin_version": "0.1.0",
                 "source_revision": revision,
                 "workspace_realpath": str((run_dir / "runtime").resolve()),
+                "opencode_profile_root": str(Path(args.opencode_profile_root).expanduser().resolve())
+                if args.opencode_profile_root
+                else "",
             }
             json_dump(run_dir / "config" / "manifest.json", manifest)
             if executor == "opencode":

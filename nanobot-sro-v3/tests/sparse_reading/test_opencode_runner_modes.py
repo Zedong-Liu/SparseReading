@@ -143,6 +143,55 @@ def test_both_runners_pass_workspace_root_to_real_opencode(monkeypatch, tmp_path
         assert summary.status == "ok"
 
 
+def test_integrations_runner_isolates_opencode_profile(monkeypatch, tmp_path: Path) -> None:
+    runner = load_module(RUNNER_PATH, "opencode_run_pilot_profile_env_test")
+    run_dir = tmp_path / "run"
+    runtime = run_dir / "runtime"
+    runtime.mkdir(parents=True)
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
+        captured["env"] = kwargs["env"]
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(runner, "task_prompt", lambda *_args, **_kwargs: "prompt")
+    monkeypatch.setattr(runner, "collect_filesystem_trace", lambda *_args, **_kwargs: {
+        "native_truncations": 0,
+        "sro_calls": 0,
+        "tool_calls": 0,
+        "requests": 0,
+        "tokens": 0,
+        "ready_after_reads": 0,
+    })
+    monkeypatch.setattr(runner, "expected_deliverable_written", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    profile = tmp_path / "profile"
+    args = SimpleNamespace(
+        python=sys.executable,
+        bridge_command="",
+        opencode_cmd="opencode",
+        model="paratera/DeepSeek-V4-Flash",
+        api_base_url="https://example.test/v1",
+        timeout=1,
+        opencode_profile_root=str(profile),
+    )
+
+    runner.run_real_opencode(
+        run_dir,
+        "task_loogle_shortdep_fall_of_outremer_3q_followup",
+        "plugin_auto",
+        args,
+    )
+
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert env["XDG_DATA_HOME"] == str((profile / "data").resolve())
+    assert env["XDG_CACHE_HOME"] == str((profile / "cache").resolve())
+    assert env["XDG_CONFIG_HOME"] == str((profile / "config").resolve())
+    assert env["XDG_STATE_HOME"] == str((profile / "state").resolve())
+    assert env["UV_CACHE_DIR"] == str((profile / "cache" / "uv").resolve())
+
+
 def test_both_runners_canonicalize_symlinked_workspace(monkeypatch, tmp_path: Path) -> None:
     physical = tmp_path / "physical"
     runtime = physical / "runtime"
