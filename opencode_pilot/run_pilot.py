@@ -283,11 +283,12 @@ def opencode_gate_profile(runtime: Path, task: str) -> dict[str, Any]:
 
 def run_real_opencode(run_dir: Path, task: str, mode: str, args: argparse.Namespace, *, diagnostic_hints: bool = False) -> RunSummary:
     prompt = task_prompt(run_dir, task, mode, diagnostic_hints=diagnostic_hints)
+    runtime_root = (run_dir / "runtime").resolve()
     env = os.environ.copy()
     env.update(
         {
-            "SPARSEREAD_PROJECT_ROOT": str(ROOT),
-            "SPARSEREAD_WORKSPACE_ROOT": str(run_dir / "runtime"),
+            "SPARSEREAD_PROJECT_ROOT": str(ROOT.resolve()),
+            "SPARSEREAD_WORKSPACE_ROOT": str(runtime_root),
             "SPARSEREAD_POLICY": opencode_policy(mode),
             "SPARSEREAD_PYTHON": args.python,
             "SPARSEREAD_BRIDGE_COMMAND": json.dumps(bridge_command_prefix(args)),
@@ -296,11 +297,11 @@ def run_real_opencode(run_dir: Path, task: str, mode: str, args: argparse.Namesp
     )
     config = opencode_config(args)
     env["OPENCODE_CONFIG_CONTENT"] = json.dumps(config)
-    command = opencode_command_prefix(args) + ["run", "-m", args.model, "--format", "json", "--", prompt]
+    command = opencode_command_prefix(args) + ["run", "--auto", "-m", args.model, "--format", "json", "--", prompt]
     started = time.time()
     proc = subprocess.run(
         command,
-        cwd=run_dir / "runtime",
+        cwd=runtime_root,
         env=env,
         text=True,
         stdout=subprocess.PIPE,
@@ -496,6 +497,32 @@ def opencode_command_prefix(args: argparse.Namespace) -> list[str]:
             raise ValueError(f"invalid --opencode-cmd JSON array: {args.opencode_cmd!r}")
         return value
     return [raw]
+
+
+def command_version(command: list[str]) -> str:
+    proc = subprocess.run(
+        command + ["--version"],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=60,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"version probe failed ({proc.returncode}): {' '.join(command)}")
+    return proc.stdout.strip().splitlines()[0]
+
+
+def source_revision() -> str:
+    proc = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=30,
+    )
+    return proc.stdout.strip() if proc.returncode == 0 else ""
 
 
 def bridge_request(proc: subprocess.Popen[str], method: str, params: dict[str, Any]) -> Any:
@@ -1004,6 +1031,8 @@ def main() -> int:
         raise SystemExit("OpenCode CLI not found. Install `opencode`, set OPENCODE_PATH, or rerun with --offline.")
     if executor == "opencode" and "API_KEY" not in os.environ:
         raise SystemExit("API_KEY must be set for the OpenCode runner API; do not reuse subagent provider keys.")
+    framework_version = command_version(opencode_command_prefix(args)) if executor == "opencode" else "offline"
+    revision = source_revision()
     summaries: list[RunSummary] = []
     for task in args.tasks:
         for mode in args.modes:
@@ -1015,6 +1044,10 @@ def main() -> int:
                 "executor": executor,
                 "source_runtime": str(source_runtime(task)),
                 "run_dir": str(run_dir),
+                "opencode_version": framework_version,
+                "opencode_plugin_version": "0.1.0",
+                "source_revision": revision,
+                "workspace_realpath": str((run_dir / "runtime").resolve()),
             }
             json_dump(run_dir / "config" / "manifest.json", manifest)
             if executor == "opencode":

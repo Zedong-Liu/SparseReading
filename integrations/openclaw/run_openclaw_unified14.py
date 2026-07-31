@@ -32,6 +32,8 @@ from run_openclaw_validation import (
     checked,
     estimate_transcript_tokens,
     extract_final_prompt_tokens,
+    framework_manifest,
+    inspect_plugin_runtime,
     iter_session_events,
     openclaw_cmd,
     parse_agent_json,
@@ -491,6 +493,10 @@ def run_case(task: LoadedTask, mode: str, run_root: Path, profile: str, model: s
         shutil.copy2(session_file, case_root / "session.jsonl")
     else:
         (case_root / "session.jsonl").write_text("", encoding="utf-8")
+    if proc.returncode != 0:
+        raise RuntimeError(f"OpenClaw agent failed ({proc.returncode}): {proc.stderr[-2000:]}")
+    if not session_file or not session_file.exists() or not events:
+        raise RuntimeError("OpenClaw returned no readable latest-format session transcript")
 
     metrics = session_metrics(events)
     metrics.update(estimate_transcript_tokens(events, result))
@@ -717,8 +723,22 @@ def main() -> int:
 
     print("[openclaw-unified14] preflight: plugin runtime", flush=True)
     ensure_plugin_runtime()
+    set_plugin_enabled(args.profile, True, policy="auto", workspace=run_root)
     print("[openclaw-unified14] preflight: plugin inspect", flush=True)
-    checked(openclaw_cmd("--profile", args.profile, "plugins", "inspect", "sparseread-openclaw", "--json"), timeout=120)
+    plugin_inspect = inspect_plugin_runtime(args.profile)
+    manifest = {
+        **framework_manifest(args.model),
+        "profile": args.profile,
+        "run_root": str(run_root),
+        "tasks": task_ids,
+        "modes": modes,
+        "diagnostic_hints": args.diagnostic_hints,
+    }
+    (run_root / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (run_root / "plugin_inspect.json").write_text(
+        json.dumps(plugin_inspect, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     print("[openclaw-unified14] preflight: ok", flush=True)
 
     results: list[dict[str, Any]] = []

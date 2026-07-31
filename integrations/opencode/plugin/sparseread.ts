@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import path from "node:path"
 import { tool, type Plugin, type ToolResult } from "@opencode-ai/plugin"
@@ -261,9 +261,18 @@ function parentChain(start: string): string[] {
   }
 }
 
+function canonicalPath(value: string): string {
+  const resolved = path.resolve(value)
+  try {
+    return realpathSync.native(resolved)
+  } catch {
+    return resolved
+  }
+}
+
 function resolveWorkspaceRoot(worktree: string, directory: string): string {
   const explicit = process.env.SPARSEREAD_WORKSPACE_ROOT?.trim()
-  if (explicit) return path.resolve(explicit)
+  if (explicit) return canonicalPath(explicit)
   const seen = new Set<string>()
   const candidates = [directory, worktree, process.cwd()]
   for (const candidate of candidates) {
@@ -271,10 +280,10 @@ function resolveWorkspaceRoot(worktree: string, directory: string): string {
     for (const current of parentChain(candidate)) {
       if (seen.has(current)) continue
       seen.add(current)
-      if (existsSync(path.join(current, ".opencode", "sparseread.json"))) return current
+      if (existsSync(path.join(current, ".opencode", "sparseread.json"))) return canonicalPath(current)
     }
   }
-  return worktree || process.cwd() || directory
+  return canonicalPath(worktree || process.cwd() || directory)
 }
 
 export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, options?: SparseReadPluginOptions) => {
@@ -282,7 +291,9 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
   debugLog({ event: "workspace_root", directory, worktree, workspaceRoot })
   const installed = readWorkspaceConfig(workspaceRoot)
   const policy = normalizePolicy(options?.policy ?? installed?.policy ?? process.env.SPARSEREAD_POLICY)
-  const projectRoot = options?.projectRoot ?? installed?.projectRoot ?? process.env.SPARSEREAD_PROJECT_ROOT ?? process.cwd()
+  const projectRoot = canonicalPath(
+    options?.projectRoot ?? installed?.projectRoot ?? process.env.SPARSEREAD_PROJECT_ROOT ?? process.cwd(),
+  )
   const python = options?.python ?? installed?.python ?? process.env.SPARSEREAD_PYTHON ?? "python3"
   const bridgeModule = options?.bridgeModule ?? installed?.bridgeModule ?? "sparseread.bridge.opencode"
   const mode = options?.mode ?? installed?.mode ?? process.env.SPARSEREAD_MODE ?? "auto"

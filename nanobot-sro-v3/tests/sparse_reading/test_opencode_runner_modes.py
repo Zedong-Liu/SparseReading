@@ -103,8 +103,62 @@ def test_both_runners_pass_workspace_root_to_real_opencode(monkeypatch, tmp_path
 
         env = captured["env"]
         assert isinstance(env, dict)
-        assert captured["cwd"] == runtime
-        assert env["SPARSEREAD_PROJECT_ROOT"] == str(runner.ROOT)
-        assert env["SPARSEREAD_WORKSPACE_ROOT"] == str(runtime)
+        assert captured["cwd"] == runtime.resolve()
+        assert env["SPARSEREAD_PROJECT_ROOT"] == str(runner.ROOT.resolve())
+        assert env["SPARSEREAD_WORKSPACE_ROOT"] == str(runtime.resolve())
         assert env["SPARSEREAD_POLICY"] == "auto"
+        assert "--auto" in captured["cmd"]
         assert summary.status == "ok"
+
+
+def test_both_runners_canonicalize_symlinked_workspace(monkeypatch, tmp_path: Path) -> None:
+    physical = tmp_path / "physical"
+    runtime = physical / "runtime"
+    runtime.mkdir(parents=True)
+    linked = tmp_path / "linked"
+    linked.symlink_to(physical, target_is_directory=True)
+
+    for module_path, module_name in [
+        (RUNNER_PATH, "opencode_run_pilot_symlink_test"),
+        (PILOT_RUNNER_PATH, "opencode_pilot_run_pilot_symlink_test"),
+    ]:
+        runner = load_module(module_path, module_name)
+        captured: dict[str, object] = {}
+
+        def fake_run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
+            captured["cmd"] = cmd
+            captured["cwd"] = kwargs["cwd"]
+            captured["env"] = kwargs["env"]
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        monkeypatch.setattr(runner, "task_prompt", lambda *_args, **_kwargs: "prompt")
+        monkeypatch.setattr(runner, "collect_filesystem_trace", lambda *_args, **_kwargs: {
+            "native_truncations": 0,
+            "sro_calls": 0,
+            "tool_calls": 0,
+            "requests": 0,
+            "tokens": 0,
+            "ready_after_reads": 0,
+        })
+        monkeypatch.setattr(runner, "expected_deliverable_written", lambda *_args, **_kwargs: False)
+        monkeypatch.setattr(runner.subprocess, "run", fake_run)
+        args = SimpleNamespace(
+            python=sys.executable,
+            bridge_command="",
+            opencode_cmd='["npx","-y","opencode-ai@1.18.10"]',
+            model="paratera/DeepSeek-V4-Flash",
+            api_base_url="https://example.test/v1",
+            timeout=1,
+        )
+
+        runner.run_real_opencode(
+            linked,
+            "task_loogle_shortdep_fall_of_outremer_3q_followup",
+            "plugin_auto",
+            args,
+        )
+
+        env = captured["env"]
+        assert isinstance(env, dict)
+        assert captured["cwd"] == runtime
+        assert env["SPARSEREAD_WORKSPACE_ROOT"] == str(runtime)

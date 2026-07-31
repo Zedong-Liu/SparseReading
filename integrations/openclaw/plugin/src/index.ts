@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import path from "node:path"
 import { Type } from "typebox"
-import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry"
+import { definePluginEntry, type OpenClawPluginDefinition } from "openclaw/plugin-sdk/plugin-entry"
 
 type Json = unknown
 type JsonObject = Record<string, Json>
@@ -440,7 +440,7 @@ async function recordNative(
   })
 }
 
-const sparseReadPlugin: any = definePluginEntry({
+const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
   id: "sparseread-openclaw",
   name: "SparseRead for OpenClaw",
   description: "Adds SparseRead tools and optional runtime hooks.",

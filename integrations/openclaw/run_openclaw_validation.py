@@ -121,6 +121,34 @@ def openclaw_cmd(*args: str) -> list[str]:
     return [OPENCLAW_BIN, *args]
 
 
+def command_output(cmd: list[str], *, timeout: int = 60) -> str:
+    return checked(cmd, timeout=timeout).stdout.strip()
+
+
+def source_revision() -> str:
+    proc = run(["git", "rev-parse", "HEAD"], timeout=30)
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def source_dirty() -> bool:
+    proc = run(["git", "status", "--porcelain"], timeout=30)
+    return bool(proc.stdout.strip()) if proc.returncode == 0 else True
+
+
+def framework_manifest(model: str) -> dict[str, Any]:
+    package = json.loads((PLUGIN_DIR / "package.json").read_text(encoding="utf-8"))
+    return {
+        "openclaw_version": command_output(openclaw_cmd("--version")),
+        "node_version": command_output(["node", "--version"]),
+        "openclaw_plugin_version": package["version"],
+        "openclaw_sdk_version": package["devDependencies"]["openclaw"],
+        "typebox_version": package["dependencies"]["typebox"],
+        "model": model,
+        "source_revision": source_revision(),
+        "source_dirty": source_dirty(),
+    }
+
+
 def extract_prompt(task_md: Path) -> str:
     text = task_md.read_text(encoding="utf-8")
     match = re.search(r"^## Prompt\s*\n(?P<prompt>.*?)(?=^## |\Z)", text, re.M | re.S)
@@ -186,13 +214,48 @@ def set_workspace(profile: str, workspace: Path) -> None:
 
 
 def ensure_plugin_available(profile: str) -> None:
-    proc = run(openclaw_cmd("--profile", profile, "plugins", "inspect", "sparseread-openclaw", "--json"), timeout=120)
-    if proc.returncode == 0:
-        return
-    raise RuntimeError(
-        "OpenClaw SparseRead plugin is not installed for this profile. "
-        f"Build/install {PLUGIN_DIR} first, or run the setup steps in integrations/openclaw/README.md.\n{proc.stderr}"
+    inspect_plugin_runtime(profile)
+
+
+def inspect_plugin_runtime(profile: str) -> dict[str, Any]:
+    proc = checked(
+        openclaw_cmd(
+            "--profile",
+            profile,
+            "plugins",
+            "inspect",
+            "sparseread-openclaw",
+            "--runtime",
+            "--json",
+        ),
+        timeout=120,
     )
+    payload = json.loads(proc.stdout)
+    plugin = payload.get("plugin") if isinstance(payload, dict) else {}
+    tools = {
+        name
+        for registration in payload.get("tools", [])
+        if isinstance(registration, dict)
+        for name in registration.get("names", [])
+        if isinstance(name, str)
+    }
+    hooks = {
+        hook.get("name")
+        for hook in payload.get("typedHooks", [])
+        if isinstance(hook, dict) and isinstance(hook.get("name"), str)
+    }
+    expected_tools = {"sro_preview", "sro_raw", "sro_card", "sro_read", "sro_decide", "sro_trace"}
+    expected_hooks = {"before_tool_call", "after_tool_call", "before_prompt_build", "llm_output", "agent_end"}
+    diagnostics = payload.get("diagnostics", [])
+    if not isinstance(plugin, dict) or plugin.get("status") != "loaded":
+        raise RuntimeError(f"OpenClaw SparseRead plugin did not load: {plugin}")
+    if tools != expected_tools:
+        raise RuntimeError(f"OpenClaw SparseRead tool mismatch: expected={sorted(expected_tools)} actual={sorted(tools)}")
+    if hooks != expected_hooks:
+        raise RuntimeError(f"OpenClaw SparseRead hook mismatch: expected={sorted(expected_hooks)} actual={sorted(hooks)}")
+    if diagnostics:
+        raise RuntimeError(f"OpenClaw SparseRead runtime diagnostics: {diagnostics}")
+    return payload
 
 
 def sro_collect_call_example(task: TaskSpec) -> dict[str, Any]:
@@ -845,7 +908,20 @@ def main() -> int:
         print(f"[openclaw-validation] recomputed report: {run_root / 'openclaw_sr_validation_report.md'}", flush=True)
         return 0
 
-    ensure_plugin_available(args.profile)
+    set_plugin_enabled(args.profile, True, policy="auto", workspace=run_root)
+    plugin_inspect = inspect_plugin_runtime(args.profile)
+    manifest = {
+        **framework_manifest(args.model),
+        "profile": args.profile,
+        "run_root": str(run_root),
+        "tasks": [task.task_id for task in TASKS],
+        "modes": modes,
+    }
+    (run_root / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (run_root / "plugin_inspect.json").write_text(
+        json.dumps(plugin_inspect, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     for task in TASKS:
         for mode in modes:
             print(f"[openclaw-validation] running {task.task_id} mode={mode}", flush=True)
