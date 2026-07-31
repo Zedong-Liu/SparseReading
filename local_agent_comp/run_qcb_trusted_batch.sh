@@ -157,8 +157,9 @@ write_manifest() {
   local command="$6"
   local nanobot_version source_revision source_dirty
   nanobot_version="$(
-    PYTHONPATH="$ROOT/nanobot-sro-v3" \
-      python -c 'import nanobot; print(nanobot.__version__)'
+    python -c \
+      'import pathlib, tomllib; print(tomllib.loads(pathlib.Path(__import__("sys").argv[1]).read_text())["project"]["version"])' \
+      "$ROOT/nanobot-sro-v3/pyproject.toml"
   )"
   source_revision="$(git -C "$ROOT" rev-parse HEAD)"
   if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no)" ]]; then
