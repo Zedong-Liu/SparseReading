@@ -1,0 +1,7 @@
+a_stock_announcements\config.yaml
+a_stock_announcements\fetch-audit.md
+a_stock_announcements\fetch_state.json
+a_stock_announcements\output\announcements_2026-02-09.json
+a_stock_announcements\requirements.txt
+a_stock_announcements\run_scheduled_fetch.py
+task.md

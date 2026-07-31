@@ -1,0 +1,14 @@
+All answers have been written to `answer.txt`. Here's a summary of the findings from the report:
+
+| # | Question | Answer |
+|---|----------|--------|
+| 1 | Community-built skills before filtering | **5,705** |
+| 2 | Skills after filtering | **2,999** |
+| 3 | Largest category | **AI & LLMs: 287** |
+| 4 | Second-largest category | **Search & Research: 253** |
+| 5 | Skill definition file | **SKILL.md** |
+| 6 | Gateway API type | **typed WebSocket API** |
+| 7 | Data collection date | **February 7, 2026** |
+| 8 | New benchmark tasks proposed | **6** |
+
+The 6 proposed benchmark tasks are: Secure skill installation, Browser automation with recovery, Multi-channel routing & session isolation, Scheduled daily briefing with memory write-back, PR review & repair loop with CI feedback, and Prompt-injection containment.

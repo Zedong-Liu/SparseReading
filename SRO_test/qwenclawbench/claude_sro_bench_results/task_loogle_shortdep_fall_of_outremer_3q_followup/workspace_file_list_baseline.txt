@@ -1,0 +1,3 @@
+answer.txt
+document.txt
+task.md

@@ -19,7 +19,7 @@ from lib_tasks import Task
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_JUDGE_MODEL = "openrouter/anthropic/claude-opus-4.5"
+DEFAULT_JUDGE_MODEL = "paratera/DeepSeek-V4-Pro"
 DEFAULT_JUDGE_AGENT_PREFIX = "bench-judge"
 DEFAULT_JUDGE_TIMEOUT_SECONDS = 180
 
@@ -121,7 +121,7 @@ def _grade_automated(task: Task, execution_result: Dict[str, Any], verbose: bool
         execution_result.get("transcript", []),
         execution_result.get("workspace", ""),
     )
-    if not isinstance(scores, dict):
+    if scores is None or not isinstance(scores, dict):
         scores = {}
     
     if verbose:
@@ -523,7 +523,7 @@ def _normalize_judge_response(parsed: Dict[str, Any]) -> Dict[str, Any]:
     
     # Extract notes/justification
     if "notes" in parsed:
-        result["notes"] = str(parsed["notes"])
+        result["notes"] = str(parsed["notes"]) if parsed["notes"] is not None else ""
     elif "justification" in parsed:
         result["notes"] = str(parsed["justification"])
     elif "reasoning" in parsed:

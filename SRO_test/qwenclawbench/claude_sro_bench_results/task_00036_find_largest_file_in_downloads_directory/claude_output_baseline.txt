@@ -1,0 +1,20 @@
+Done! Here's the answer:
+
+---
+
+**Largest text-like file:** `annual_sales_report_2024.csv` — **21,354 bytes**
+
+**All text-like files considered** (ranked by size):
+
+| File | Size |
+|---|---|
+| `annual_sales_report_2024.csv` | **21,354 B** ← largest |
+| `server_access.log` | 4,926 B |
+| `product_catalog_api_response.json` | 4,271 B |
+| `README_setup.txt` | 393 B |
+| `backup.sh` | 257 B |
+| `app_config.yaml` | 202 B |
+
+**Excluded** (non-text): `meeting_notes_Q4.pdf` (PDF), `old_photos_archive.zip` (archive), `screenshot_2024-11-20.png` (image).
+
+The report has been saved to `downloads/text_file_size_report.txt`.

@@ -1,0 +1,25 @@
+The report is ready at **`reports/2026_pnl_analysis.md`**. Here's a summary of what it covers:
+
+### Top-Line Results
+
+| Component | Amount |
+|---|---|
+| Total Underwriting Fees | **+$746.38 MM** |
+| Net Trading P&L | **−$455.36 MM** |
+| **Net Total P&L** | **+$291.02 MM** |
+
+### Key Findings
+
+**Deal Classification (by total P&L):**
+- **16 profitable** — led by BlueWave Semiconductor (+$74.33 MM) and Redwood Insurance Holdings (+$73.88 MM)
+- **8 loss-making** — the worst were Atlas Financial Group (−$61.61 MM, credit downgrade) and TrueNorth Telecom (−$59.01 MM, regulatory investigation)
+
+**Four "fee-subsidized" deals** had negative trading P&L but stayed profitable purely because fees covered the loss: Quantum Dynamics, Stellar Biomedical, DataStream Analytics, and Pinnacle Consumer Brands.
+
+**Year-over-Year (2024–2025 vs 2026):**
+- All **37 historical deals** (2024–2025) were profitable — **zero loss-making transactions**
+- 2026 saw **8 loss-making deals** (−$210.90 MM aggregate) — the first time the book has recorded deal-level losses in the dataset
+
+**Data Caveat:** Coverage is through **October 2026 only** — Q4 is not yet reflected, so the final full-year figure will differ.
+
+The report also includes sector breakdowns, role-based performance, deal lead rankings, and four actionable recommendations centered on fee dependency and trading risk controls.

@@ -1,0 +1,3 @@
+The total R&D investment reported by Kaima B (900953) for 2021 is **87,122,954.71 yuan**, found in the "研发投入合计" (Total R&D Investment) row of the annual report.
+
+The answer has been written to `answer.txt` as `87122954.71`.

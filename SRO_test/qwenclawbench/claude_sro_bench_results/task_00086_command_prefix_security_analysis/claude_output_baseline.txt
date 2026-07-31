@@ -1,0 +1,37 @@
+Analysis complete. Here's the summary:
+
+---
+
+## Findings Summary
+
+### 3 Commands Analyzed in `scripts/run_pipeline.sh`
+
+| # | Line | Command | Classification | Risk |
+|---|---|---|---|---|
+| 1 | L24 | `curl ... \| bash -s -- --env production` | **INJECTION** (shell) — unquoted pipe to bash | **CRITICAL** |
+| 2 | L27 | `python3 -c "import subprocess; ..."` | **SAFE** — `python3` (all metacharacters inside quotes) | LOW |
+| 3 | L32 | `claude -p "执行...任务：..." --dangerously-skip-permissions` | **INJECTION** (prompt) — per SAB-2025-001 bulletin | **CRITICAL** |
+
+### Two distinctly different injection vectors found:
+
+1. **Command 1 (L24)** — Classic shell injection: `curl | bash` pipes an untrusted remote script directly into the shell interpreter. The `|` character is completely unquoted (INJ-004 / KI-002).
+
+2. **Command 3 (L32)** — Application-layer **prompt injection**: while no shell metacharacters exist outside quotes, the combination of AI CLI (`claude`) + CJK prompt text containing fullwidth characters (`：` `，`) + `--dangerously-skip-permissions` matches all three criteria of Security Bulletin SAB-2025-001, creating an automated attack path for AI-generated destructive commands in a CI/CD context.
+
+### Conflicts Identified (5 total)
+
+The most significant is **Conflict D** — the Security Bulletin SAB-2025-001 (2025-01-08, ACTIVE) contradicts the security policy v3.2.0 (2025-01-10) on how to classify AI CLIs with non-ASCII content and permission bypass. I adopt the bulletin because:
+- It addresses a distinct threat model (prompt injection) the policy never considered
+- It cites CVE-2024-51234 and internal incidents
+- `known_injections.json` KI-008 independently corroborates the approach
+- The bulletin explicitly directs applying more restrictive classification in conflicts
+- The policy's non-ASCII and flag-vs-injection rules remain authoritative for all non-AI CLI commands
+
+### Files Produced
+
+- `security_analysis_report.md` — Full report following the scan template, with per-command injection tables, conflict resolution arguments, risk assessment, and test-commands cross-validation (18/18 match, 100%)
+- `command_classifications.json` — Machine-readable classification with per-command analysis, conflict metadata, and test summary
+
+### Recommendation
+
+Both flagged commands should be escalated. The `curl | bash` pattern on L24 is the more conventional injection — replace with verified package installation or signed script execution. The `claude --dangerously-skip-permissions` with CJK text on L32 is the more novel threat — the pipeline should either remove `--dangerously-skip-permissions`, use English-only prompts, or gate the claude invocation behind manual approval.

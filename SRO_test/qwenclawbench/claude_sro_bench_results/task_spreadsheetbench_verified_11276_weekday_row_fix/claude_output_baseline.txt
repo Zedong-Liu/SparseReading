@@ -1,0 +1,13 @@
+All 31 cells in row 3 (F3:AJ3) correctly match the expected weekday values. Here's a summary of what was done:
+
+**Problem:** The formula `=TEXT(F4,"DD")` was returning the day-of-month number (e.g., "21") instead of the weekday name.
+
+**Fix:** Changed the format code from `"DD"` (day number) to `"ddd"` (abbreviated weekday name), giving `=TEXT(F4,"ddd")`. This returns `"Wed"`, `"Thu"`, etc.
+
+The same formula was applied to all 31 cells in row 3 (columns F through AJ), each referencing its corresponding date cell in row 4. All values verified correctly:
+
+- **F3:** `=TEXT(F4,"ddd")` → "Wed" (2015-10-21)
+- **G3:** `=TEXT(G4,"ddd")` → "Thu" (2015-10-22)
+- ...through **AJ3:** `=TEXT(AJ4,"ddd")` → "Fri" (2015-11-20)
+
+The completed file is saved as `answer.xlsx`.

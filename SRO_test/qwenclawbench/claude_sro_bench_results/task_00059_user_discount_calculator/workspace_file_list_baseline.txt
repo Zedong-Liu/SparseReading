@@ -1,0 +1,8 @@
+__pycache__\discount_calculator.cpython-313.pyc
+config\promotion_schedule.json
+data\discount_rules.json
+data\product_catalog.csv
+data\users.csv
+discount_calculator.py
+docs\discount_policy.md
+task.md

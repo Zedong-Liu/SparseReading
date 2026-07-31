@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "sparseread": {
+      "command": "uv",
+      "args": [
+        "--project",
+        "C:/Users/xule/Desktop/SparseReading/nanobot-sro-v3",
+        "run",
+        "python",
+        "-m",
+        "sparseread.bridge.claude_mcp",
+        "--workspace",
+        "."
+      ],
+      "env": {
+        "SRO_ENABLED": "1"
+      }
+    }
+  }
+}

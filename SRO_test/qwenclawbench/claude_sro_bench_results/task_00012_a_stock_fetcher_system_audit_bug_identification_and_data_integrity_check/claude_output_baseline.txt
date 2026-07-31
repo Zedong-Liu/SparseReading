@@ -1,0 +1,19 @@
+`fetch-audit.md` is written to `a_stock_announcements/fetch-audit.md`. Here's the executive summary:
+
+### 3 High-Severity Bugs Found
+
+| Bug | Description |
+|---|---|
+| **B1 — SSE truncation** | The SSE fetch only gets page 1 (30 announcements max), while SZSE paginates through 3 pages. On heavy disclosure days, 100+ SSE announcements could be silently missed. |
+| **B3 — Random `seen_ids` trimming** | `list(seen)[-5000:]` on a set is order-arbitrary — you're not keeping the most recent IDs but a random slice, so old announcements can be re-fetched over time. |
+| **B5 — Crash-safety ordering** | State is saved *after* the output file. If a crash hits between them, the next run duplicates data into the output. |
+
+### Data Gap: 25 IDs in state, not in output
+
+`fetch_state.json` tracks 36 `seen_ids`, but the output file has only 11 records. The 25 missing IDs (1256789401–1256789515) are from a prior run — likely from a different date whose output file has been removed. No log files exist to verify the history.
+
+### Flagged Announcements
+
+5 **priority** items (API-marked important) — Ping An Bank annual results pre-announcement, Ping An Insurance premiums, CATL major contract, Zijin Mining overseas acquisition, CMB capital bonds. Plus 4 **watch** items where the API says `important: false` but the content is likely material (Moutai insider trading, Wuliangye board resolution, BYD monthly sales, SMIC subsidy).
+
+The **quick wins** section at the bottom lists 4 fixes that take ~10 minutes total, with SSE pagination being the most critical gap to patch before market open.
