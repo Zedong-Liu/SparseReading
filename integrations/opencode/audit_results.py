@@ -63,6 +63,18 @@ def trace_events(case_dir: Path) -> list[dict[str, Any]]:
     return events if isinstance(events, list) else []
 
 
+def manifest_fields(case_dir: Path) -> dict[str, Any]:
+    path = case_dir / "config" / "manifest.json"
+    if not path.exists():
+        return {}
+    manifest = read_json(path)
+    return {
+        key: manifest[key]
+        for key in ("runset", "opencode_version", "source_revision", "opencode_profile_root")
+        if key in manifest
+    }
+
+
 def audit_case(case_dir: Path) -> dict[str, Any]:
     summary = read_json(case_dir / "summary.json")
     classification = case_classification(case_dir, summary)
@@ -93,6 +105,7 @@ def audit_case(case_dir: Path) -> dict[str, Any]:
         "tokens": summary.get("tokens"),
         "duration_seconds": duration,
         "automated_grade": grade,
+        "manifest": manifest_fields(case_dir),
     }
 
 
@@ -163,12 +176,64 @@ def audit_runset(runset: str) -> dict[str, Any]:
     return result
 
 
+def parse_overlay(value: str) -> tuple[str, str, str]:
+    parts = value.split(":", 2)
+    if len(parts) != 3 or not all(parts):
+        raise argparse.ArgumentTypeError("overlay must be RUNSET:TASK:MODE")
+    return parts[0], parts[1], parts[2]
+
+
+def audit_merged_runset(runset: str, overlays: list[tuple[str, str, str]]) -> dict[str, Any]:
+    result = audit_runset(runset)
+    by_key = {(item["task"], item["mode"]): index for index, item in enumerate(result["cases"])}
+    applied: list[dict[str, Any]] = []
+    for recovery_runset, task, mode in overlays:
+        recovery_case = QCB_ROOT / recovery_runset / mode / task
+        if not (recovery_case / "summary.json").exists():
+            raise FileNotFoundError(f"missing recovery case: {recovery_case}")
+        replacement = audit_case(recovery_case)
+        if replacement["classification"] != "valid":
+            raise ValueError(f"recovery case is not valid: {recovery_case}")
+        (recovery_case / "automated_grade.json").write_text(
+            json.dumps(replacement, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        key = (task, mode)
+        if key not in by_key:
+            raise ValueError(f"main runset has no matching case to replace: {key}")
+        original = result["cases"][by_key[key]]
+        replacement["replaces_case_dir"] = original["case_dir"]
+        replacement["recovery_runset"] = recovery_runset
+        result["cases"][by_key[key]] = replacement
+        applied.append({"task": task, "mode": mode, "recovery_runset": recovery_runset, "replaces": original["case_dir"]})
+    result["overlays"] = applied
+    result["aggregate"] = paired_metrics(result["cases"])
+    revisions = sorted(
+        {
+            str(item.get("manifest", {}).get("source_revision"))
+            for item in result["cases"]
+            if item.get("manifest", {}).get("source_revision")
+        }
+    )
+    result["source_revisions"] = revisions
+    (QCB_ROOT / runset / "opencode_automated_audit_merged.json").write_text(
+        json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("runsets", nargs="+", help="QwenClawBench OpenCode runset names")
+    parser.add_argument(
+        "--overlay",
+        action="append",
+        type=parse_overlay,
+        default=[],
+        help="Replace one main case with RUNSET:TASK:MODE; writes a merged audit sidecar.",
+    )
     args = parser.parse_args()
     for runset in args.runsets:
-        result = audit_runset(runset)
+        result = audit_merged_runset(runset, args.overlay) if args.overlay else audit_runset(runset)
         aggregate = result["aggregate"]
         print(
             json.dumps(
