@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -24,6 +25,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -141,13 +144,50 @@ def source_runtime(task: str) -> Path:
     return src
 
 
+def task_workspace_files(task: str) -> list[dict[str, Any]]:
+    task_file = source_runtime(task) / "tasks" / f"{task}.md"
+    task_text = text(task_file)
+    match = re.match(r"^---\s*\n(?P<yaml>.*?)\n---\s*\n", task_text, re.S)
+    if not match:
+        raise ValueError(f"missing task frontmatter: {task_file}")
+    metadata = yaml.safe_load(match.group("yaml")) or {}
+    files = metadata.get("workspace_files") or []
+    return files if isinstance(files, list) else []
+
+
+def materialize_workspace(task: str, workspace: Path) -> None:
+    workspace.mkdir(parents=True, exist_ok=True)
+    assets = source_runtime(task) / "assets"
+    files = task_workspace_files(task)
+    if files:
+        for spec in files:
+            if not isinstance(spec, dict):
+                continue
+            if "content" in spec:
+                dest = workspace / str(spec.get("path") or spec.get("dest") or "input.txt")
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(str(spec["content"]), encoding="utf-8")
+                continue
+            source = assets / str(spec.get("source"))
+            dest = workspace / str(spec.get("dest") or spec.get("source"))
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, dest)
+        return
+    for source in assets.rglob("*"):
+        if source.is_dir():
+            continue
+        dest = workspace / source.relative_to(assets)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, dest)
+
+
 def prepare_run(runset: str, task: str, mode: str, *, force: bool) -> Path:
     run_dir = QCB_ROOT / runset / mode / task
     if run_dir.exists():
         if not force:
             raise FileExistsError(f"run dir exists; use --force: {run_dir}")
         shutil.rmtree(run_dir)
-    shutil.copytree(source_runtime(task), run_dir / "runtime")
+    materialize_workspace(task, run_dir / "runtime")
     (run_dir / "results").mkdir(parents=True)
     (run_dir / "traces").mkdir(parents=True)
     if mode != "native_truncation":
@@ -179,13 +219,13 @@ def install_plugin(run_dir: Path) -> None:
 
 
 def task_prompt(run_dir: Path, task: str, mode: str, *, diagnostic_hints: bool = False) -> str:
-    task_file = run_dir / "runtime" / "tasks" / f"{task}.md"
+    task_file = source_runtime(task) / "tasks" / f"{task}.md"
     prompt = text(task_file)
     if mode != "native_truncation":
         prompt = sparse_read_protocol_prompt(run_dir / "runtime", task, diagnostic_hints=diagnostic_hints) + "\n\n" + prompt
     if diagnostic_hints:
         prompt += "\n\n[diagnostic-hints mode: task-specific protocol assistance is enabled; this run is NOT a fair product comparison]"
-    prompt += "\n\nRun inside this task workspace. Use the available files under ./assets and write the requested deliverable files in the current working directory."
+    prompt += "\n\nRun inside this task workspace. Use the task's declared workspace paths exactly and write each deliverable at the path requested by the task."
     return prompt
 
 

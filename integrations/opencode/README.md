@@ -76,5 +76,12 @@ Use the installed `opencode` CLI to run real agent trajectories. If it is not on
 PATH, set `OPENCODE_PATH` or pass `--opencode-cmd` with the executable path (or
 a JSON argv array).
 
-Legacy path compatibility remains available through `opencode_pilot/` symlinks,
-but new development should use `integrations/opencode/`.
+The benchmark runner materializes every task input at the `workspace_files.dest`
+path declared in task frontmatter. This is also the path used by the automated
+grader. Do not reintroduce a synthetic `./assets` prefix: doing so can produce a
+correct report in the wrong directory and incorrectly score the case as zero.
+
+Legacy path compatibility currently remains as a tracked `opencode_pilot/`
+copy. New development must use `integrations/opencode/`; the duplicate tree is
+scheduled for removal before packaging so the release has one canonical plugin
+source.

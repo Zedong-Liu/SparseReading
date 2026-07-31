@@ -57,6 +57,37 @@ def test_both_runners_write_workspace_sparse_read_config(tmp_path: Path) -> None
         assert config["mode"] == "auto"
 
 
+def test_both_runners_materialize_declared_workspace_destinations(monkeypatch, tmp_path: Path) -> None:
+    for module_path, module_name in [
+        (RUNNER_PATH, "opencode_run_pilot_materialize_test"),
+        (PILOT_RUNNER_PATH, "opencode_pilot_run_pilot_materialize_test"),
+    ]:
+        runner = load_module(module_path, module_name)
+        source = tmp_path / module_name / "source"
+        (source / "assets" / "bundle").mkdir(parents=True)
+        (source / "assets" / "bundle" / "input.json").write_text('{"ok": true}', encoding="utf-8")
+        (source / "tasks").mkdir()
+        (source / "tasks" / "task_fixture.md").write_text(
+            "---\n"
+            "workspace_files:\n"
+            "- source: bundle/input.json\n"
+            "  dest: declared/input.json\n"
+            "---\n\n"
+            "## Prompt\n\nRead `declared/input.json` and write `declared/report.md`.\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(runner, "source_runtime", lambda _task, source=source: source)
+
+        workspace = tmp_path / module_name / "workspace"
+        runner.materialize_workspace("task_fixture", workspace)
+
+        assert (workspace / "declared" / "input.json").read_text(encoding="utf-8") == '{"ok": true}'
+        assert not (workspace / "assets").exists()
+        prompt = runner.task_prompt(workspace.parent, "task_fixture", "native_truncation")
+        assert "task's declared workspace paths exactly" in prompt
+        assert "available files under ./assets" not in prompt
+
+
 def test_both_runners_pass_workspace_root_to_real_opencode(monkeypatch, tmp_path: Path) -> None:
     for module_path, module_name in [
         (RUNNER_PATH, "opencode_run_pilot_workspace_env_test"),
