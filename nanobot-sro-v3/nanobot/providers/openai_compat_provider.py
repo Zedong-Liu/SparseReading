@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import hashlib
 import importlib.util
+import json
 import os
 import re
 import secrets
@@ -13,8 +13,11 @@ import string
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from ipaddress import ip_address
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
+import httpx
 import json_repair
 from loguru import logger
 
@@ -22,8 +25,7 @@ if os.environ.get("LANGFUSE_SECRET_KEY") and importlib.util.find_spec("langfuse"
     from langfuse.openai import AsyncOpenAI
 else:
     if os.environ.get("LANGFUSE_SECRET_KEY"):
-        import logging
-        logging.getLogger(__name__).warning(
+        logger.warning(
             "LANGFUSE_SECRET_KEY is set but langfuse is not installed; "
             "install with `pip install langfuse` to enable tracing"
         )
@@ -39,16 +41,6 @@ from nanobot.providers.openai_responses import (
 
 if TYPE_CHECKING:
     from nanobot.providers.registry import ProviderSpec
-
-
-def _omit_implicit_tool_choice_auto() -> bool:
-    return os.environ.get("NANOBOT_OMIT_TOOL_CHOICE_AUTO", "").lower() in {"1", "true", "yes", "on"}
-
-
-def _should_send_tool_choice(tool_choice: str | dict[str, Any] | None) -> bool:
-    if not _omit_implicit_tool_choice_auto():
-        return True
-    return tool_choice is not None and tool_choice != "auto"
 
 _ALLOWED_MSG_KEYS = frozenset({
     "role", "content", "tool_calls", "tool_call_id", "name",
@@ -68,6 +60,25 @@ _KIMI_THINKING_MODELS: frozenset[str] = frozenset({
     "kimi-k2.6",
     "k2.6-code-preview",
 })
+# Thinking-capable MiMo models per Xiaomi docs (see
+# tests/providers/test_xiaomi_mimo_thinking.py). mimo-v2-flash is omitted
+# because it does not support thinking.
+_MIMO_THINKING_MODELS: frozenset[str] = frozenset({
+    "mimo-v2.5-pro",
+    "mimo-v2.5",
+    "mimo-v2-pro",
+    "mimo-v2-omni",
+})
+_OPENAI_COMPAT_REQUEST_TIMEOUT_S = 120.0
+
+# Maps ProviderSpec.thinking_style → extra_body builder.
+# Each builder takes a bool (thinking_enabled) and returns the dict to
+# merge into extra_body, keeping the style→wire-format mapping in one place.
+_THINKING_STYLE_MAP: dict[str, Any] = {
+    "thinking_type": lambda on: {"thinking": {"type": "enabled" if on else "disabled"}},
+    "enable_thinking": lambda on: {"enable_thinking": on},
+    "reasoning_split": lambda on: {"reasoning_split": on},
+}
 
 
 def _is_kimi_thinking_model(model_name: str) -> bool:
@@ -89,6 +100,42 @@ def _is_kimi_thinking_model(model_name: str) -> bool:
     return False
 
 
+def _is_mimo_thinking_model(model_name: str) -> bool:
+    """Return True if model_name refers to a MiMo thinking-capable model.
+
+    Mirrors _is_kimi_thinking_model: gateway providers (e.g. OpenRouter
+    routing ``xiaomi/mimo-v2.5-pro``) have no ``thinking_style`` on their
+    spec, so the spec-driven branch in _build_kwargs misses them. The
+    model-name path catches those cases.
+    """
+    name = model_name.lower()
+    if name in _MIMO_THINKING_MODELS:
+        return True
+    if "/" in name and name.rsplit("/", 1)[1] in _MIMO_THINKING_MODELS:
+        return True
+    return False
+
+
+def _openai_compat_timeout_s() -> float:
+    """Return the bounded request timeout used for OpenAI-compatible providers."""
+    return _float_env("NANOBOT_OPENAI_COMPAT_TIMEOUT_S", _OPENAI_COMPAT_REQUEST_TIMEOUT_S)
+
+
+def _float_env(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        logger.warning("Ignoring invalid {}={!r}; using {}", name, raw, default)
+        return default
+    if value <= 0:
+        logger.warning("Ignoring non-positive {}={!r}; using {}", name, raw, default)
+        return default
+    return value
+
+
 def _short_tool_id() -> str:
     """9-char alphanumeric ID compatible with all providers (incl. Mistral)."""
     return "".join(secrets.choice(_ALNUM) for _ in range(9))
@@ -99,24 +146,27 @@ _DSML_TOOL_BLOCK_RE = re.compile(
     re.DOTALL,
 )
 _DSML_INVOKE_RE = re.compile(
-    r"<｜｜DSML｜｜invoke\s+name=\"(?P<name>[A-Za-z0-9_-]+)\">(?P<body>.*?)</｜｜DSML｜｜invoke>",
+    r'<｜｜DSML｜｜invoke\s+name="(?P<name>[A-Za-z0-9_-]+)">'
+    r"(?P<body>.*?)</｜｜DSML｜｜invoke>",
     re.DOTALL,
 )
 _DSML_PARAM_RE = re.compile(
-    r"<｜｜DSML｜｜parameter\s+name=\"(?P<name>[A-Za-z0-9_-]+)\"(?:\s+string=\"true\")?>(?P<value>.*?)</｜｜DSML｜｜parameter>",
+    r'<｜｜DSML｜｜parameter\s+name="(?P<name>[A-Za-z0-9_-]+)"'
+    r'(?:\s+string="true")?>(?P<value>.*?)</｜｜DSML｜｜parameter>',
     re.DOTALL,
 )
 
 
-def _parse_dsml_tool_calls(content: str | None) -> tuple[str | None, list[ToolCallRequest]]:
+def _parse_dsml_tool_calls(
+    content: str | None,
+) -> tuple[str | None, list[ToolCallRequest]]:
     """Recover DeepSeek DSML tool calls that arrive as plain assistant text."""
     if not content or "<｜｜DSML｜｜tool_calls>" not in content:
         return content, []
 
     tool_calls: list[ToolCallRequest] = []
     for block in _DSML_TOOL_BLOCK_RE.finditer(content):
-        body = block.group("body")
-        for invoke in _DSML_INVOKE_RE.finditer(body):
+        for invoke in _DSML_INVOKE_RE.finditer(block.group("body")):
             params = {
                 param.group("name"): param.group("value")
                 for param in _DSML_PARAM_RE.finditer(invoke.group("body"))
@@ -204,6 +254,37 @@ _RESPONSES_FAILURE_THRESHOLD = 3
 _RESPONSES_PROBE_INTERVAL_S = 300  # 5 minutes
 
 
+def _is_local_endpoint(
+    spec: "ProviderSpec | None",
+    api_base: str | None,
+) -> bool:
+    """Return True when the endpoint is a local or LAN model server.
+
+    Matches either the provider spec's ``is_local`` flag or common private-
+    network patterns in the base URL (localhost, 127.x, 192.168.x, 10.x,
+    172.16-31.x, Docker ``host.docker.internal``).
+    """
+    if spec and spec.is_local:
+        return True
+    if not api_base:
+        return False
+    raw = api_base.strip().lower()
+    parsed = urlparse(raw if "://" in raw else f"//{raw}")
+    try:
+        host = parsed.hostname
+    except ValueError:
+        return False
+    if host in {"localhost", "host.docker.internal"}:
+        return True
+    if not host:
+        return False
+    try:
+        addr = ip_address(host)
+    except ValueError:
+        return False
+    return addr.is_loopback or addr.is_private
+
+
 def _is_direct_openai_base(api_base: str | None) -> bool:
     """Return True for direct OpenAI endpoints, not generic OpenAI-compatible gateways."""
     if not api_base:
@@ -222,6 +303,25 @@ def _responses_circuit_key(
     return f"{model_name}:{effort}"
 
 
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge *override* into *base*, returning a new dict.
+
+    Nested dicts are merged key-by-key; all other types in *override*
+    replace the corresponding key in *base*.
+    """
+    merged = dict(base)
+    for key, value in override.items():
+        if (
+            key in merged
+            and isinstance(merged[key], dict)
+            and isinstance(value, dict)
+        ):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 class OpenAICompatProvider(LLMProvider):
     """Unified provider for all OpenAI-compatible APIs.
 
@@ -236,11 +336,13 @@ class OpenAICompatProvider(LLMProvider):
         default_model: str = "gpt-4o",
         extra_headers: dict[str, str] | None = None,
         spec: ProviderSpec | None = None,
+        extra_body: dict[str, Any] | None = None,
     ):
         super().__init__(api_key, api_base)
         self.default_model = default_model
         self.extra_headers = extra_headers or {}
         self._spec = spec
+        self._extra_body = extra_body or {}
 
         if api_key and spec and spec.env_key:
             self._setup_env(api_key, api_base)
@@ -253,11 +355,30 @@ class OpenAICompatProvider(LLMProvider):
         if extra_headers:
             default_headers.update(extra_headers)
 
+        # Local model servers (Ollama, llama.cpp, vLLM) often close idle
+        # HTTP connections before the client-side keepalive expires.  When
+        # two LLM calls happen seconds apart (e.g. heartbeat _decide then
+        # process_direct), the second call may grab a now-dead pooled
+        # connection, causing a transient APIConnectionError on every first
+        # attempt.  Disabling keepalive for local endpoints avoids this by
+        # opening a fresh connection for each request, which is cheap on a
+        # LAN.  Cloud providers benefit from keepalive, so we leave the
+        # default pool settings for them.
+        timeout_s = _openai_compat_timeout_s()
+        http_client: httpx.AsyncClient | None = None
+        if _is_local_endpoint(spec, effective_base):
+            http_client = httpx.AsyncClient(
+                limits=httpx.Limits(keepalive_expiry=0),
+                timeout=timeout_s,
+            )
+
         self._client = AsyncOpenAI(
             api_key=api_key or "no-key",
             base_url=effective_base,
             default_headers=default_headers,
             max_retries=0,
+            timeout=timeout_s,
+            http_client=http_client,
         )
 
         # Responses API circuit breaker: skip after repeated failures,
@@ -340,10 +461,25 @@ class OpenAICompatProvider(LLMProvider):
             return json.dumps(arguments, ensure_ascii=False)
         return "{}"
 
+    @staticmethod
+    def _coerce_content_to_string(content: Any) -> str | None:
+        """Coerce block/list content into plain text for strict string-only APIs."""
+        if content is None or isinstance(content, str):
+            return content
+        text = OpenAICompatProvider._extract_text_content(content)
+        if isinstance(text, str) and text:
+            return text
+        try:
+            dumped = json.dumps(content, ensure_ascii=False)
+        except Exception:
+            dumped = str(content)
+        return dumped or "(empty)"
+
     def _sanitize_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Strip non-standard keys, normalize tool_call IDs."""
         sanitized = LLMProvider._sanitize_request_messages(messages, _ALLOWED_MSG_KEYS)
         id_map: dict[str, str] = {}
+        force_string_content = bool(self._spec and self._spec.name == "deepseek")
 
         def map_id(value: Any) -> Any:
             if not isinstance(value, str):
@@ -377,6 +513,11 @@ class OpenAICompatProvider(LLMProvider):
                     clean["content"] = None
             if "tool_call_id" in clean and clean["tool_call_id"]:
                 clean["tool_call_id"] = map_id(clean["tool_call_id"])
+            if (
+                force_string_content
+                and not (clean.get("role") == "assistant" and clean.get("tool_calls"))
+            ):
+                clean["content"] = self._coerce_content_to_string(clean.get("content"))
         return self._enforce_role_alternation(sanitized)
 
     # ------------------------------------------------------------------
@@ -455,26 +596,17 @@ class OpenAICompatProvider(LLMProvider):
             # DashScope accepts none/minimum/low/medium/high/xhigh; "minimal" 400s.
             wire_effort = "minimum"
 
-        if wire_effort:
+        if wire_effort and semantic_effort != "none":
             kwargs["reasoning_effort"] = wire_effort
 
         # Provider-specific thinking parameters.
         # Only sent when reasoning_effort is explicitly configured so that
         # the provider default is preserved otherwise.
-        if spec and reasoning_effort is not None:
-            thinking_enabled = semantic_effort != "minimal"
-            extra: dict[str, Any] | None = None
-            if spec.name == "dashscope":
-                extra = {"enable_thinking": thinking_enabled}
-            elif spec.name == "minimax":
-                extra = {"reasoning_split": thinking_enabled}
-            elif spec.name in (
-                "volcengine", "volcengine_coding_plan",
-                "byteplus", "byteplus_coding_plan",
-            ):
-                extra = {
-                    "thinking": {"type": "enabled" if thinking_enabled else "disabled"}
-                }
+        # The mapping is driven by ProviderSpec.thinking_style so that adding
+        # a new provider never requires touching this function.
+        if spec and spec.thinking_style and reasoning_effort is not None:
+            thinking_enabled = semantic_effort not in ("none", "minimal")
+            extra = _THINKING_STYLE_MAP.get(spec.thinking_style, lambda _: None)(thinking_enabled)
             if extra:
                 kwargs.setdefault("extra_body", {}).update(extra)
 
@@ -483,15 +615,60 @@ class OpenAICompatProvider(LLMProvider):
         # so that OpenRouter-style names like "moonshotai/kimi-k2.5" are handled
         # identically to bare names like "kimi-k2.5".
         if reasoning_effort is not None and _is_kimi_thinking_model(model_name):
-            thinking_enabled = semantic_effort != "minimal"
+            thinking_enabled = semantic_effort not in ("none", "minimal")
+            kwargs.setdefault("extra_body", {}).update(
+                {"thinking": {"type": "enabled" if thinking_enabled else "disabled"}}
+            )
+
+        # Model-level thinking injection for MiMo thinking-capable models.
+        # Same shape as Kimi: gateway providers (OpenRouter, etc.) lack the
+        # xiaomi_mimo spec's thinking_style, so the spec-driven branch above
+        # misses them — match by model name to catch "xiaomi/mimo-v2.5-pro"
+        # and friends. (Direct xiaomi_mimo requests are also covered here;
+        # both branches write the same payload, so the dict update is a
+        # safe no-op for already-handled cases.)
+        if reasoning_effort is not None and _is_mimo_thinking_model(model_name):
+            thinking_enabled = semantic_effort not in ("none", "minimal")
             kwargs.setdefault("extra_body", {}).update(
                 {"thinking": {"type": "enabled" if thinking_enabled else "disabled"}}
             )
 
         if tools:
             kwargs["tools"] = tools
-            if _should_send_tool_choice(tool_choice):
-                kwargs["tool_choice"] = tool_choice or "auto"
+            kwargs["tool_choice"] = tool_choice or "auto"
+
+        # Backfill reasoning_content="" on assistants missing it: DeepSeek
+        # thinking mode rejects history otherwise (#3554, #3584); "" reads
+        # as "no thinking that turn". DeepSeek-V4/reasoner reason natively,
+        # so backfill even without explicit reasoning_effort.
+        explicit_thinking = (
+            reasoning_effort is not None
+            and semantic_effort not in ("none", "minimal")
+            and (
+                (spec and spec.thinking_style)
+                or _is_kimi_thinking_model(model_name)
+                or _is_mimo_thinking_model(model_name)
+            )
+        )
+        implicit_deepseek_thinking = (
+            spec is not None
+            and spec.name == "deepseek"
+            and semantic_effort not in ("none", "minimal", "minimum")
+            and any(t in model_name.lower() for t in ("deepseek-v4", "deepseek-reasoner"))
+        )
+        if explicit_thinking or implicit_deepseek_thinking:
+            for msg in kwargs["messages"]:
+                if msg.get("role") == "assistant" and "reasoning_content" not in msg:
+                    msg["reasoning_content"] = ""
+
+        # Merge user-configured extra_body last so it can override or
+        # extend provider-specific defaults (e.g. chat_template_kwargs,
+        # guided_json, repetition_penalty).  Uses recursive merge so
+        # nested dicts like {"chat_template_kwargs": {"enable_thinking": false}}
+        # do not clobber sibling keys already set by thinking-style logic.
+        if self._extra_body:
+            existing = kwargs.get("extra_body", {})
+            kwargs["extra_body"] = _deep_merge(existing, self._extra_body)
 
         return kwargs
 
@@ -606,8 +783,7 @@ class OpenAICompatProvider(LLMProvider):
 
         if tools:
             body["tools"] = convert_tools(tools)
-            if _should_send_tool_choice(tool_choice):
-                body["tool_choice"] = tool_choice or "auto"
+            body["tool_choice"] = tool_choice or "auto"
 
         return body
 
@@ -745,8 +921,8 @@ class OpenAICompatProvider(LLMProvider):
             finish_reason = str(choice0.get("finish_reason") or "stop")
 
             raw_tool_calls: list[Any] = []
-            # StepFun Plan: fallback to reasoning field when content is empty
-            if not content and msg0.get("reasoning"):
+            # StepFun: fallback to reasoning field when content is empty
+            if not content and msg0.get("reasoning") and self._spec and self._spec.reasoning_as_content:
                 content = self._extract_text_content(msg0.get("reasoning"))
             reasoning_content = msg0.get("reasoning_content")
             if not reasoning_content and msg0.get("reasoning"):
@@ -808,7 +984,7 @@ class OpenAICompatProvider(LLMProvider):
                     finish_reason = ch.finish_reason
             if not content and m.content:
                 content = m.content
-            if not content and getattr(m, "reasoning", None):
+            if not content and getattr(m, "reasoning", None) and self._spec and self._spec.reasoning_as_content:
                 content = m.reasoning
 
         tool_calls = []
@@ -925,9 +1101,8 @@ class OpenAICompatProvider(LLMProvider):
             for tc in (delta.tool_calls or []) if delta else []:
                 _accum_tc(tc, getattr(tc, "index", 0))
 
-        return LLMResponse(
-            content="".join(content_parts) or None,
-            tool_calls=[
+        content = "".join(content_parts) or None
+        tool_calls = [
                 ToolCallRequest(
                     id=b["id"] or _short_tool_id(),
                     name=b["name"],
@@ -937,7 +1112,13 @@ class OpenAICompatProvider(LLMProvider):
                     function_provider_specific_fields=b.get("fn_prov"),
                 )
                 for b in tc_bufs.values()
-            ],
+            ]
+        if not tool_calls:
+            content, tool_calls = _parse_dsml_tool_calls(content)
+
+        return LLMResponse(
+            content=content,
+            tool_calls=tool_calls,
             finish_reason=finish_reason,
             usage=usage,
             reasoning_content="".join(reasoning_parts) or None,
@@ -1077,6 +1258,7 @@ class OpenAICompatProvider(LLMProvider):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
         on_content_delta: Callable[[str], Awaitable[None]] | None = None,
+        on_thinking_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         idle_timeout_s = int(os.environ.get("NANOBOT_STREAM_IDLE_TIMEOUT_S", "90"))
         try:
@@ -1140,10 +1322,19 @@ class OpenAICompatProvider(LLMProvider):
                 except StopAsyncIteration:
                     break
                 chunks.append(chunk)
-                if on_content_delta and chunk.choices:
-                    text = getattr(chunk.choices[0].delta, "content", None)
-                    if text:
-                        await on_content_delta(text)
+                if chunk.choices:
+                    delta_obj = chunk.choices[0].delta
+                    if on_content_delta:
+                        text = getattr(delta_obj, "content", None)
+                        if text:
+                            await on_content_delta(text)
+                    if on_thinking_delta:
+                        reasoning = getattr(delta_obj, "reasoning_content", None) or getattr(
+                            delta_obj, "reasoning", None,
+                        )
+                        r_text = self._extract_text_content(reasoning)
+                        if r_text:
+                            await on_thinking_delta(r_text)
             return self._parse_chunks(chunks)
         except asyncio.TimeoutError:
             return LLMResponse(

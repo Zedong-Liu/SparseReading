@@ -511,11 +511,9 @@ def cmd_agent_run(argv: list) -> int:
     if nanobot_pkg not in sys.path:
         sys.path.insert(0, nanobot_pkg)
     
-    import inspect
-
     from nanobot.agent.loop import AgentLoop
     from nanobot.bus.queue import MessageBus
-    from nanobot.cli.commands import _load_runtime_config, _make_provider
+    from nanobot.cli.commands import _load_runtime_config
     from nanobot.session.manager import SessionManager
     from nanobot.utils.runtime import EMPTY_FINAL_RESPONSE_MESSAGE
     
@@ -594,35 +592,13 @@ def cmd_agent_run(argv: list) -> int:
     async def _run_inline():
         runtime_config = _load_runtime_config(str(NANOBOT_CONFIG), workspace_cwd)
         runtime_config = _apply_bench_provider_overrides(runtime_config)
-        provider = _make_provider(runtime_config)
         bus = MessageBus()
         session_manager = SessionManager(Path(workspace_cwd))
-        
-        loop_kwargs = {
-            "bus": bus,
-            "provider": provider,
-            "workspace": Path(workspace_cwd),
-            "model": runtime_config.agents.defaults.model,
-            "max_iterations": runtime_config.agents.defaults.max_tool_iterations,
-            "context_window_tokens": runtime_config.agents.defaults.context_window_tokens,
-            "context_block_limit": runtime_config.agents.defaults.context_block_limit,
-            "max_tool_result_chars": runtime_config.agents.defaults.max_tool_result_chars,
-            "provider_retry_mode": runtime_config.agents.defaults.provider_retry_mode,
-            "exec_config": runtime_config.tools.exec,
-            "restrict_to_workspace": runtime_config.tools.restrict_to_workspace,
-            "session_manager": session_manager,
-            "mcp_servers": runtime_config.tools.mcp_servers,
-            "channels_config": runtime_config.channels,
-            "timezone": runtime_config.agents.defaults.timezone,
-        }
-        loop_params = inspect.signature(AgentLoop.__init__).parameters
-        if "web_config" in loop_params:
-            loop_kwargs["web_config"] = runtime_config.tools.web
-        elif "web_search_config" in loop_params:
-            loop_kwargs["web_search_config"] = runtime_config.tools.web.search
-            loop_kwargs["web_proxy"] = runtime_config.tools.web.proxy or None
-
-        agent_loop = AgentLoop(**loop_kwargs)
+        agent_loop = AgentLoop.from_config(
+            runtime_config,
+            bus=bus,
+            session_manager=session_manager,
+        )
         
         try:
             resp = await agent_loop.process_direct(
@@ -663,11 +639,16 @@ def cmd_agent_run(argv: list) -> int:
 
     # Convert nanobot session to openclaw transcript format
     transcript = _nanobot_to_openclaw(nanobot_session_path, user_message=message)
+    run_usage = final_response.get("usage") if isinstance(final_response, dict) else None
+    transcript = _attach_usage_to_transcript(transcript, run_usage)
 
     # Persist transcript to openclaw paths + history dir
     _persist_transcript(agent_id, session_id, transcript)
 
-    print(final_response)
+    if isinstance(final_response, dict):
+        print(final_response.get("final_response", ""))
+    else:
+        print(final_response)
     return 0
 
 

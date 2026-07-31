@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${SRO_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 QCB_ROOT="$ROOT/SRO_test/qwenclawbench"
+QCB_FIXTURE_ROOT="${QCB_FIXTURE_ROOT:-$QCB_ROOT}"
 BENCH_MODEL="${BENCH_MODEL:-DeepSeek-V4-Flash}"
 TIMEOUT_MULTIPLIER="${TIMEOUT_MULTIPLIER:-1}"
 RUNSET=""
@@ -154,6 +155,17 @@ write_manifest() {
   local source_runtime="$4"
   local dst="$5"
   local command="$6"
+  local nanobot_version source_revision source_dirty
+  nanobot_version="$(
+    PYTHONPATH="$ROOT/nanobot-sro-v3" \
+      python -c 'import nanobot; print(nanobot.__version__)'
+  )"
+  source_revision="$(git -C "$ROOT" rev-parse HEAD)"
+  if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no)" ]]; then
+    source_dirty="true"
+  else
+    source_dirty="false"
+  fi
   mkdir -p "$(dirname "$path")"
   {
     printf '{\n'
@@ -164,6 +176,9 @@ write_manifest() {
     printf '  "source_runtime": "%s",\n' "$(json_escape "$source_runtime")"
     printf '  "run_dir": "%s",\n' "$(json_escape "$dst")"
     printf '  "bench_model": "%s",\n' "$(json_escape "$BENCH_MODEL")"
+    printf '  "nanobot_version": "%s",\n' "$(json_escape "$nanobot_version")"
+    printf '  "source_revision": "%s",\n' "$(json_escape "$source_revision")"
+    printf '  "source_dirty": %s,\n' "$source_dirty"
     printf '  "timeout_multiplier": "%s",\n' "$(json_escape "$TIMEOUT_MULTIPLIER")"
     printf '  "sro_enabled": "%s",\n' "$(json_escape "${SRO_ENABLED:-}")"
     printf '  "sro_benefit_gate_override": "%s",\n' "$(json_escape "${SRO_BENEFIT_GATE_OVERRIDE:-}")"
@@ -269,7 +284,7 @@ for raw_mode in "${MODE_LIST[@]}"; do
   source_mode="$(source_mode_for "$mode")"
 
   for task in "${TASKS[@]}"; do
-    src="$QCB_ROOT/$source_mode/$task/runtime"
+    src="$QCB_FIXTURE_ROOT/$source_mode/$task/runtime"
     dst="$QCB_ROOT/$RUNSET/$mode/$task"
     command="uv run --with openai --with tqdm --with requests --with pyyaml python benchmark.py --model $BENCH_MODEL --suite $task --output-dir $dst/results --runs 1 --timeout-multiplier $TIMEOUT_MULTIPLIER --no-upload"
 
@@ -295,6 +310,7 @@ if [[ "$PARALLEL_JOBS" -le 1 ]]; then
   done
 else
   pids=()
+  all_pids=()
   for job in "${JOBS[@]}"; do
     # Wait for a slot if at max capacity
     while [[ ${#pids[@]} -ge $PARALLEL_JOBS ]]; do
@@ -311,10 +327,13 @@ else
     IFS='|' read -r mode task src dst command <<< "$job"
     _run_one_task "$mode" "$task" "$src" "$dst" "$command" &
     pids+=($!)
+    all_pids+=($!)
   done
 
-  # Wait for remaining jobs
-  for pid in "${pids[@]}"; do
-    wait "$pid" 2>/dev/null || true
+  # Reap every job and propagate any failure to the batch exit status.
+  failed=0
+  for pid in "${all_pids[@]}"; do
+    wait "$pid" 2>/dev/null || failed=1
   done
+  exit "$failed"
 fi

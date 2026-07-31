@@ -434,7 +434,11 @@ class AnthropicProvider(LLMProvider):
             )
 
         max_tokens = max(1, max_tokens)
-        thinking_enabled = bool(reasoning_effort)
+        thinking_enabled = bool(reasoning_effort) and reasoning_effort.lower() != "none"
+
+        # claude-opus-4-7 deprecated the `temperature` parameter entirely — the
+        # API returns 400 if it is present, on any code path.
+        omit_temperature = "opus-4-7" in model_name
 
         kwargs: dict[str, Any] = {
             "model": model_name,
@@ -450,14 +454,16 @@ class AnthropicProvider(LLMProvider):
             # Supported on claude-sonnet-4-6 and claude-opus-4-6.
             # Also auto-enables interleaved thinking between tool calls.
             kwargs["thinking"] = {"type": "adaptive"}
-            kwargs["temperature"] = 1.0
+            if not omit_temperature:
+                kwargs["temperature"] = 1.0
         elif thinking_enabled:
             budget_map = {"low": 1024, "medium": 4096, "high": max(8192, max_tokens)}
             budget = budget_map.get(reasoning_effort.lower(), 4096)
             kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
             kwargs["max_tokens"] = max(max_tokens, budget + 4096)
-            kwargs["temperature"] = 1.0
-        else:
+            if not omit_temperature:
+                kwargs["temperature"] = 1.0
+        elif not omit_temperature:
             kwargs["temperature"] = temperature
 
         if anthropic_tools:
@@ -531,6 +537,13 @@ class AnthropicProvider(LLMProvider):
     # Public API
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _is_streaming_required_error(e: Exception) -> bool:
+        """Anthropic SDK rejects long non-stream requests with a ValueError
+        whose message starts with 'Streaming is required'. Match defensively
+        on substring so a future SDK message tweak doesn't break detection."""
+        return isinstance(e, ValueError) and "streaming is required" in str(e).lower()
+
     async def chat(
         self,
         messages: list[dict[str, Any]],
@@ -549,6 +562,21 @@ class AnthropicProvider(LLMProvider):
             response = await self._client.messages.create(**kwargs)
             return self._parse_response(response)
         except Exception as e:
+            if self._is_streaming_required_error(e):
+                # Anthropic SDK refuses non-stream calls when max_tokens (plus
+                # extended thinking budget) could push the request past the
+                # 10-minute server-side timeout (#2709). Transparently retry
+                # via the streaming path so callers don't need to know the
+                # provider-specific limit.
+                return await self.chat_stream(
+                    messages=messages,
+                    tools=tools,
+                    model=model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    reasoning_effort=reasoning_effort,
+                    tool_choice=tool_choice,
+                )
             return self._handle_error(e)
 
     async def chat_stream(
@@ -561,6 +589,7 @@ class AnthropicProvider(LLMProvider):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
         on_content_delta: Callable[[str], Awaitable[None]] | None = None,
+        on_thinking_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         kwargs = self._build_kwargs(
             messages, tools, model, max_tokens, temperature,
@@ -569,17 +598,33 @@ class AnthropicProvider(LLMProvider):
         idle_timeout_s = int(os.environ.get("NANOBOT_STREAM_IDLE_TIMEOUT_S", "90"))
         try:
             async with self._client.messages.stream(**kwargs) as stream:
-                if on_content_delta:
-                    stream_iter = stream.text_stream.__aiter__()
+                if on_content_delta or on_thinking_delta:
+                    # Idle timeout must track *any* SSE chunk (thinking_delta,
+                    # tool JSON deltas, etc.), not only text_stream tokens.
+                    # Otherwise extended thinking can stall text_stream for minutes
+                    # while the connection is healthy (e.g. MiniMax Anthropic).
                     while True:
                         try:
-                            text = await asyncio.wait_for(
-                                stream_iter.__anext__(),
+                            chunk = await asyncio.wait_for(
+                                stream.__anext__(),
                                 timeout=idle_timeout_s,
                             )
                         except StopAsyncIteration:
                             break
-                        await on_content_delta(text)
+                        if (
+                            chunk.type == "content_block_delta"
+                            and getattr(chunk.delta, "type", None) == "thinking_delta"
+                        ):
+                            piece = getattr(chunk.delta, "thinking", None) or ""
+                            if piece and on_thinking_delta:
+                                await on_thinking_delta(piece)
+                        elif (
+                            chunk.type == "content_block_delta"
+                            and getattr(chunk.delta, "type", None) == "text_delta"
+                        ):
+                            text = getattr(chunk.delta, "text", None) or ""
+                            if text and on_content_delta:
+                                await on_content_delta(text)
                 response = await asyncio.wait_for(
                     stream.get_final_message(),
                     timeout=idle_timeout_s,

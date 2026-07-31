@@ -2,7 +2,9 @@
 
 import json
 import os
+import re
 import shutil
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -13,10 +15,63 @@ from loguru import logger
 from nanobot.config.paths import get_legacy_sessions_dir
 from nanobot.utils.helpers import (
     ensure_dir,
+    estimate_message_tokens,
     find_legal_message_start,
     image_placeholder_text,
     safe_filename,
 )
+from nanobot.utils.subagent_channel_display import scrub_subagent_announce_body
+
+FILE_MAX_MESSAGES = 2000
+_MESSAGE_TIME_PREFIX_RE = re.compile(r"^\[Message Time: [^\]]+\]\n?")
+_LOCAL_IMAGE_BREADCRUMB_RE = re.compile(r"^\[image: (?:/|~)[^\]]+\]\s*$")
+_TOOL_CALL_ECHO_RE = re.compile(r'^\s*(?:generate_image|message)\([^)]*\)\s*$')
+_SESSION_PREVIEW_MAX_CHARS = 120
+
+
+def _sanitize_assistant_replay_text(content: str) -> str:
+    """Remove internal replay artifacts that the model may have copied before.
+
+    These strings are useful as runtime/session metadata, but when they appear
+    in assistant examples they become demonstrations for the model to repeat.
+    """
+    content = _MESSAGE_TIME_PREFIX_RE.sub("", content, count=1)
+    lines = [
+        line
+        for line in content.splitlines()
+        if not _LOCAL_IMAGE_BREADCRUMB_RE.match(line)
+        and not _TOOL_CALL_ECHO_RE.match(line)
+    ]
+    return "\n".join(lines).strip()
+
+
+def _text_preview(content: Any) -> str:
+    """Return compact display text for session lists."""
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                value = block.get("text")
+                if isinstance(value, str):
+                    parts.append(value)
+        text = " ".join(parts)
+    else:
+        return ""
+    text = _sanitize_assistant_replay_text(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) > _SESSION_PREVIEW_MAX_CHARS:
+        text = text[: _SESSION_PREVIEW_MAX_CHARS - 1].rstrip() + "…"
+    return text
+
+
+def _message_preview_text(message: dict[str, Any]) -> str:
+    """Session list preview text; subagent inject blobs are shortened for display."""
+    content: Any = message.get("content")
+    if message.get("injected_event") == "subagent_result" and isinstance(content, str):
+        content = scrub_subagent_announce_body(content)
+    return _text_preview(content)
 
 
 @dataclass
@@ -30,6 +85,25 @@ class Session:
     metadata: dict[str, Any] = field(default_factory=dict)
     last_consolidated: int = 0  # Number of messages already consolidated to files
 
+    @staticmethod
+    def _annotate_message_time(message: dict[str, Any], content: Any) -> Any:
+        """Expose persisted turn timestamps to the model for relative-date reasoning.
+
+        Annotating *every* assistant turn trains the model (via in-context
+        demonstrations) to start its own replies with the same
+        ``[Message Time: ...]`` prefix, which leaks metadata back to the user.
+        We therefore only annotate user turns. User-side stamps are enough to
+        pin adjacent assistant replies for relative-time reasoning, including
+        proactive messages the user replies to later.
+        """
+        timestamp = message.get("timestamp")
+        if not timestamp or not isinstance(content, str):
+            return content
+        role = message.get("role")
+        if role != "user":
+            return content
+        return f"[Message Time: {timestamp}]\n{content}"
+
     def add_message(self, role: str, content: str, **kwargs: Any) -> None:
         """Add a message to the session."""
         msg = {
@@ -41,15 +115,30 @@ class Session:
         self.messages.append(msg)
         self.updated_at = datetime.now()
 
-    def get_history(self, max_messages: int = 500) -> list[dict[str, Any]]:
-        """Return unconsolidated messages for LLM input, aligned to a legal tool-call boundary."""
+    def get_history(
+        self,
+        max_messages: int = 120,
+        *,
+        max_tokens: int = 0,
+        include_timestamps: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Return unconsolidated messages for LLM input.
+
+        History is sliced by message count first (``max_messages``), then by
+        token budget from the tail (``max_tokens``) when provided.
+        """
         unconsolidated = self.messages[self.last_consolidated:]
+        max_messages = max_messages if max_messages > 0 else 120
         sliced = unconsolidated[-max_messages:]
 
-        # Avoid starting mid-turn when possible.
+        # Avoid starting mid-turn when possible, except for proactive
+        # assistant deliveries that the user may be replying to.
         for i, message in enumerate(sliced):
             if message.get("role") == "user":
-                sliced = sliced[i:]
+                start = i
+                if i > 0 and sliced[i - 1].get("_channel_delivery"):
+                    start = i - 1
+                sliced = sliced[start:]
                 break
 
         # Drop orphan tool results at the front.
@@ -59,23 +148,65 @@ class Session:
 
         out: list[dict[str, Any]] = []
         for message in sliced:
+            if message.get("_command"):
+                continue
             content = message.get("content", "")
+            role = message.get("role")
+            if role == "assistant" and isinstance(content, str):
+                content = _sanitize_assistant_replay_text(content)
             # Synthesize an ``[image: path]`` breadcrumb from the persisted
             # ``media`` kwarg so LLM replay still sees *something* where the
             # image used to be. Without this, an image-only user turn
             # replays as an empty user message — the assistant's reply then
             # looks like it's responding to nothing.
             media = message.get("media")
-            if isinstance(media, list) and media and isinstance(content, str):
+            if role == "user" and isinstance(media, list) and media and isinstance(content, str):
                 breadcrumbs = "\n".join(
                     image_placeholder_text(p) for p in media if isinstance(p, str) and p
                 )
                 content = f"{content}\n{breadcrumbs}" if content else breadcrumbs
+            if include_timestamps:
+                content = self._annotate_message_time(message, content)
+            if role == "assistant" and isinstance(content, str) and not content.strip():
+                if not any(key in message for key in ("tool_calls", "reasoning_content", "thinking_blocks")):
+                    continue
             entry: dict[str, Any] = {"role": message["role"], "content": content}
-            for key in ("tool_calls", "tool_call_id", "name", "reasoning_content"):
+            for key in ("tool_calls", "tool_call_id", "name", "reasoning_content", "thinking_blocks"):
                 if key in message:
                     entry[key] = message[key]
             out.append(entry)
+
+        if max_tokens > 0 and out:
+            kept: list[dict[str, Any]] = []
+            used = 0
+            for message in reversed(out):
+                tokens = estimate_message_tokens(message)
+                if kept and used + tokens > max_tokens:
+                    break
+                kept.append(message)
+                used += tokens
+            kept.reverse()
+
+            # Keep history aligned to the first visible user turn.
+            first_user = next((i for i, m in enumerate(kept) if m.get("role") == "user"), None)
+            if first_user is not None:
+                kept = kept[first_user:]
+            else:
+                # Tight token budgets can otherwise leave assistant-only tails.
+                # If a user turn exists in the unsliced output, recover the
+                # nearest one even if it slightly exceeds the token budget.
+                recovered_user = next(
+                    (i for i in range(len(out) - 1, -1, -1) if out[i].get("role") == "user"),
+                    None,
+                )
+                if recovered_user is not None:
+                    kept = out[recovered_user:]
+
+            # And keep a legal tool-call boundary at the front.
+            start = find_legal_message_start(kept)
+            if start:
+                kept = kept[start:]
+            out = kept
         return out
 
     def clear(self) -> None:
@@ -83,32 +214,79 @@ class Session:
         self.messages = []
         self.last_consolidated = 0
         self.updated_at = datetime.now()
+        self.metadata.pop("_last_summary", None)
 
     def retain_recent_legal_suffix(self, max_messages: int) -> None:
-        """Keep a legal recent suffix, mirroring get_history boundary rules."""
+        """Keep a legal recent suffix constrained by a hard message cap."""
         if max_messages <= 0:
             self.clear()
             return
         if len(self.messages) <= max_messages:
             return
 
-        start_idx = max(0, len(self.messages) - max_messages)
+        retained = list(self.messages[-max_messages:])
 
-        # If the cutoff lands mid-turn, extend backward to the nearest user turn.
-        while start_idx > 0 and self.messages[start_idx].get("role") != "user":
-            start_idx -= 1
-
-        retained = self.messages[start_idx:]
+        # Prefer starting at a user turn when one exists within the tail.
+        first_user = next((i for i, m in enumerate(retained) if m.get("role") == "user"), None)
+        if first_user is not None:
+            retained = retained[first_user:]
+        else:
+            # If the tail is assistant/tool-only, anchor to the latest user in
+            # the full session and take a capped forward window from there.
+            latest_user = next(
+                (i for i in range(len(self.messages) - 1, -1, -1)
+                 if self.messages[i].get("role") == "user"),
+                None,
+            )
+            if latest_user is not None:
+                retained = list(self.messages[latest_user: latest_user + max_messages])
 
         # Mirror get_history(): avoid persisting orphan tool results at the front.
         start = find_legal_message_start(retained)
         if start:
             retained = retained[start:]
 
+        # Hard-cap guarantee: never keep more than max_messages.
+        if len(retained) > max_messages:
+            retained = retained[-max_messages:]
+            start = find_legal_message_start(retained)
+            if start:
+                retained = retained[start:]
+
         dropped = len(self.messages) - len(retained)
         self.messages = retained
         self.last_consolidated = max(0, self.last_consolidated - dropped)
         self.updated_at = datetime.now()
+
+    def enforce_file_cap(
+        self,
+        on_archive: Any = None,
+        limit: int = FILE_MAX_MESSAGES,
+    ) -> None:
+        """Bound session message growth by archiving and trimming old prefixes."""
+        if limit <= 0 or len(self.messages) <= limit:
+            return
+
+        before = list(self.messages)
+        before_last_consolidated = self.last_consolidated
+        before_count = len(before)
+        self.retain_recent_legal_suffix(limit)
+        dropped_count = before_count - len(self.messages)
+        if dropped_count <= 0:
+            return
+
+        dropped = before[:dropped_count]
+        already_consolidated = min(before_last_consolidated, dropped_count)
+        archive_chunk = dropped[already_consolidated:]
+        if archive_chunk and on_archive:
+            on_archive(archive_chunk)
+        logger.info(
+            "Session file cap hit for {}: dropped {}, raw-archived {}, kept {}",
+            self.key,
+            dropped_count,
+            len(archive_chunk),
+            len(self.messages),
+        )
 
 
 class SessionManager:
@@ -238,15 +416,11 @@ class SessionManager:
                     if data.get("_type") == "metadata":
                         metadata = data.get("metadata", {})
                         if data.get("created_at"):
-                            try:
+                            with suppress(ValueError, TypeError):
                                 created_at = datetime.fromisoformat(data["created_at"])
-                            except (ValueError, TypeError):
-                                pass
                         if data.get("updated_at"):
-                            try:
+                            with suppress(ValueError, TypeError):
                                 updated_at = datetime.fromisoformat(data["updated_at"])
-                            except (ValueError, TypeError):
-                                pass
                         last_consolidated = data.get("last_consolidated", 0)
                     else:
                         messages.append(data)
@@ -316,14 +490,12 @@ class SessionManager:
                 # On Windows, opening a directory with O_RDONLY raises
                 # PermissionError — skip the dir sync there (NTFS
                 # journals metadata synchronously).
-                try:
+                with suppress(PermissionError):
                     fd = os.open(str(path.parent), os.O_RDONLY)
                     try:
                         os.fsync(fd)
                     finally:
                         os.close(fd)
-                except PermissionError:
-                    pass  # Windows — directory fsync not supported
         except BaseException:
             tmp_path.unlink(missing_ok=True)
             raise
@@ -421,17 +593,38 @@ class SessionManager:
         for path in self.sessions_dir.glob("*.jsonl"):
             fallback_key = path.stem.replace("_", ":", 1)
             try:
-                # Read just the metadata line
+                # Read the metadata line and a small preview for WebUI/session lists.
                 with open(path, encoding="utf-8") as f:
                     first_line = f.readline().strip()
                     if first_line:
                         data = json.loads(first_line)
                         if data.get("_type") == "metadata":
                             key = data.get("key") or path.stem.replace("_", ":", 1)
+                            metadata = data.get("metadata", {})
+                            title = metadata.get("title") if isinstance(metadata, dict) else None
+                            preview = ""
+                            fallback_preview = ""
+                            for line in f:
+                                if not line.strip():
+                                    continue
+                                item = json.loads(line)
+                                if item.get("_type") == "metadata":
+                                    continue
+                                text = _message_preview_text(item)
+                                if not text:
+                                    continue
+                                if item.get("role") == "user":
+                                    preview = text
+                                    break
+                                if not fallback_preview and item.get("role") == "assistant":
+                                    fallback_preview = text
+                            preview = preview or fallback_preview
                             sessions.append({
                                 "key": key,
                                 "created_at": data.get("created_at"),
                                 "updated_at": data.get("updated_at"),
+                                "title": title if isinstance(title, str) else "",
+                                "preview": preview,
                                 "path": str(path)
                             })
             except Exception:
@@ -441,6 +634,19 @@ class SessionManager:
                         "key": repaired.key,
                         "created_at": repaired.created_at.isoformat(),
                         "updated_at": repaired.updated_at.isoformat(),
+                        "title": (
+                            repaired.metadata.get("title")
+                            if isinstance(repaired.metadata.get("title"), str)
+                            else ""
+                        ),
+                        "preview": next(
+                            (
+                                text
+                                for msg in repaired.messages
+                                if (text := _message_preview_text(msg))
+                            ),
+                            "",
+                        ),
                         "path": str(path)
                     })
                 continue
