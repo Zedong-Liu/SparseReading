@@ -343,6 +343,46 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
     projectRoot,
   )
   let pendingTargets: HandoffTarget[] = []
+  const readySessions = new Map<string, string>()
+
+  function readyStatus(value: Json): string {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const status = readyStatus(item)
+        if (status) return status
+      }
+      return ""
+    }
+    if (!isObject(value)) return ""
+    if (["ready", "ready_for_write", "ready_for_compute"].includes(String(value.overall_status || ""))) {
+      return String(value.overall_status)
+    }
+    for (const item of Object.values(value)) {
+      const status = readyStatus(item)
+      if (status) return status
+    }
+    return ""
+  }
+
+  function rememberReady(context: any, result: Json) {
+    const status = readyStatus(result)
+    if (status && context?.sessionID) readySessions.set(context.sessionID, status)
+  }
+
+  function readyGuard(context: any, method: string): ToolResult | undefined {
+    const status = context?.sessionID ? readySessions.get(context.sessionID) : undefined
+    if (!status) return undefined
+    return {
+      title: `sro_${method}`,
+      output: JSON.stringify({
+        sro_guard: true,
+        overall_status: status,
+        allowed_next: ["write/edit deliverable", "run one required local calculation", "final response"],
+        instruction: "SparseRead evidence is already terminal for this session. Do not call any sro_* tool again.",
+      }),
+      metadata: { sparseread: true, method, terminal: true },
+    }
+  }
 
   function reminderRoot() {
     return path.join(workspaceRoot, ".opencode", ".sparseread", "reminders")
@@ -350,6 +390,14 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
 
   function absoluteCandidate(candidatePath: string) {
     return path.resolve(workspaceRoot, candidatePath)
+  }
+
+  function normalizeTarget(target: Json): Json {
+    if (typeof target === "string") {
+      return target.startsWith("sro_") ? target : absoluteCandidate(target)
+    }
+    if (!isObject(target) || typeof target.path !== "string") return target
+    return { ...target, path: absoluteCandidate(target.path) }
   }
 
   function isSameOrDescendant(base: string, candidate: string) {
@@ -533,8 +581,15 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
           path: tool.schema.string().optional().describe("Path to preview"),
           artifact_id: tool.schema.string().optional().describe("Existing SparseRead artifact id to preview"),
         },
-        async execute(args): Promise<ToolResult> {
-          const result = await bridge.request("preview", args)
+        async execute(args, context): Promise<ToolResult> {
+          const terminal = readyGuard(context, "preview")
+          if (terminal) return terminal
+          const result = await bridge.request("preview", {
+            ...args,
+            ...(typeof args.path === "string" ? { path: absoluteCandidate(args.path) } : {}),
+            ...(args.target ? { target: normalizeTarget(args.target) } : {}),
+          })
+          rememberReady(context, result)
           return {
             title: "sro_preview",
             output: JSON.stringify(result),
@@ -549,8 +604,11 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
           range: tool.schema.object({}).passthrough().optional().describe("Optional byte range: {start,end}"),
           selector: tool.schema.string().optional().describe("Optional case-insensitive line selector"),
         },
-        async execute(args): Promise<ToolResult> {
+        async execute(args, context): Promise<ToolResult> {
+          const terminal = readyGuard(context, "raw")
+          if (terminal) return terminal
           const result = await bridge.request("raw", args)
+          rememberReady(context, result)
           return {
             title: "sro_raw",
             output: JSON.stringify(result),
@@ -563,8 +621,11 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
         args: {
           path: tool.schema.string().describe("Path to the file, document, or directory to inspect"),
         },
-        async execute(args): Promise<ToolResult> {
-          const result = await bridge.request("card", { path: args.path })
+        async execute(args, context): Promise<ToolResult> {
+          const terminal = readyGuard(context, "card")
+          if (terminal) return terminal
+          const result = await bridge.request("card", { path: absoluteCandidate(args.path) })
+          rememberReady(context, result)
           return {
             title: "sro_card",
             output: JSON.stringify(result),
@@ -580,8 +641,11 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
           mode: tool.schema.enum(["scout", "focus", "collect", "refine", "verify"]),
           hint: hintSchema.describe("HintSpec with goal, needles, slots, want, scope, type_hint"),
         },
-        async execute(args): Promise<ToolResult> {
-          const result = await bridge.request("read", args)
+        async execute(args, context): Promise<ToolResult> {
+          const terminal = readyGuard(context, "read")
+          if (terminal) return terminal
+          const result = await bridge.request("read", { ...args, target: normalizeTarget(args.target) })
+          rememberReady(context, result)
           return {
             title: "sro_read",
             output: JSON.stringify(result),
@@ -611,8 +675,14 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
       if (policy === "native") return
       const preflight = preflightPrompt(await bridge.request("preflight", { max_candidates: 24, max_results: 3 }).catch(() => ({})))
       output.system.push(
-        "SparseRead is available for long documents, PDFs, and compact evidence closures. When SparseRead is the right path, call the tool sro_preview with JSON args {\"path\": ...}. Do not run sro_preview inside bash or shell. After preview, call sro_read only for targeted evidence. If evidence is ready, write the deliverable instead of rereading." + preflight,
+        "SparseRead is available for long documents, PDFs, and compact evidence closures. When SparseRead is the right path, call the tool sro_preview with JSON args {\"path\": ...}. Do not run sro_preview inside bash or shell. After preview, call sro_read only for targeted evidence. Once any SRO response reports overall_status ready, ready_for_write, or ready_for_compute, do not call any sro_* tool again; write the deliverable or run the single required calculation immediately." + preflight,
       )
+    },
+    event: async ({ event }) => {
+      if (event.type !== "session.deleted") return
+      const properties = event.properties as any
+      const sessionID = properties?.sessionID ?? properties?.info?.id
+      if (typeof sessionID === "string") readySessions.delete(sessionID)
     },
     "tool.execute.before": async (input, output) => {
       if (!shouldInspectTool(input.tool)) return
