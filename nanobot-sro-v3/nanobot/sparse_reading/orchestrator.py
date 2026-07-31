@@ -178,11 +178,6 @@ class SparseReadingOrchestrator:
             return False
         ready_child_artifact = self._ready_collection_child_artifact(path)
         if ready_child_artifact:
-            if self._required_outputs_pending(ready_child_artifact):
-                return True
-            if self._collection_ready_guard_count(ready_child_artifact) >= 1:
-                self._mark_native_escape_collection(ready_child_artifact)
-                return False
             return True
         if self._collection_child_guard(path):
             return True
@@ -282,6 +277,16 @@ class SparseReadingOrchestrator:
             return {
                 "raw_ref": raw_ref,
                 "error": "unknown or stale raw_ref; call sro_preview again",
+            }
+        parts = resolved_ref.split(":", 2)
+        artifact_id = parts[1] if len(parts) == 3 else ""
+        if artifact_id in self._ready_collection_artifacts:
+            return {
+                "raw_ref": resolved_ref,
+                "sro_guard": True,
+                "covered_by_artifact": artifact_id,
+                "error": "collection evidence is already ready; raw retrieval is suppressed",
+                "next_action": self._ready_collection_artifacts[artifact_id],
             }
         if path.is_dir():
             entries = [str(entry.relative_to(path)) for entry in sorted(path.rglob("*")) if entry.is_file()]
@@ -738,14 +743,9 @@ class SparseReadingOrchestrator:
         return False
 
     def _collection_readiness_gate(self, artifact_id: str, mode: str) -> EvidencePack | None:
-        if self._is_native_escape_collection(artifact_id):
-            return self._native_escape_pack(artifact_id, mode)
         ready = self._ready_collection_artifacts.get(artifact_id)
         if not ready:
             return None
-        if self._collection_ready_guard_count(artifact_id) >= 1 and not self._required_outputs_pending(artifact_id):
-            self._mark_native_escape_collection(artifact_id)
-            return self._native_escape_pack(artifact_id, mode)
         self._record_ready_collection_guard(artifact_id)
         allowed_next = ready.get("allowed_next") or ["write_file"]
         evidence = list(self._ready_collection_evidence.get(artifact_id, [])) if self._required_outputs_pending(artifact_id) else []
@@ -884,9 +884,6 @@ class SparseReadingOrchestrator:
         artifact_id = self._ready_collection_child_artifact(path)
         if not artifact_id:
             return False
-        if self._collection_ready_guard_count(artifact_id) >= 1 and not self._required_outputs_pending(artifact_id):
-            self._mark_native_escape_collection(artifact_id)
-            return False
         self._record_ready_collection_guard(artifact_id)
         return True
 
@@ -900,12 +897,7 @@ class SparseReadingOrchestrator:
         artifact_id = self._collection_child_guards.get(key)
         if not artifact_id:
             return ""
-        if self._is_native_escape_collection(artifact_id):
-            return ""
         if key in self._ready_collection_child_guards:
-            if self._collection_ready_guard_count(artifact_id) >= 1 and not self._required_outputs_pending(artifact_id):
-                self._mark_native_escape_collection(artifact_id)
-                return ""
             self._record_ready_collection_guard(artifact_id)
         ready = self._ready_collection_artifacts.get(artifact_id, {})
         required = self._required_outputs_by_artifact.get(artifact_id, set())
@@ -942,10 +934,7 @@ class SparseReadingOrchestrator:
                 key = str((self.workspace / path).resolve(strict=False))
         except Exception:
             key = str(path)
-        artifact_id = self._ready_collection_child_guards.get(key, "")
-        if artifact_id and self._is_native_escape_collection(artifact_id):
-            return ""
-        return artifact_id
+        return self._ready_collection_child_guards.get(key, "")
 
     def _record_ready_collection_guard(self, artifact_id: str) -> None:
         self._ready_collection_guard_counts[artifact_id] = self._collection_ready_guard_count(artifact_id) + 1

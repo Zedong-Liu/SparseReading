@@ -34,7 +34,6 @@ class SparseReadBridge {
   private process?: ChildProcessWithoutNullStreams
   private nextID = 1
   private buffer = ""
-  private idleTimer?: NodeJS.Timeout
   private pending = new Map<string, { resolve: (value: Json) => void; reject: (error: Error) => void }>()
 
   constructor(
@@ -45,15 +44,11 @@ class SparseReadBridge {
 
   request(method: string, params: JsonObject = {}): Promise<JsonObject> {
     this.ensure()
-    this.clearIdleTimer()
     const id = String(this.nextID++)
     const payload: BridgeRequest = { id, method, params }
     return new Promise((resolve, reject) => {
       this.pending.set(id, {
-        resolve: (value) => {
-          this.scheduleIdleShutdown()
-          resolve(asObject(value))
-        },
+        resolve: (value) => resolve(asObject(value)),
         reject,
       })
       this.process!.stdin.write(JSON.stringify(payload) + "\n")
@@ -62,7 +57,6 @@ class SparseReadBridge {
 
   shutdown() {
     if (!this.process) return
-    this.clearIdleTimer()
     try {
       this.process.stdin.write(JSON.stringify({ id: String(this.nextID++), method: "shutdown", params: {} }) + "\n")
     } catch {
@@ -70,18 +64,6 @@ class SparseReadBridge {
     }
     this.process.kill()
     this.process = undefined
-  }
-
-  private clearIdleTimer() {
-    if (!this.idleTimer) return
-    clearTimeout(this.idleTimer)
-    this.idleTimer = undefined
-  }
-
-  private scheduleIdleShutdown() {
-    this.clearIdleTimer()
-    this.idleTimer = setTimeout(() => this.shutdown(), 20_000)
-    this.idleTimer.unref?.()
   }
 
   private ensure() {
@@ -208,7 +190,7 @@ function windowsQuote(value: string): string {
 
 function bridgeFor(ctx: Json, cfg: SparseReadConfig): SparseReadBridge {
   const workspace = workspaceOf(ctx, cfg)
-  const key = `${workspace}:${cfg.bridgeModule}:${cfg.mode}`
+  const key = bridgeKey(ctx, cfg)
   const existing = bridges.get(key)
   if (existing) return existing
   const prefix = splitCommand(cfg.bridgeCommand || "", cfg.python)
@@ -222,13 +204,33 @@ function bridgeFor(ctx: Json, cfg: SparseReadConfig): SparseReadBridge {
   return bridge
 }
 
+function bridgeKey(ctx: Json, cfg: SparseReadConfig): string {
+  const obj = asObject(ctx)
+  const session = stringValue(obj.sessionKey ?? obj.sessionId ?? obj.runId, "workspace")
+  return `${workspaceOf(ctx, cfg)}:${cfg.bridgeModule}:${cfg.mode}:${session}`
+}
+
+function shutdownBridgeFor(ctx: Json, cfg: SparseReadConfig) {
+  const key = bridgeKey(ctx, cfg)
+  const bridge = bridges.get(key)
+  if (!bridge) return
+  bridge.shutdown()
+  bridges.delete(key)
+}
+
 function workspaceOf(ctx: Json, cfg?: SparseReadConfig): string {
   const obj = asObject(ctx)
   return stringValue(obj.workspaceDir ?? obj.workspace ?? obj.worktree ?? obj.cwd ?? cfg?.workspaceRoot ?? process.cwd(), process.cwd())
 }
 
 function runtimeContext(event: any, ctx: Json): JsonObject {
-  return asObject(event?.context ?? ctx)
+  const base = asObject(ctx)
+  const nested = asObject(event?.context)
+  const merged: JsonObject = { ...base, ...nested }
+  for (const key of ["runId", "sessionKey", "sessionId", "workspaceDir"] as const) {
+    if (typeof event?.[key] === "string" && event[key].trim()) merged[key] = event[key]
+  }
+  return merged
 }
 
 function toolText(result: JsonObject): string {
@@ -657,9 +659,9 @@ const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
       }, { priority: -20, timeoutMs: 10000 })
     }
 
-    api.on("agent_end", async () => {
-      for (const bridge of bridges.values()) bridge.shutdown()
-      bridges.clear()
+    api.on("agent_end", async (event: any, ctx: Json) => {
+      const runCtx = runtimeContext(event, ctx)
+      shutdownBridgeFor(runCtx, pluginConfig(runCtx, registeredConfig))
     }, { priority: 0, timeoutMs: 5000 })
 
     api.lifecycle?.registerRuntimeLifecycle?.({

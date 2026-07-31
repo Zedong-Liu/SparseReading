@@ -866,11 +866,15 @@ def test_collection_collect_adds_audit_closure(tmp_path, monkeypatch):
     assert payload["next_action"]["tool"] == "write_file"
 
     policy = SparseCommandPolicy(sro)
-    assert policy.guard("cat run_scheduled_fetch.py", str(tmp_path)) is None
-    assert policy.guard("python3 -c \"print(open('run_scheduled_fetch.py').read())\"", str(tmp_path)) is None
+    assert "already covered by a ready SRO collection digest" in policy.guard(
+        "cat run_scheduled_fetch.py", str(tmp_path)
+    )
+    assert "already covered by a ready SRO collection digest" in policy.guard(
+        "python3 -c \"print(open('run_scheduled_fetch.py').read())\"", str(tmp_path)
+    )
     grep = GrepTool(workspace=tmp_path, sro=sro)
     grep_result = asyncio.run(grep.execute(pattern="deduplicate", path="run_scheduled_fetch.py", output_mode="content"))
-    assert "deduplicate" in grep_result
+    assert "already covered by a ready SparseRead collection digest" in grep_result
 
 
 def test_collection_collect_audit_closure_beats_expand_selected_sources(tmp_path, monkeypatch):
@@ -1238,7 +1242,7 @@ def test_collection_collect_guards_covered_child_reads(tmp_path, monkeypatch):
     assert payload["next_action"]["tool"] == "write_file"
 
 
-def test_ready_collection_repeated_sro_read_escapes_to_native(tmp_path, monkeypatch):
+def test_ready_collection_repeated_sro_read_remains_terminal(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     source = _write_ready_audit_bundle(tmp_path)
     sro = SparseReadingOrchestrator(tmp_path)
@@ -1256,12 +1260,11 @@ def test_ready_collection_repeated_sro_read_escapes_to_native(tmp_path, monkeypa
     second_repeat = sro.read({"artifact_id": card.artifact_id}, "collect", hint)
 
     assert first_repeat.next_action["guard"] == "ready_collection_artifact"
-    assert second_repeat.next_action["guard"] == "native_escape"
-    assert second_repeat.evidence == []
-    assert not sro.should_handoff_read(source)
+    assert second_repeat.next_action["guard"] == "ready_collection_artifact"
+    assert sro.should_handoff_read(source)
 
 
-def test_ready_collection_child_guard_is_one_shot_then_native(tmp_path, monkeypatch):
+def test_ready_collection_child_guard_does_not_escape_to_native(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     source = _write_ready_audit_bundle(tmp_path)
     sro = SparseReadingOrchestrator(tmp_path)
@@ -1283,8 +1286,30 @@ def test_ready_collection_child_guard_is_one_shot_then_native(tmp_path, monkeypa
     second = asyncio.run(tool.execute(path=str(source)))
 
     assert json.loads(first)["sro_guard"] is True
-    assert "sro_guard" not in second
-    assert "deduplicate" in second
+    assert json.loads(second)["sro_guard"] is True
+
+
+def test_ready_collection_suppresses_raw_retrieval(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    _write_ready_audit_bundle(tmp_path)
+    sro = SparseReadingOrchestrator(tmp_path)
+    preview = sro.preview({"path": str(tmp_path)})
+    ready = sro.read(
+        {"artifact_id": preview.artifact_id},
+        "collect",
+        {
+            "goal": "Audit fetch state vs output, code bugs, missing outputs, and important announcements",
+            "needles": ["seen_ids", "csv_summary", "deduplicate", "important"],
+            "want": "fact",
+            "type_hint": "collection",
+        },
+    )
+    assert ready.next_action["overall_status"] == "ready"
+
+    raw = sro.raw(preview.raw_ref)
+
+    assert raw["sro_guard"] is True
+    assert raw["covered_by_artifact"] == preview.artifact_id
 
 
 def test_exec_policy_blocks_exact_repeated_failure(tmp_path, monkeypatch):
