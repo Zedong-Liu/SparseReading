@@ -1,0 +1,12 @@
+Here are the answers extracted from the report and written to `answer.txt`:
+
+| # | Question | Answer |
+|---|----------|--------|
+| 1 | Community-built skills before filtering | **5705** |
+| 2 | Skills after filtering | **2999** |
+| 3 | Largest skill category | **AI & LLMs: 287** |
+| 4 | Second-largest skill category | **Search & Research: 253** |
+| 5 | File that defines an OpenClaw skill | **SKILL.md** |
+| 6 | Type of API the gateway exposes | **typed WebSocket API** |
+| 7 | Date skills registry data was collected | **February 7, 2026** |
+| 8 | Number of new benchmark tasks proposed | **6** |

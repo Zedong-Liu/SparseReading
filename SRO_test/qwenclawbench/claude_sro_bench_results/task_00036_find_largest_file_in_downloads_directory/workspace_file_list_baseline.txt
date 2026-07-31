@@ -1,0 +1,11 @@
+downloads\annual_sales_report_2024.csv
+downloads\app_config.yaml
+downloads\backup.sh
+downloads\meeting_notes_Q4.pdf
+downloads\old_photos_archive.zip
+downloads\product_catalog_api_response.json
+downloads\README_setup.txt
+downloads\screenshot_2024-11-20.png
+downloads\server_access.log
+downloads\text_file_size_report.txt
+task.md

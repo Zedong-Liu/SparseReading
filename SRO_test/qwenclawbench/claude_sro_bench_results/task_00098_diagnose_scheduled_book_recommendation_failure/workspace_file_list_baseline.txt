@@ -1,0 +1,10 @@
+book_recommendation.sh
+config\messaging.yaml
+config\task_scheduler.yaml
+data\books.json
+diagnosis_report.md
+logs\book_recommendation.log
+scripts\send_book_recommendation.py
+SKILL.md
+task.md
+templates\book_recommendation.md

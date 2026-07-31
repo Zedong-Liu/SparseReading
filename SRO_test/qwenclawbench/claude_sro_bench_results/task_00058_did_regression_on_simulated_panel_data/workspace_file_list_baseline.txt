@@ -1,0 +1,10 @@
+data\correlation_notes.txt
+data\data_dictionary.json
+data\firm_metadata.csv
+data\industry_benchmarks.csv
+data\macro_indicators.json
+data\panel_data.csv
+data\quarterly_financials.csv
+did_regression.py
+scripts\did_regression.py
+task.md

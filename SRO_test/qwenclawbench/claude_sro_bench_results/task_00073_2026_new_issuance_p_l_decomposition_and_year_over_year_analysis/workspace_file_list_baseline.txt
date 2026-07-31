@@ -1,0 +1,9 @@
+config\dms_config.json
+data\2026_new_issuance_transactions.csv
+data\2026_new_issuance_transactions.json
+data\client_contacts.csv
+data\deal_pipeline_2027.json
+data\historical_transactions_2024_2025.csv
+reports\2026_pnl_analysis.md
+reports\q3_2026_new_issuance_summary.md
+task.md

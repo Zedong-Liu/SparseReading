@@ -1,0 +1,13 @@
+The audit is complete. Here's a summary of what `fetch-audit.md` covers:
+
+**5 findings identified:**
+
+1. **24 orphaned IDs** — `fetch_state.json` tracks 35 seen_ids but only 11 records exist in output files. The 24 missing IDs likely belong to earlier runs whose files were purged by the `retention_days: 30` policy. Design gap: state outlives output data.
+
+2. **Missing CSV output** — `config.yaml` has `csv_summary: true`, so `summary_2026-02-09.csv` should exist alongside the JSON file, but it's absent. Needs investigation (possibly an unhandled exception in `save_csv_summary()`).
+
+3. **🔴 Deduplication bug** — `state["seen_ids"] = list(seen)[-5000:]` converts a `set` to `list`, which has non-deterministic ordering. The `[-5000:]` slice is meant to keep the 5000 most recent IDs but instead drops arbitrary ones — potentially causing re-fetches of old announcements or skipping new ones. **Fix:** `sorted(seen, key=int)[-5000:]`.
+
+4. **5 important announcements** for Feb 9 identified: Ping An Bank (annual results pre-announcement), Ping An Insurance (premium income), CATL (major energy storage contract), Zijin Mining (overseas acquisition progress), China Merchants Bank (Tier 2 capital bond issuance).
+
+5. **Config cross-check** confirms `max_pages: 3`, `request_delay: 1.5`, category unfiltered, notifications disabled — all consistent with observed behavior.

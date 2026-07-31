@@ -1,0 +1,335 @@
+[
+  {
+    "task_id": "task_loogle_shortdep_fall_of_outremer",
+    "category": "long-context",
+    "mode": "baseline",
+    "score": 1.0,
+    "elapsed_s": 52.6,
+    "tokens_est": 700,
+    "success": true,
+    "error": "",
+    "notes": "",
+    "breakdown": {
+      "file_created": 1.0,
+      "q1_dual_crusading_policy": 1.0,
+      "q2_barons_homage": 1.0,
+      "q3_inherited_achaea": 1.0,
+      "q4_king_went": 1.0,
+      "q5_mongol_fortifications": 1.0,
+      "q6_christian_rule_tripoli": 1.0,
+      "q7_qalawun_offer": 1.0,
+      "q8_khalil_battlements": 1.0,
+      "q9_fall_acre_impact": 1.0,
+      "q10_henry_crowned": 1.0
+    }
+  },
+  {
+    "task_id": "task_loogle_shortdep_fall_of_outremer_5q",
+    "category": "long-context",
+    "mode": "baseline",
+    "score": 1.0,
+    "elapsed_s": 25.5,
+    "tokens_est": 392,
+    "success": true,
+    "error": "",
+    "notes": "",
+    "breakdown": {
+      "file_created": 1.0,
+      "q1_dual_crusading_policy": 1.0,
+      "q2_barons_homage": 1.0,
+      "q3_inherited_achaea": 1.0,
+      "q4_mongol_fortifications": 1.0,
+      "q5_khalil_battlements": 1.0
+    }
+  },
+  {
+    "task_id": "task_loogle_shortdep_fall_of_outremer_3q_followup",
+    "category": "long-context",
+    "mode": "baseline",
+    "score": 1.0,
+    "elapsed_s": 20.3,
+    "tokens_est": 336,
+    "success": true,
+    "error": "",
+    "notes": "",
+    "breakdown": {
+      "file_created": 1.0,
+      "q1_tripoli_duration": 1.0,
+      "q2_henry_crowned_jerusalem": 1.0,
+      "q3_king_went_after_balian": 1.0
+    }
+  },
+  {
+    "task_id": "task_21_openclaw_comprehension",
+    "category": "long-context",
+    "mode": "baseline",
+    "score": 1.0,
+    "elapsed_s": 186.7,
+    "tokens_est": 460,
+    "success": true,
+    "error": "",
+    "notes": "",
+    "breakdown": {
+      "file_created": 1.0,
+      "total_skills_correct": 1.0,
+      "filtered_skills_correct": 1.0,
+      "top_category_correct": 1.0,
+      "second_category_correct": 1.0,
+      "skill_filename_correct": 1.0,
+      "api_type_correct": 1.0,
+      "date_correct": 1.0,
+      "proposed_tasks_correct": 1.0
+    }
+  },
+  {
+    "task_id": "task_workspacebench_lite_334_kaima_rd",
+    "category": "long-context",
+    "mode": "baseline",
+    "score": 1.0,
+    "elapsed_s": 29.9,
+    "tokens_est": 140,
+    "success": true,
+    "error": "",
+    "notes": "",
+    "breakdown": {
+      "exact_amount": 1.0
+    }
+  },
+  {
+    "task_id": "task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check",
+    "category": "audit",
+    "mode": "baseline",
+    "score": 0.3,
+    "elapsed_s": 470.5,
+    "tokens_est": 1008,
+    "success": true,
+    "error": "",
+    "notes": "Grading error: name 'seen' is not defined",
+    "breakdown": {}
+  },
+  {
+    "task_id": "task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix",
+    "category": "audit",
+    "mode": "baseline",
+    "score": 0.4833,
+    "elapsed_s": 230.92132091522217,
+    "tokens_est": 20,
+    "success": false,
+    "error": "max turns",
+    "notes": "",
+    "breakdown": {
+      "diagnostic_report_exists": 1.0,
+      "medrxiv_root_cause_identified": 1.0,
+      "schema_mismatch_identified": 1.0,
+      "bug_fixes_json_quality": 0.9,
+      "cron_config_fixed": 1.0,
+      "git_initialized": 1.0
+    }
+  },
+  {
+    "task_id": "task_00086_command_prefix_security_analysis",
+    "category": "audit",
+    "mode": "baseline",
+    "score": 0.9231,
+    "elapsed_s": 192.7,
+    "tokens_est": 1500,
+    "success": true,
+    "error": "",
+    "notes": "",
+    "breakdown": {
+      "output_report_exists": 1.0,
+      "output_json_exists": 1.0,
+      "json_has_correct_structure": 1.0,
+      "json_curl_pipe_classified_injection": 1.0,
+      "json_python_classified_safe": 1.0,
+      "json_claude_classified_safe": 0.0,
+      "json_test_cmd_counts_correct": 1.0,
+      "report_cites_specific_ki_patterns": 1.0,
+      "report_addresses_security_bulletin": 1.0,
+      "report_resolves_policy_conflicts": 1.0,
+      "report_per_command_risk_matrix": 1.0,
+      "no_false_injection_on_claude_cmd": 1.0,
+      "final_determination_claude_prefix": 1.0
+    }
+  },
+  {
+    "task_id": "task_00094_exam_monitor_system_audit_cron_sync_bug_rate_limit_gap_and_site",
+    "category": "audit",
+    "mode": "baseline",
+    "score": 1.0,
+    "elapsed_s": 115.9,
+    "tokens_est": 764,
+    "success": true,
+    "error": "",
+    "notes": "",
+    "breakdown": {
+      "status_file_exists": 1.0,
+      "verified_count_correct": 1.0,
+      "cron_mismatch_identified": 1.0,
+      "rate_limit_gap_identified": 1.0,
+      "sites_needing_attention": 1.0,
+      "fix_proposed": 1.0
+    }
+  },
+  {
+    "task_id": "task_00098_diagnose_scheduled_book_recommendation_failure",
+    "category": "audit",
+    "mode": "baseline",
+    "score": 0.7917,
+    "elapsed_s": 171.5874433517456,
+    "tokens_est": 20,
+    "success": false,
+    "error": "max turns",
+    "notes": "",
+    "breakdown": {
+      "diagnosis_report_created": 1.0,
+      "telegram_429_root_cause_documented": 1.0,
+      "retry_timing_mismatch_documented": 1.0,
+      "execution_gap_pattern_analyzed": 1.0,
+      "secondary_config_issues_identified": 1.0,
+      "actionable_remediation_proposed": 1.0
+    }
+  },
+  {
+    "task_id": "task_00058_did_regression_on_simulated_panel_data",
+    "category": "structured",
+    "mode": "baseline",
+    "score": 1.0,
+    "elapsed_s": 137.5996696949005,
+    "tokens_est": 20,
+    "success": true,
+    "error": "",
+    "notes": "",
+    "breakdown": {
+      "script_exists": 1.0,
+      "reads_panel_data": 1.0,
+      "panel_data_handling": 1.0,
+      "firm_fixed_effects": 1.0,
+      "year_fixed_effects": 1.0,
+      "clustered_se": 1.0,
+      "did_interaction": 1.0,
+      "did_coefficient_accuracy": 0.25,
+      "parallel_trends_analysis": 1.0,
+      "results_summary_exists": 0.0,
+      "summary_contains_findings": 0.0,
+      "interpretation_att_comparison": 0.5
+    }
+  },
+  {
+    "task_id": "task_00073_2026_new_issuance_p_l_decomposition_and_year_over_year_analysis",
+    "category": "structured",
+    "mode": "baseline",
+    "score": 1.0,
+    "elapsed_s": 259.7,
+    "tokens_est": 796,
+    "success": true,
+    "error": "",
+    "notes": "",
+    "breakdown": {
+      "report_file_created": 1.0,
+      "correct_net_pnl": 1.0,
+      "fee_vs_trading_decomposition": 1.0,
+      "deal_count_accuracy": 1.0,
+      "historical_comparison": 1.0,
+      "data_completeness_noted": 1.0
+    }
+  },
+  {
+    "task_id": "task_spreadsheetbench_verified_49333_trimmed_vlookup",
+    "category": "structured",
+    "mode": "baseline",
+    "score": 1.0,
+    "elapsed_s": 96.90741729736328,
+    "tokens_est": 20,
+    "success": true,
+    "error": "",
+    "notes": "",
+    "breakdown": {
+      "official_cell_match": 0.0
+    }
+  },
+  {
+    "task_id": "task_spreadsheetbench_verified_11276_weekday_row_fix",
+    "category": "structured",
+    "mode": "baseline",
+    "score": 0.0,
+    "elapsed_s": 40.8,
+    "tokens_est": 448,
+    "success": true,
+    "error": "",
+    "notes": "",
+    "breakdown": {
+      "official_cell_match": 0.0
+    }
+  },
+  {
+    "task_id": "task_00036_find_largest_file_in_downloads_directory",
+    "category": "native-fit",
+    "mode": "baseline",
+    "score": 0.5,
+    "elapsed_s": 22.4,
+    "tokens_est": 312,
+    "success": true,
+    "error": "",
+    "notes": "",
+    "breakdown": {
+      "inspected_downloads_with_tools": 0.0,
+      "filtered_text_like_files_correctly": 1.0,
+      "identified_largest_text_file": 0.0,
+      "reported_exact_size": 0.25,
+      "created_correct_report_file": 1.0,
+      "clear_and_consistent_communication": 0.75
+    }
+  },
+  {
+    "task_id": "task_00059_user_discount_calculator",
+    "category": "native-fit",
+    "mode": "baseline",
+    "score": 0.95,
+    "elapsed_s": 190.5,
+    "tokens_est": 1072,
+    "success": true,
+    "error": "",
+    "notes": "",
+    "breakdown": {
+      "file_exists": 1.0,
+      "valid_python": 1.0,
+      "importable": 1.0,
+      "has_reusable_entrypoint": 1.0,
+      "reads_rules_file": 1.0,
+      "ground_truth_core_cases": 1.0,
+      "inactive_override": 1.0,
+      "spending_non_stacking": 1.0,
+      "loyalty_date_logic": 1.0,
+      "cap_enforcement": 0.5
+    }
+  },
+  {
+    "task_id": "task_00067_write_sparql_query_for_product_reviews_containing_iphone",
+    "category": "native-fit",
+    "mode": "baseline",
+    "score": 0.8667,
+    "elapsed_s": 81.2,
+    "tokens_est": 1052,
+    "success": true,
+    "error": "",
+    "notes": "",
+    "breakdown": {
+      "file_created": 1.0,
+      "correct_prefix": 1.0,
+      "select_keyword": 1.0,
+      "has_product_property": 0.0,
+      "no_wrong_property": 0.0,
+      "product_name_property": 1.0,
+      "contains_filter": 1.0,
+      "iphone_string": 1.0,
+      "where_clause": 1.0,
+      "no_wrong_prefix_uri": 1.0,
+      "review_id_property": 1.0,
+      "review_title_property": 1.0,
+      "review_text_property": 1.0,
+      "review_date_property": 1.0,
+      "no_reviewer_name": 1.0
+    }
+  }
+]

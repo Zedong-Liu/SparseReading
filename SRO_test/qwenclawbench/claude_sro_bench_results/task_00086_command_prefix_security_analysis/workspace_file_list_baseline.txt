@@ -1,0 +1,14 @@
+command_classifications.json
+config\known_injections.json
+config\legacy_rules.yaml
+config\security_policy.yaml
+data\test_commands.csv
+docs\command_prefix_guide.md
+docs\security_bulletin_2025.md
+logs\previous_scans.log
+noise\dependency_check.json
+noise\network_audit.log
+reports\scan_template.md
+scripts\run_pipeline.sh
+security_analysis_report.md
+task.md

@@ -1,0 +1,563 @@
+{
+  "benchmark": "claude_bridge_17tasks",
+  "gate_profile": "Claude Code (classify_claude_gate)",
+  "tasks": {
+    "task_loogle_shortdep_fall_of_outremer": {
+      "category": "long-context",
+      "asset_count": 1,
+      "asset_total_bytes": 100221,
+      "gate_mode": "advisory",
+      "trajectory": "optional",
+      "native_tokens_est": 25055,
+      "sro_tokens": 1359,
+      "tokens_saved": 23696,
+      "savings_ratio": 0.9458,
+      "sro_operations": 2,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "advisory": 1
+        },
+        "by_trajectory": {
+          "optional": 1
+        },
+        "enforce_pct": 0.0,
+        "advisory_pct": 100.0,
+        "native_pct": 0.0
+      },
+      "ref_baseline": {
+        "baseline": [
+          725743,
+          1.0
+        ],
+        "gate": [
+          49612,
+          0.909
+        ]
+      }
+    },
+    "task_loogle_shortdep_fall_of_outremer_5q": {
+      "category": "long-context",
+      "asset_count": 1,
+      "asset_total_bytes": 100221,
+      "gate_mode": "advisory",
+      "trajectory": "optional",
+      "native_tokens_est": 25055,
+      "sro_tokens": 1359,
+      "tokens_saved": 23696,
+      "savings_ratio": 0.9458,
+      "sro_operations": 2,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "advisory": 1
+        },
+        "by_trajectory": {
+          "optional": 1
+        },
+        "enforce_pct": 0.0,
+        "advisory_pct": 100.0,
+        "native_pct": 0.0
+      },
+      "ref_baseline": {
+        "baseline": [
+          725743,
+          1.0
+        ],
+        "gate": [
+          49612,
+          0.909
+        ]
+      }
+    },
+    "task_loogle_shortdep_fall_of_outremer_3q_followup": {
+      "category": "long-context",
+      "asset_count": 1,
+      "asset_total_bytes": 100221,
+      "gate_mode": "advisory",
+      "trajectory": "optional",
+      "native_tokens_est": 25055,
+      "sro_tokens": 1359,
+      "tokens_saved": 23696,
+      "savings_ratio": 0.9458,
+      "sro_operations": 2,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "advisory": 1
+        },
+        "by_trajectory": {
+          "optional": 1
+        },
+        "enforce_pct": 0.0,
+        "advisory_pct": 100.0,
+        "native_pct": 0.0
+      },
+      "ref_baseline": {
+        "baseline": [
+          725743,
+          1.0
+        ],
+        "gate": [
+          49612,
+          0.909
+        ]
+      }
+    },
+    "task_21_openclaw_comprehension": {
+      "category": "long-context",
+      "asset_count": 1,
+      "asset_total_bytes": 75902,
+      "gate_mode": "advisory",
+      "trajectory": "optional",
+      "native_tokens_est": 47659,
+      "sro_tokens": 802,
+      "tokens_saved": 46857,
+      "savings_ratio": 0.9832,
+      "sro_operations": 2,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "advisory": 1
+        },
+        "by_trajectory": {
+          "optional": 1
+        },
+        "enforce_pct": 0.0,
+        "advisory_pct": 100.0,
+        "native_pct": 0.0
+      },
+      "ref_baseline": {
+        "baseline": [
+          466144,
+          1.0
+        ],
+        "gate": [
+          46799,
+          1.0
+        ]
+      }
+    },
+    "task_workspacebench_lite_334_kaima_rd": {
+      "category": "long-context",
+      "asset_count": 4,
+      "asset_total_bytes": 14401554,
+      "gate_mode": "advisory",
+      "trajectory": "optional",
+      "native_tokens_est": 8191032,
+      "sro_tokens": 2584,
+      "tokens_saved": 8188448,
+      "savings_ratio": 0.9997,
+      "sro_operations": 2,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "advisory": 1
+        },
+        "by_trajectory": {
+          "optional": 1
+        },
+        "enforce_pct": 0.0,
+        "advisory_pct": 100.0,
+        "native_pct": 0.0
+      },
+      "ref_baseline": null
+    },
+    "task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check": {
+      "category": "audit",
+      "asset_count": 5,
+      "asset_total_bytes": 18220,
+      "gate_mode": "enforce",
+      "trajectory": "sro_first",
+      "native_tokens_est": 5107,
+      "sro_tokens": 3398,
+      "tokens_saved": 1709,
+      "savings_ratio": 0.3346,
+      "sro_operations": 2,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "enforce": 1
+        },
+        "by_trajectory": {
+          "sro_first": 1
+        },
+        "enforce_pct": 100.0,
+        "advisory_pct": 0.0,
+        "native_pct": 0.0
+      },
+      "ref_baseline": {
+        "baseline": [
+          234370,
+          0.802
+        ],
+        "gate": [
+          372531,
+          0.97
+        ]
+      }
+    },
+    "task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix": {
+      "category": "audit",
+      "asset_count": 9,
+      "asset_total_bytes": 22809,
+      "gate_mode": "advisory",
+      "trajectory": "optional",
+      "native_tokens_est": 5783,
+      "sro_tokens": 3555,
+      "tokens_saved": 2228,
+      "savings_ratio": 0.3853,
+      "sro_operations": 2,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "advisory": 1
+        },
+        "by_trajectory": {
+          "optional": 1
+        },
+        "enforce_pct": 0.0,
+        "advisory_pct": 100.0,
+        "native_pct": 0.0
+      },
+      "ref_baseline": {
+        "baseline": [
+          852486,
+          0.601
+        ],
+        "gate": [
+          609603,
+          0.913
+        ]
+      }
+    },
+    "task_00086_command_prefix_security_analysis": {
+      "category": "audit",
+      "asset_count": 11,
+      "asset_total_bytes": 44045,
+      "gate_mode": "advisory",
+      "trajectory": "one_collect_then_write",
+      "native_tokens_est": 12503,
+      "sro_tokens": 3893,
+      "tokens_saved": 8610,
+      "savings_ratio": 0.6886,
+      "sro_operations": 2,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "advisory": 1
+        },
+        "by_trajectory": {
+          "one_collect_then_write": 1
+        },
+        "enforce_pct": 0.0,
+        "advisory_pct": 100.0,
+        "native_pct": 0.0
+      },
+      "ref_baseline": {
+        "baseline": [
+          659904,
+          0.233
+        ],
+        "gate": [
+          207557,
+          0.585
+        ]
+      }
+    },
+    "task_00094_exam_monitor_system_audit_cron_sync_bug_rate_limit_gap_and_site": {
+      "category": "audit",
+      "asset_count": 4,
+      "asset_total_bytes": 19016,
+      "gate_mode": "advisory",
+      "trajectory": "optional",
+      "native_tokens_est": 5323,
+      "sro_tokens": 2164,
+      "tokens_saved": 3159,
+      "savings_ratio": 0.5935,
+      "sro_operations": 2,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "advisory": 1
+        },
+        "by_trajectory": {
+          "optional": 1
+        },
+        "enforce_pct": 0.0,
+        "advisory_pct": 100.0,
+        "native_pct": 0.0
+      },
+      "ref_baseline": {
+        "baseline": [
+          256217,
+          1.0
+        ],
+        "gate": [
+          255913,
+          1.0
+        ]
+      }
+    },
+    "task_00098_diagnose_scheduled_book_recommendation_failure": {
+      "category": "audit",
+      "asset_count": 6,
+      "asset_total_bytes": 16634,
+      "gate_mode": "advisory",
+      "trajectory": "optional",
+      "native_tokens_est": 4595,
+      "sro_tokens": 2545,
+      "tokens_saved": 2050,
+      "savings_ratio": 0.4461,
+      "sro_operations": 2,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "advisory": 1
+        },
+        "by_trajectory": {
+          "optional": 1
+        },
+        "enforce_pct": 0.0,
+        "advisory_pct": 100.0,
+        "native_pct": 0.0
+      },
+      "ref_baseline": {
+        "baseline": [
+          387489,
+          0.707
+        ],
+        "gate": [
+          364592,
+          0.917
+        ]
+      }
+    },
+    "task_00058_did_regression_on_simulated_panel_data": {
+      "category": "structured",
+      "asset_count": 8,
+      "asset_total_bytes": 40759,
+      "gate_mode": "advisory",
+      "trajectory": "optional",
+      "native_tokens_est": 13174,
+      "sro_tokens": 3766,
+      "tokens_saved": 9408,
+      "savings_ratio": 0.7141,
+      "sro_operations": 2,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "advisory": 1
+        },
+        "by_trajectory": {
+          "optional": 1
+        },
+        "enforce_pct": 0.0,
+        "advisory_pct": 100.0,
+        "native_pct": 0.0
+      },
+      "ref_baseline": {
+        "baseline": [
+          1428715,
+          1.0
+        ],
+        "gate": [
+          466309,
+          1.0
+        ]
+      }
+    },
+    "task_00073_2026_new_issuance_p_l_decomposition_and_year_over_year_analysis": {
+      "category": "structured",
+      "asset_count": 7,
+      "asset_total_bytes": 30218,
+      "gate_mode": "advisory",
+      "trajectory": "optional",
+      "native_tokens_est": 9717,
+      "sro_tokens": 4709,
+      "tokens_saved": 5008,
+      "savings_ratio": 0.5154,
+      "sro_operations": 2,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "advisory": 1
+        },
+        "by_trajectory": {
+          "optional": 1
+        },
+        "enforce_pct": 0.0,
+        "advisory_pct": 100.0,
+        "native_pct": 0.0
+      },
+      "ref_baseline": {
+        "baseline": [
+          562285,
+          0.917
+        ],
+        "gate": [
+          390319,
+          1.0
+        ]
+      }
+    },
+    "task_spreadsheetbench_verified_49333_trimmed_vlookup": {
+      "category": "structured",
+      "asset_count": 1,
+      "asset_total_bytes": 79491,
+      "gate_mode": "advisory",
+      "trajectory": "optional",
+      "native_tokens_est": 35768,
+      "sro_tokens": 696,
+      "tokens_saved": 35072,
+      "savings_ratio": 0.9805,
+      "sro_operations": 2,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "advisory": 1
+        },
+        "by_trajectory": {
+          "optional": 1
+        },
+        "enforce_pct": 0.0,
+        "advisory_pct": 100.0,
+        "native_pct": 0.0
+      },
+      "ref_baseline": null
+    },
+    "task_spreadsheetbench_verified_11276_weekday_row_fix": {
+      "category": "structured",
+      "asset_count": 1,
+      "asset_total_bytes": 409849,
+      "gate_mode": "advisory",
+      "trajectory": "optional",
+      "native_tokens_est": 213329,
+      "sro_tokens": 673,
+      "tokens_saved": 212656,
+      "savings_ratio": 0.9968,
+      "sro_operations": 2,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "advisory": 1
+        },
+        "by_trajectory": {
+          "optional": 1
+        },
+        "enforce_pct": 0.0,
+        "advisory_pct": 100.0,
+        "native_pct": 0.0
+      },
+      "ref_baseline": null
+    },
+    "task_00036_find_largest_file_in_downloads_directory": {
+      "category": "native-fit",
+      "asset_count": 9,
+      "asset_total_bytes": 32205,
+      "gate_mode": "advisory",
+      "trajectory": "optional",
+      "native_tokens_est": 9892,
+      "sro_tokens": 2331,
+      "tokens_saved": 7561,
+      "savings_ratio": 0.7644,
+      "sro_operations": 2,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "advisory": 1
+        },
+        "by_trajectory": {
+          "optional": 1
+        },
+        "enforce_pct": 0.0,
+        "advisory_pct": 100.0,
+        "native_pct": 0.0
+      },
+      "ref_baseline": {
+        "baseline": [
+          53738,
+          0.5
+        ],
+        "gate": [
+          41561,
+          0.667
+        ]
+      }
+    },
+    "task_00059_user_discount_calculator": {
+      "category": "native-fit",
+      "asset_count": 5,
+      "asset_total_bytes": 6880,
+      "gate_mode": "native",
+      "trajectory": "native",
+      "native_tokens_est": 2120,
+      "sro_tokens": 1340,
+      "tokens_saved": 780,
+      "savings_ratio": 0.3679,
+      "sro_operations": 1,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "native": 1
+        },
+        "by_trajectory": {
+          "native": 1
+        },
+        "enforce_pct": 0.0,
+        "advisory_pct": 0.0,
+        "native_pct": 100.0
+      },
+      "ref_baseline": {
+        "baseline": [
+          281061,
+          0.65
+        ],
+        "gate": [
+          549151,
+          0.971
+        ]
+      }
+    },
+    "task_00067_write_sparql_query_for_product_reviews_containing_iphone": {
+      "category": "native-fit",
+      "asset_count": 8,
+      "asset_total_bytes": 14978,
+      "gate_mode": "native",
+      "trajectory": "native",
+      "native_tokens_est": 3740,
+      "sro_tokens": 1582,
+      "tokens_saved": 2158,
+      "savings_ratio": 0.577,
+      "sro_operations": 1,
+      "gate_summary": {
+        "total_gate_decisions": 1,
+        "by_mode": {
+          "native": 1
+        },
+        "by_trajectory": {
+          "native": 1
+        },
+        "enforce_pct": 0.0,
+        "advisory_pct": 0.0,
+        "native_pct": 100.0
+      },
+      "ref_baseline": {
+        "baseline": [
+          163928,
+          0.496
+        ],
+        "gate": [
+          137198,
+          0.496
+        ]
+      }
+    }
+  },
+  "cumulative": {
+    "native_tokens_est": 8634907,
+    "sro_tokens": 38115,
+    "tokens_saved": 8596792,
+    "savings_ratio": 0.9956
+  }
+}

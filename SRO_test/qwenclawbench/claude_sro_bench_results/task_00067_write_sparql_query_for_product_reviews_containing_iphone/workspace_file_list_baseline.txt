@@ -1,0 +1,11 @@
+config\endpoint_config.yaml
+data\ontology_spec.ttl
+data\product_catalog.csv
+data\sample_reviews.ttl
+docs\ontology_notes.md
+docs\query_requirements.md
+docs\sparql_examples.md
+output\filtered_query.sparql
+query_output.sparql
+scripts\load_data.sh
+task.md

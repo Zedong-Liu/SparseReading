@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "sparseread-sro-sse": {
+      "type": "sse",
+      "url": "http://127.0.0.1:18765/sse"
+    }
+  }
+}

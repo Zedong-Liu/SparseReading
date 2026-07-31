@@ -1,0 +1,20 @@
+Status report written to `monitoring-status.md`. Here's the executive summary:
+
+---
+
+### 🔢 Sites: 9 active, 13 pending
+Out of **22** configured sites, **9** are verified + enabled (National, Beijing, Shanghai, Guangdong, Jiangsu, Zhejiang, Shandong, Sichuan, Fujian). The remaining 13 are all `verified: false` / `enabled: false`.
+
+### 🐛 Critical: Cron & script out of sync at hour 19
+The **cron** fires through `9-19` (last runs at 19:00, 19:15, 19:30, 19:45), but the **script** exits immediately when `now.hour == 19` (line 231: `now.hour < 19`). That's **4 wasted invocations per day**. I recommend changing the script condition to `< 20` to match the intended 7 PM coverage.
+
+### ⚠️ Feishu rate limit not enforced
+`feishu.json` defines `max_per_hour: 20` and `batch_delay_seconds: 5`, but `send_feishu_notification()` never reads them. If a batch of announcements hits after downtime, you'd have no cap — risk of flooding the channel.
+
+### 🚧 Two sites flagged
+- **Hubei** — was returning 502
+- **Henan** — was returning 404 intermittently
+
+Both need browser re-verification before you'd want to enable them.
+
+The report ends with a prioritized pre-flight checklist if you want to tackle fixes before turning the cron back on.

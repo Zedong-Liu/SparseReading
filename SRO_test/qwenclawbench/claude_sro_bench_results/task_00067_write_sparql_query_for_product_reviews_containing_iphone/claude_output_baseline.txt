@@ -1,0 +1,54 @@
+Both files have been written. Here's a summary of what was created and the key decisions made:
+
+---
+
+### `query_output.sparql` — Primary Query
+
+```sparql
+PREFIX : <http://www.example.org/product-review#>
+
+SELECT ?reviewId ?reviewTitle ?reviewText ?reviewDate ?productName
+WHERE {
+  ?review a :Review ;
+          :forProduct ?product ;
+          :reviewId ?reviewId ;
+          :reviewTitle ?reviewTitle ;
+          :reviewText ?reviewText ;
+          :reviewDate ?reviewDate .
+  ?product :productName ?productName .
+  FILTER(CONTAINS(?productName, "iPhone"))
+}
+```
+
+### `output/filtered_query.sparql` — Filtered Query
+
+```sparql
+PREFIX : <http://www.example.org/product-review#>
+
+SELECT ?reviewId ?reviewTitle ?reviewText ?reviewDate ?productName ?rating
+WHERE {
+  ?review a :Review ;
+          :forProduct ?product ;
+          :reviewId ?reviewId ;
+          :reviewTitle ?reviewTitle ;
+          :reviewText ?reviewText ;
+          :reviewDate ?reviewDate ;
+          :rating ?rating .
+  ?product :productName ?productName .
+  FILTER(CONTAINS(?productName, "iPhone"))
+  FILTER(?rating > 3.5)
+}
+ORDER BY DESC(?rating)
+```
+
+### Key decisions based on the full workspace analysis:
+
+1. **Prefix**: `PREFIX : <http://www.example.org/product-review#>` — matches the ontology spec and sample data (not the alternate `product-reviews` plural prefix that appeared in the example file).
+
+2. **`:forProduct` (v2.0)** — The developer notes explicitly state the `:hasProduct` → `:forProduct` rename as the key v2.0 change, and that `ontology_spec.ttl` hasn't been updated yet. Used `:forProduct`.
+
+3. **`FILTER(CONTAINS(...))`** — As specified in the requirements doc (not `REGEX`). Case-sensitive match for `"iPhone"`.
+
+4. **`:rating` property** — The developer notes list it as a TODO being worked on by @sarah. Since the user explicitly requested this filter, the second query includes it assuming the property will exist on `:Review` with a numeric value.
+
+5. **Output fields** — The requirements doc table lists exactly 5 fields for the first query. The second query adds `?rating` so the `ORDER BY DESC(?rating)` is meaningful in results.
