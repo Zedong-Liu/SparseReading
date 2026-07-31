@@ -80,6 +80,9 @@ The benchmark runner materializes every task input at the `workspace_files.dest`
 path declared in task frontmatter. This is also the path used by the automated
 grader. Do not reintroduce a synthetic `./assets` prefix: doing so can produce a
 correct report in the wrong directory and incorrectly score the case as zero.
+The runner also passes the per-case runtime through OpenCode's explicit `--dir`
+option. Relying on the subprocess working directory alone lets OpenCode discover
+the outer repository root and run the agent against unrelated benchmark files.
 
 Legacy path compatibility currently remains as a tracked `opencode_pilot/`
 copy. New development must use `integrations/opencode/`; the duplicate tree is

@@ -139,6 +139,7 @@ def test_both_runners_pass_workspace_root_to_real_opencode(monkeypatch, tmp_path
         assert env["SPARSEREAD_WORKSPACE_ROOT"] == str(runtime.resolve())
         assert env["SPARSEREAD_POLICY"] == "auto"
         assert "--auto" in captured["cmd"]
+        assert captured["cmd"][captured["cmd"].index("--dir") + 1] == str(runtime.resolve())
         assert summary.status == "ok"
 
 
@@ -193,3 +194,4 @@ def test_both_runners_canonicalize_symlinked_workspace(monkeypatch, tmp_path: Pa
         assert isinstance(env, dict)
         assert captured["cwd"] == runtime
         assert env["SPARSEREAD_WORKSPACE_ROOT"] == str(runtime)
+        assert captured["cmd"][captured["cmd"].index("--dir") + 1] == str(runtime)

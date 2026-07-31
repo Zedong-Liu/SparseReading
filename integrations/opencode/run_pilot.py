@@ -337,7 +337,18 @@ def run_real_opencode(run_dir: Path, task: str, mode: str, args: argparse.Namesp
     )
     config = opencode_config(args)
     env["OPENCODE_CONFIG_CONTENT"] = json.dumps(config)
-    command = opencode_command_prefix(args) + ["run", "--auto", "-m", args.model, "--format", "json", "--", prompt]
+    command = opencode_command_prefix(args) + [
+        "run",
+        "--dir",
+        str(runtime_root),
+        "--auto",
+        "-m",
+        args.model,
+        "--format",
+        "json",
+        "--",
+        prompt,
+    ]
     started = time.time()
     proc = subprocess.run(
         command,
