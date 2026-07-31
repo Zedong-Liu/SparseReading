@@ -27,7 +27,7 @@ DEFAULT_LARGE_BYTES = int(os.environ.get("SRO_LARGE_BYTES", "4096"))
 DEFAULT_STRUCTURED_LARGE_BYTES = int(os.environ.get("SRO_STRUCTURED_LARGE_BYTES", "1024"))
 DEFAULT_COLLECTION_FILES = int(os.environ.get("SRO_COLLECTION_FILES", "3"))
 SKIP_DIRS = {
-    ".git", ".nanobot", ".openclaw", "__pycache__", ".pytest_cache",
+    ".git", ".nanobot", ".openclaw", ".opencode", "node_modules", "__pycache__", ".pytest_cache",
     ".ruff_cache", "memory", "sessions", "bootstrap", "skills",
 }
 SKIP_FILES = {"AGENTS.md", "BOOTSTRAP.md", "HEARTBEAT.md", "IDENTITY.md", "SOUL.md", "TOOLS.md", "USER.md"}

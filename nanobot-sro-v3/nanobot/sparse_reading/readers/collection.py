@@ -41,7 +41,7 @@ class CollectionReader:
         "all", "about", "create", "summary", "summarize", "report",
     }
     _SKIP_DIRS = {
-        ".git", ".nanobot", ".openclaw", "__pycache__", ".pytest_cache",
+        ".git", ".nanobot", ".openclaw", ".opencode", "node_modules", "__pycache__", ".pytest_cache",
         ".ruff_cache", "memory", "sessions", "bootstrap", "skills",
     }
     _SKIP_FILES = {"AGENTS.md", "BOOTSTRAP.md", "HEARTBEAT.md", "IDENTITY.md", "SOUL.md", "TOOLS.md", "USER.md"}

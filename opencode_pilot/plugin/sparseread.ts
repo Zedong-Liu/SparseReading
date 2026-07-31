@@ -333,6 +333,8 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
   )
   let pendingTargets: HandoffTarget[] = []
   const readySessions = new Map<string, string>()
+  const sessionsWithWrites = new Set<string>()
+  const sessionsWithSro = new Set<string>()
 
   function readyStatus(value: Json): string {
     if (Array.isArray(value)) {
@@ -371,6 +373,13 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
       }),
       metadata: { sparseread: true, method, terminal: true },
     }
+  }
+
+  function lateSroGuard(context: any): ToolResult | undefined {
+    const sessionID = context?.sessionID
+    if (!sessionID || !sessionsWithWrites.has(sessionID) || sessionsWithSro.has(sessionID)) return undefined
+    readySessions.set(sessionID, "deliverable_write_started")
+    return readyGuard(context, "preview")
   }
 
   function reminderRoot() {
@@ -573,6 +582,9 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
         async execute(args, context): Promise<ToolResult> {
           const terminal = readyGuard(context, "preview")
           if (terminal) return terminal
+          const late = lateSroGuard(context)
+          if (late) return late
+          if (context?.sessionID) sessionsWithSro.add(context.sessionID)
           const result = await bridge.request("preview", {
             ...args,
             ...(typeof args.path === "string" ? { path: absoluteCandidate(args.path) } : {}),
@@ -671,7 +683,11 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
       if (event.type !== "session.deleted") return
       const properties = event.properties as any
       const sessionID = properties?.sessionID ?? properties?.info?.id
-      if (typeof sessionID === "string") readySessions.delete(sessionID)
+      if (typeof sessionID === "string") {
+        readySessions.delete(sessionID)
+        sessionsWithWrites.delete(sessionID)
+        sessionsWithSro.delete(sessionID)
+      }
     },
     "tool.execute.before": async (input, output) => {
       if (!shouldInspectTool(input.tool)) return
@@ -739,6 +755,9 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
       }
     },
     "tool.execute.after": async (input, output) => {
+      if (["write", "edit", "patch", "apply_patch"].includes(input.tool)) {
+        sessionsWithWrites.add(input.sessionID)
+      }
       if (!shouldInspectTool(input.tool)) return
       const args = isObject(input.args) ? input.args : {}
       const text = outputText(output)

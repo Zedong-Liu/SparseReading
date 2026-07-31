@@ -247,6 +247,22 @@ def test_read_file_long_pdf_hands_off(tmp_path, monkeypatch):
     assert payload["file_card"]["recommended_mode"] == "collect_if_multi_fact_else_scout"
 
 
+def test_collection_ignores_framework_internal_directories(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    (tmp_path / "evidence.md").write_text("authoritative evidence\n", encoding="utf-8")
+    internal = tmp_path / ".opencode" / "node_modules" / "package"
+    internal.mkdir(parents=True)
+    (internal / "README.md").write_text("irrelevant dependency docs\n" * 1000, encoding="utf-8")
+
+    sro = SparseReadingOrchestrator(tmp_path)
+    info = sro.inspect(tmp_path)
+    details = sro.collection_reader.card_details(tmp_path)
+
+    assert info.size_bytes == len("authoritative evidence\n")
+    assert details["file_count"] == 1
+    assert details["files"][0]["name"] == "evidence.md"
+
+
 def test_collection_card_and_focus_then_verify(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     emails = tmp_path / "emails"
