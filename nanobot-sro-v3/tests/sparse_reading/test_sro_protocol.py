@@ -1807,7 +1807,7 @@ def test_hintspec_repairs_slots_embedded_in_other_field():
 
 
 def test_calc_artifact_path_is_not_handed_off(tmp_path):
-    calc_path = tmp_path / ".nanobot" / "sro-calc" / "sro_x" / "rows.tsv"
+    calc_path = tmp_path / ".sparseread" / "sro-calc" / "sro_x" / "rows.tsv"
     calc_path.parent.mkdir(parents=True)
     calc_path.write_text("a\tb\n1\t2\n", encoding="utf-8")
     sro = SparseReadingOrchestrator(tmp_path)

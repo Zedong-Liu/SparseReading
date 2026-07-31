@@ -10,7 +10,7 @@ from nanobot.agent.tools.shell import ExecTool
 from nanobot.sparse_reading.orchestrator import SparseReadingOrchestrator
 
 from sparseread import SparseRead, SparseReadConfig, wrap
-from sparseread.adapters.nanobot import install
+from sparseread_nanobot import install
 
 
 class FakeNanobotAgent:

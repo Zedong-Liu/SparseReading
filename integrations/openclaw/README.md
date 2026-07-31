@@ -8,7 +8,7 @@ The implementation keeps SparseRead core behavior in `nanobot-sro-v3`
 unchanged.  OpenClaw calls the existing core through:
 
 ```bash
-python -m sparseread.bridge.openclaw
+python -m sparseread_openclaw.bridge
 ```
 
 ## Design
@@ -57,8 +57,8 @@ python3 scripts/install_sparseread.py \
   --doctor
 ```
 
-The installer builds this plugin, links it into OpenClaw, enables it, and
-patches the plugin config with the repo-backed SparseRead bridge command.
+The installer packs this plugin, installs it into OpenClaw, enables it, and
+patches the plugin config with a managed SparseRead bridge runtime.
 
 ## Local Development
 
@@ -80,7 +80,7 @@ Useful environment overrides:
 
 ```bash
 export SPARSEREAD_PROJECT_ROOT="$PWD"
-export SPARSEREAD_PYTHON="uv --project $PWD/nanobot-sro-v3 run --with pymupdf python"
+export SPARSEREAD_PYTHON="$PWD/.venv/bin/python"
 export SPARSEREAD_POLICY=auto
 export SPARSEREAD_OPENCLAW_HOOK_MODE=enforce
 ```
@@ -89,5 +89,5 @@ Use the source installer for normal installs. These environment variables are
 developer overrides only; production users should choose `--sparseread-mode
 auto` or `--sparseread-mode advisory`.
 
-Legacy path compatibility remains available through `openclaw_pilot/` symlinks,
-but new development should use `integrations/openclaw/`.
+This directory is the only OpenClaw implementation source. The former
+root-level `openclaw_pilot/` copy was removed to prevent release drift.

@@ -37,8 +37,8 @@ from nanobot.session.goal_state import (
     runner_wall_llm_timeout_s,
 )
 from nanobot.session.manager import Session, SessionManager
-from nanobot.sparse_reading import SparseReadingOrchestrator
-from nanobot.sparse_reading.tools import SroCardTool, SroPreviewTool, SroRawTool, SroReadTool
+from sparseread.core.orchestrator import SparseReadingOrchestrator
+from sparseread.core.tools import SroCardTool, SroPreviewTool, SroRawTool, SroReadTool
 from nanobot.utils.artifacts import generated_image_paths_from_messages
 from nanobot.utils.document import extract_documents
 from nanobot.utils.helpers import image_placeholder_text

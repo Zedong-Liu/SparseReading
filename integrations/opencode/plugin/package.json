@@ -1,14 +1,23 @@
 {
-  "name": "opencode-plugin-sparseread",
+  "name": "@sparseread/opencode",
   "version": "0.1.0",
   "type": "module",
-  "private": true,
+  "private": false,
+  "main": "./dist/sparseread.js",
+  "types": "./dist/sparseread.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/sparseread.d.ts",
+      "import": "./dist/sparseread.js"
+    }
+  },
   "files": [
-    "sparseread.ts",
+    "dist",
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json --noEmit"
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "@opencode-ai/plugin": "1.18.10"

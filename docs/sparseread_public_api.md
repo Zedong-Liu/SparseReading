@@ -21,13 +21,14 @@ agent = SparseReadAgentWrapper(agent, mode="auto", workspace=".")
 agent.run("Answer questions from this 200-page PDF")
 ```
 
-The current implementation adds this facade under `nanobot-sro-v3/sparseread/`.
+The public facade is provided by the standalone `sparseread-core` distribution
+under `packages/sparseread-core/src/sparseread/`.
 The important design decision is that the wrapper is not the whole product. It
 is only the shortest entry point. The stable public surface should be:
 
 - `SparseRead`: runtime/toolkit object that owns the orchestrator and exposes tools.
 - `SparseReadAgentWrapper` / `wrap`: three-line convenience facade.
-- `sparseread.adapters.*`: framework-specific installers that wire tools, file guards, command policy, and traces.
+- `sparseread_<framework>`: independently packaged framework adapters that wire tools, file guards, command policy, and traces.
 
 This is better than a wrapper-only API because sparse reading is not just prompt
 compression. It needs concrete tool registration and guard placement. A wrapper
@@ -60,7 +61,7 @@ This should be the documented path for projects that already construct their
 agent and tools explicitly:
 
 ```python
-from sparseread.adapters.nanobot import install
+from sparseread_nanobot import install
 
 sparseread = install(agent, mode="auto", workspace=".")
 agent.run("Find the root cause across these logs and configs.")
@@ -128,7 +129,7 @@ sparseread/
 The public wrapper should not depend on nanobot concepts. Nanobot should become one adapter:
 
 ```python
-from sparseread.adapters.nanobot import NanobotAdapter
+from sparseread_nanobot import NanobotAdapter
 ```
 
 ## Core API Sketch
@@ -192,7 +193,7 @@ Implemented in the nanobot SRO branch:
 - `sparseread.SparseReadAgentWrapper`
 - `sparseread.SparseReadConfig`
 - `sparseread.wrap`
-- `sparseread.adapters.nanobot.install`
+- `sparseread_nanobot.install`
 - package inclusion in the local hatch build
 - public API tests for runtime tools, wrapper forwarding, Benefit Gate override,
   and nanobot adapter installation

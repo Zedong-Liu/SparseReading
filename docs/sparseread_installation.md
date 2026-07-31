@@ -28,7 +28,7 @@ sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 当前三平台不是完全相同的 skill 文件形态：
 
 - nanobot 内置 skill：`nanobot-sro-v3/nanobot/skills/sparse-reading/SKILL.md`。
-- OpenClaw 插件随带 skill：`integrations/openclaw/plugin/skills/sparse-reading/SKILL.md`；pilot 展示路径是 `openclaw_pilot/plugin/skills/sparse-reading/SKILL.md`。
+- OpenClaw 插件随带 skill：`integrations/openclaw/plugin/skills/sparse-reading/SKILL.md`。
 - OpenCode 当前没有独立 `SKILL.md`。它通过插件注册 `sro_preview`、`sro_read` 等工具，并在大文件/截断输出场景给模型 nudge。日常使用时，用户应该在任务里要求 agent 自动使用 SparseRead。
 
 所以，用户文档不应该写成工具调用教程；工具调用顺序是给模型和插件看的。
@@ -110,8 +110,9 @@ python3 scripts/install_sparseread.py \
 安装脚本会写入：
 
 ```text
-/path/to/your/project/.opencode/plugins/sparseread.ts
+/path/to/your/project/.opencode/plugins/sparseread.js
 /path/to/your/project/.opencode/sparseread.json
+/path/to/your/project/.sparseread/runtime/opencode/
 ```
 
 启动 OpenCode：
@@ -160,9 +161,9 @@ python3 scripts/install_sparseread.py \
 安装脚本会：
 
 - 构建 `integrations/openclaw/plugin`；
-- 执行 `openclaw plugins install --link integrations/openclaw/plugin`；
+- 将插件打成 npm tarball 后执行普通 `openclaw plugins install`（不是 source link）；
 - 启用 `sparseread-openclaw`；
-- 写入 repo-backed SparseRead bridge 配置。
+- 在 OpenClaw profile 下创建 wheel-only 的受管 Python runtime，并写入 bridge 配置。
 
 检查插件是否加载：
 
@@ -229,9 +230,9 @@ python3 scripts/install_sparseread.py --platform openclaw --doctor-only
 
 doctor 会做两层检查：
 
-- bridge smoke：用临时 markdown fixture 启动对应 Python bridge，验证 `sro_preview` 能返回 FileCard 和 L0 预览；
+- bridge smoke：先校验 bridge protocol `1.0`，再用临时 markdown fixture 验证 `sro_preview` 能返回 FileCard 和 L0 预览；
 - 已安装集成检查：
-  - OpenCode 验证 `.opencode/plugins/sparseread.ts` 和 `.opencode/sparseread.json`；
+  - OpenCode 验证 `.opencode/plugins/sparseread.js`、`.opencode/sparseread.json` 和受管 Python runtime；
   - OpenClaw 验证 `plugins inspect --runtime --json` 中的 SparseRead 工具面；默认 `auto` 下还会检查拦截 hook 已注册，`advisory` 下会检查没有 native tool 拦截 hook。
 
 ## 日常使用建议

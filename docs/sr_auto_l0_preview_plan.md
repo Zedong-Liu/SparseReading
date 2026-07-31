@@ -24,8 +24,8 @@ long-lived branches:
 nanobot-sro-v3/          SparseRead core, public facade, shared bridge
 integrations/openclaw/   OpenClaw plugin and local/API runners
 integrations/opencode/   OpenCode plugin and offline/real runner
-openclaw_pilot/          compatibility symlinks only
-opencode_pilot/          compatibility symlinks only
+packages/sparseread-core/ framework-neutral runtime package
+integrations/            canonical framework adapters and plugin packages
 ```
 
 New development should happen under `integrations/*`. The pilot paths remain as

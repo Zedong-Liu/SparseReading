@@ -1,8 +1,16 @@
 {
-  "name": "openclaw-plugin-sparseread",
+  "name": "@sparseread/openclaw",
   "version": "0.1.0",
   "type": "module",
-  "private": true,
+  "private": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "files": [
     "dist",
     "skills",
@@ -11,6 +19,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
     "plugin:inspect": "openclaw plugins inspect sparseread-openclaw --runtime --json"
   },
   "dependencies": {

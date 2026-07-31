@@ -23,6 +23,8 @@ license-files = [
 ]
 
 dependencies = [
+    "sparseread-core>=0.1,<0.2",
+    "sparseread-nanobot>=0.1,<0.2",
     "typer>=0.20.0,<1.0.0",
     "anthropic>=0.45.0,<1.0.0",
     "pydantic>=2.12.0,<3.0.0",
@@ -104,6 +106,8 @@ dev = [
     "pytest-cov>=6.0.0,<7.0.0",
     "ruff>=0.1.0",
     "pymupdf>=1.25.0",
+    "sparseread-opencode>=0.1,<0.2",
+    "sparseread-openclaw>=0.1,<0.2",
 ]
 
 [project.scripts]
@@ -127,7 +131,6 @@ allow-direct-references = true
 [tool.hatch.build]
 include = [
     "nanobot/**/*.py",
-    "sparseread/**/*.py",
     "nanobot/templates/**/*.md",
     "nanobot/skills/**/*.md",
     "nanobot/skills/**/*.sh",
@@ -141,7 +144,7 @@ artifacts = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["nanobot", "sparseread"]
+packages = ["nanobot"]
 
 [tool.hatch.build.targets.wheel.sources]
 "nanobot" = "nanobot"
@@ -152,7 +155,6 @@ packages = ["nanobot", "sparseread"]
 [tool.hatch.build.targets.sdist]
 include = [
     "nanobot/",
-    "sparseread/",
     "nanobot/web/dist/",
     "bridge/",
     "hatch_build.py",
@@ -161,6 +163,12 @@ include = [
     "THIRD_PARTY_NOTICES.md",
     "pyproject.toml",
 ]
+
+[tool.uv.sources]
+sparseread-core = { path = "../packages/sparseread-core", editable = true }
+sparseread-nanobot = { path = "../integrations/nanobot/python", editable = true }
+sparseread-opencode = { path = "../integrations/opencode/python", editable = true }
+sparseread-openclaw = { path = "../integrations/openclaw/python", editable = true }
 
 [tool.ruff]
 line-length = 100

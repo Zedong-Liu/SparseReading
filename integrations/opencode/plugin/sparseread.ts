@@ -4,6 +4,7 @@ import path from "node:path"
 import { tool, type Plugin, type ToolResult } from "@opencode-ai/plugin"
 
 type Json = any
+const BRIDGE_PROTOCOL_VERSION = "1.0"
 
 type BridgeRequest = {
   id: string
@@ -48,6 +49,7 @@ class SparseReadBridge {
   private nextID = 1
   private buffer = ""
   private pending = new Map<string, { resolve: (value: Json) => void; reject: (error: Error) => void }>()
+  private protocolCheck?: Promise<void>
 
   constructor(
     private readonly command: string,
@@ -57,6 +59,16 @@ class SparseReadBridge {
 
   request(method: string, params: Record<string, Json> = {}): Promise<Json> {
     this.ensure()
+    if (method === "version") return this.requestRaw(method, params)
+    this.protocolCheck ??= this.requestRaw("version", {}).then((result) => {
+      if (result?.protocol_version !== BRIDGE_PROTOCOL_VERSION) {
+        throw new Error(`SparseRead bridge protocol mismatch: expected ${BRIDGE_PROTOCOL_VERSION}, got ${result?.protocol_version ?? "missing"}`)
+      }
+    })
+    return this.protocolCheck.then(() => this.requestRaw(method, params))
+  }
+
+  private requestRaw(method: string, params: Record<string, Json>): Promise<Json> {
     const id = String(this.nextID++)
     const payload: BridgeRequest = { id, method, params }
     return new Promise((resolve, reject) => {
@@ -74,6 +86,7 @@ class SparseReadBridge {
     }
     this.process.kill()
     this.process = undefined
+    this.protocolCheck = undefined
   }
 
   private ensure() {
@@ -93,6 +106,7 @@ class SparseReadBridge {
       for (const pending of this.pending.values()) pending.reject(error)
       this.pending.clear()
       this.process = undefined
+      this.protocolCheck = undefined
     })
   }
 
@@ -295,7 +309,7 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
     options?.projectRoot ?? installed?.projectRoot ?? process.env.SPARSEREAD_PROJECT_ROOT ?? process.cwd(),
   )
   const python = options?.python ?? installed?.python ?? process.env.SPARSEREAD_PYTHON ?? "python3"
-  const bridgeModule = options?.bridgeModule ?? installed?.bridgeModule ?? "sparseread.bridge.opencode"
+  const bridgeModule = options?.bridgeModule ?? installed?.bridgeModule ?? "sparseread_opencode.bridge"
   const mode = options?.mode ?? installed?.mode ?? process.env.SPARSEREAD_MODE ?? "auto"
   const bridgeCommandRaw = options?.bridgeCommand ?? installed?.bridgeCommand ?? process.env.SPARSEREAD_BRIDGE_COMMAND
   const commandPrefix = bridgeCommandPrefix(bridgeCommandRaw, python)

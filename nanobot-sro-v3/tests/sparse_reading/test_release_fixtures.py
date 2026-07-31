@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sparseread.bridge.openclaw import OpenClawBridge
-from sparseread.bridge.opencode import OpenCodeBridge
+from sparseread_openclaw.bridge import OpenClawBridge
+from sparseread_opencode.bridge import OpenCodeBridge
 
 
 BRIDGES = (OpenCodeBridge, OpenClawBridge)

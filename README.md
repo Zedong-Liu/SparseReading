@@ -42,11 +42,11 @@ sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 `sro_preview` 开始。OpenCode/OpenClaw/nanobot 的源码安装步骤见
 [`docs/sparseread_installation.md`](docs/sparseread_installation.md)。
 
-源代码位于 `nanobot-sro-v3/`。推荐以外层仓库根目录作为 benchmark workspace，因为测试脚本也依赖 `local_agent_comp/`、`local_bin/` 和 `SRO_test/qwenclawbench/` 中的 runtime 夹具。
+框架无关的 SR core 位于 `packages/sparseread-core/`；NanoBot、OpenCode、OpenClaw 的兼容层分别位于 `integrations/<framework>/`。`nanobot-sro-v3/` 只保留 NanoBot 框架及其兼容转发层。推荐以外层仓库根目录作为 benchmark workspace，因为测试脚本也依赖 `local_agent_comp/`、`local_bin/` 和 `SRO_test/qwenclawbench/` 中的 runtime 夹具。
 
 ## 快速开始（源码安装）
 
-当前默认安装形态是：用户本机已有 OpenCode 或 OpenClaw CLI，然后从本仓库源码加装 SparseRead。完整 fresh-machine 指南见
+当前默认安装形态是：用户本机已有 OpenCode 或 OpenClaw CLI，安装器构建发布包并创建独立的受管 Python runtime。运行时不再链接或导入源码 checkout。完整 fresh-machine 指南见
 [`docs/sparseread_installation.md`](docs/sparseread_installation.md)。
 
 Windows 默认推荐路径是 **PowerShell 原生安装**。用户只需要选择一个 SparseRead 模式：默认 `auto` 会在高收益任务上自动接管大文件/证据包读取；`advisory` 只注册工具和提示，不拦截原生读取。OpenCode 生产安装不再依赖 `.env + source`。

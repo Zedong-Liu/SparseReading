@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the repo-backed SparseRead adapters for existing agent CLIs."""
+"""Install self-contained SparseRead adapters for existing agent CLIs."""
 
 from __future__ import annotations
 
@@ -8,15 +8,18 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
-CORE = ROOT / "nanobot-sro-v3"
+CORE_PACKAGE = ROOT / "packages" / "sparseread-core"
+OPENCODE_ADAPTER = ROOT / "integrations" / "opencode" / "python"
+OPENCLAW_ADAPTER = ROOT / "integrations" / "openclaw" / "python"
 OPENCODE_PLUGIN = ROOT / "integrations" / "opencode" / "plugin"
 OPENCLAW_PLUGIN = ROOT / "integrations" / "openclaw" / "plugin"
+BRIDGE_PROTOCOL_VERSION = "1.0"
 WINDOWS_COMMAND_SUFFIXES = (".cmd", ".exe", ".bat")
 WINDOWS_SHELL_EXTS = {".cmd", ".bat"}
 OPENCODE_RUNTIME_TOOLS = ("sro_preview", "sro_raw", "sro_card", "sro_read", "sro_trace")
@@ -129,20 +132,34 @@ def is_windows_shell_script(path: str) -> bool:
     return Path(path).suffix.lower() in WINDOWS_SHELL_EXTS
 
 
-def bridge_command(uv_cmd: CommandSpec | None = None) -> list[str]:
-    command = uv_cmd or command_spec("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
-    return [command.executable, "--project", str(CORE), "run", "--with", "pymupdf", "python"]
+def runtime_python(runtime_dir: Path) -> Path:
+    scripts = "Scripts" if os.name == "nt" else "bin"
+    executable = "python.exe" if os.name == "nt" else "python"
+    return runtime_dir / scripts / executable
 
 
-def bridge_invocation(uv_cmd: CommandSpec, *args: str) -> list[str]:
-    return uv_cmd.argv("--project", str(CORE), "run", "--with", "pymupdf", "python", *args)
+def bridge_command(python: Path) -> list[str]:
+    return [str(python)]
 
 
-def opencode_workspace_config(policy: str, mode: str) -> dict[str, object]:
+def bridge_invocation(python: Path, *args: str) -> list[str]:
+    return CommandSpec(str(python)).argv(*args)
+
+
+def opencode_runtime_dir(workspace: Path) -> Path:
+    return workspace / ".sparseread" / "runtime" / "opencode"
+
+
+def openclaw_runtime_dir(profile: str) -> Path:
+    return openclaw_profile_config_path(profile).parent / "sparseread" / "runtime"
+
+
+def opencode_workspace_config(workspace: Path, python: Path, policy: str, mode: str) -> dict[str, object]:
     return {
-        "projectRoot": str(ROOT),
-        "bridgeCommand": bridge_command(),
-        "bridgeModule": "sparseread.bridge.opencode",
+        "projectRoot": str(workspace),
+        "bridgeCommand": bridge_command(python),
+        "bridgeModule": "sparseread_opencode.bridge",
+        "bridgeProtocol": BRIDGE_PROTOCOL_VERSION,
         "policy": policy,
         "mode": mode,
     }
@@ -164,43 +181,8 @@ def openclaw_profile_config_path(profile: str) -> Path:
     return base / "openclaw.json"
 
 
-def is_sparse_read_openclaw_plugin(path_text: str) -> bool:
-    candidate = Path(path_text).expanduser()
-    manifest = candidate / "openclaw.plugin.json"
-    if not manifest.exists():
-        return False
-    try:
-        payload = read_json(manifest)
-    except Exception:
-        return False
-    return payload.get("id") == "sparseread-openclaw"
-
-
-def normalized_openclaw_load_paths(profile: str) -> list[str]:
-    config_path = openclaw_profile_config_path(profile)
-    if not config_path.exists():
-        return [str(OPENCLAW_PLUGIN)]
-    payload = read_json(config_path)
-    plugins = payload.get("plugins")
-    if not isinstance(plugins, dict):
-        return [str(OPENCLAW_PLUGIN)]
-    load = plugins.get("load")
-    if not isinstance(load, dict):
-        return [str(OPENCLAW_PLUGIN)]
-    paths = load.get("paths")
-    kept: list[str] = []
-    if isinstance(paths, list):
-        for item in paths:
-            if not isinstance(item, str) or not item.strip():
-                continue
-            if is_sparse_read_openclaw_plugin(item):
-                continue
-            kept.append(item)
-    return [str(OPENCLAW_PLUGIN), *kept]
-
-
 def opencode_workspace_paths(workspace: Path) -> tuple[Path, Path]:
-    return workspace / ".opencode" / "plugins" / "sparseread.ts", workspace / ".opencode" / "sparseread.json"
+    return workspace / ".opencode" / "plugins" / "sparseread.js", workspace / ".opencode" / "sparseread.json"
 
 
 def validate_opencode_workspace(workspace: Path) -> None:
@@ -210,10 +192,12 @@ def validate_opencode_workspace(workspace: Path) -> None:
     if not config_target.exists():
         raise SystemExit(f"OpenCode config is missing: {config_target}")
     config = read_json(config_target)
-    if config.get("projectRoot") != str(ROOT):
+    if config.get("projectRoot") != str(workspace):
         raise SystemExit(f"OpenCode config has unexpected projectRoot: {config.get('projectRoot')}")
-    if config.get("bridgeModule") != "sparseread.bridge.opencode":
+    if config.get("bridgeModule") != "sparseread_opencode.bridge":
         raise SystemExit(f"OpenCode config has unexpected bridgeModule: {config.get('bridgeModule')}")
+    if config.get("bridgeProtocol") != BRIDGE_PROTOCOL_VERSION:
+        raise SystemExit(f"OpenCode config has unexpected bridgeProtocol: {config.get('bridgeProtocol')}")
     if config.get("policy") not in {"observe", "advisory", "enforce", "native", "auto"}:
         raise SystemExit(f"OpenCode config has invalid policy: {config.get('policy')}")
     if config.get("mode") not in {"auto", "bench_protocol", "force", "force_sro", "native", "advisory"}:
@@ -239,19 +223,10 @@ def validate_openclaw_runtime(stdout: str, *, hook_mode: str) -> None:
     if not isinstance(plugin, dict):
         raise SystemExit("OpenClaw runtime inspect must include plugin metadata.")
     root_dir = plugin.get("rootDir")
-    if not isinstance(root_dir, str) or Path(root_dir).resolve() != OPENCLAW_PLUGIN.resolve():
-        raise SystemExit(
-            "OpenClaw loaded SparseRead from an unexpected plugin root: "
-            f"{root_dir!r}. Expected {OPENCLAW_PLUGIN}."
-        )
-    install = payload.get("install")
-    if isinstance(install, dict):
-        source_path = install.get("sourcePath")
-        if isinstance(source_path, str) and Path(source_path).resolve() != OPENCLAW_PLUGIN.resolve():
-            raise SystemExit(
-                "OpenClaw install metadata points at an unexpected SparseRead plugin path: "
-                f"{source_path!r}. Expected {OPENCLAW_PLUGIN}."
-            )
+    if not isinstance(root_dir, str) or not root_dir.strip():
+        raise SystemExit("OpenClaw runtime inspect did not report an installed plugin root.")
+    if Path(root_dir).resolve() == OPENCLAW_PLUGIN.resolve():
+        raise SystemExit("OpenClaw is still loading SparseRead from the source checkout instead of an installed package.")
     diagnostics = payload.get("diagnostics")
     if isinstance(diagnostics, list):
         for item in diagnostics:
@@ -301,6 +276,73 @@ def npm_install_and_build(plugin_dir: Path, *, dry_run: bool) -> None:
     run(npm_cmd.argv("run", "build"), cwd=plugin_dir, dry_run=dry_run)
 
 
+def npm_pack(plugin_dir: Path, destination: Path, *, dry_run: bool) -> Path:
+    npm_cmd = command_spec("npm")
+    destination.mkdir(parents=True, exist_ok=True)
+    proc = run(
+        npm_cmd.argv("pack", "--json", "--pack-destination", str(destination)),
+        cwd=plugin_dir,
+        dry_run=dry_run,
+    )
+    if dry_run:
+        return destination / "sparseread-plugin.tgz"
+    payload = json.loads(proc.stdout)
+    if (
+        not isinstance(payload, list)
+        or not payload
+        or not isinstance(payload[0], dict)
+        or not isinstance(payload[0].get("filename"), str)
+    ):
+        raise SystemExit(f"npm pack returned an unexpected payload: {proc.stdout}")
+    return destination / payload[0]["filename"]
+
+
+def install_python_runtime(
+    runtime_dir: Path,
+    adapter: Path,
+    *,
+    python: str,
+    dry_run: bool,
+) -> Path:
+    uv_cmd = command_spec("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
+    managed_python = runtime_python(runtime_dir)
+    run(uv_cmd.argv("venv", str(runtime_dir), "--python", python), dry_run=dry_run)
+    with tempfile.TemporaryDirectory(prefix="sparseread-python-pack-") as tmp:
+        wheel_dir = Path(tmp)
+        run(uv_cmd.argv("build", "--wheel", "--project", str(CORE_PACKAGE), "--out-dir", str(wheel_dir)), dry_run=dry_run)
+        run(uv_cmd.argv("build", "--wheel", "--project", str(adapter), "--out-dir", str(wheel_dir)), dry_run=dry_run)
+        if dry_run:
+            wheels = [wheel_dir / "sparseread_core.whl", wheel_dir / "sparseread_adapter.whl"]
+        else:
+            wheels = sorted(wheel_dir.glob("*.whl"))
+            if len(wheels) != 2:
+                raise SystemExit(f"expected core and adapter wheels, found: {wheels}")
+        run(
+            uv_cmd.argv(
+                "pip",
+                "install",
+                "--force-reinstall",
+                "--python",
+                str(managed_python),
+                *(str(wheel) for wheel in wheels),
+                "pymupdf>=1.25.0",
+                "openpyxl>=3.1.0,<4.0.0",
+            ),
+            dry_run=dry_run,
+        )
+    return managed_python
+
+
+def install_opencode_plugin_package(workspace: Path, *, dry_run: bool) -> None:
+    with tempfile.TemporaryDirectory(prefix="sparseread-opencode-pack-") as tmp:
+        tarball = npm_pack(OPENCODE_PLUGIN, Path(tmp), dry_run=dry_run)
+        npm_cmd = command_spec("npm")
+        run(
+            npm_cmd.argv("install", "--prefix", str(workspace / ".opencode"), "--no-save", str(tarball)),
+            dry_run=dry_run,
+        )
+
+
 def install_opencode(args: argparse.Namespace) -> None:
     profile = install_profile(args)
     workspace = Path(args.opencode_workspace or os.getcwd()).expanduser().resolve()
@@ -308,11 +350,18 @@ def install_opencode(args: argparse.Namespace) -> None:
     command_spec(args.opencode_cmd)
     if not args.skip_build:
         npm_install_and_build(OPENCODE_PLUGIN, dry_run=args.dry_run)
+    managed_python = install_python_runtime(
+        opencode_runtime_dir(workspace),
+        OPENCODE_ADAPTER,
+        python=getattr(args, "python", sys.executable),
+        dry_run=args.dry_run,
+    )
+    install_opencode_plugin_package(workspace, dry_run=args.dry_run)
     print(f"[opencode] install workspace: {workspace}")
     if not args.dry_run:
         plugin_target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(OPENCODE_PLUGIN / "sparseread.ts", plugin_target)
-        write_json(config_target, opencode_workspace_config(profile.policy, profile.mode))
+        plugin_target.write_text('export { default } from "@sparseread/opencode"\n', encoding="utf-8")
+        write_json(config_target, opencode_workspace_config(workspace, managed_python, profile.policy, profile.mode))
     print(f"[opencode] plugin: {plugin_target}")
     print(f"[opencode] config: {config_target}")
     print("[opencode] launch with: opencode run ...")
@@ -323,6 +372,12 @@ def install_openclaw(args: argparse.Namespace) -> None:
     openclaw_cmd = command_spec(args.openclaw_cmd)
     if not args.skip_build:
         npm_install_and_build(OPENCLAW_PLUGIN, dry_run=args.dry_run)
+    managed_python = install_python_runtime(
+        openclaw_runtime_dir(args.openclaw_profile),
+        OPENCLAW_ADAPTER,
+        python=getattr(args, "python", sys.executable),
+        dry_run=args.dry_run,
+    )
     profile_args = ["--profile", args.openclaw_profile] if args.openclaw_profile else []
     hook_policy: dict[str, bool] = {}
     if profile.openclaw_hook_mode in {"prompt", "trace", "enforce"}:
@@ -334,25 +389,19 @@ def install_openclaw(args: argparse.Namespace) -> None:
         check=False,
         dry_run=args.dry_run,
     )
-    run(
-        openclaw_cmd.argv(*profile_args, "plugins", "install", "--link", str(OPENCLAW_PLUGIN)),
-        check=False,
-        dry_run=args.dry_run,
-    )
+    with tempfile.TemporaryDirectory(prefix="sparseread-openclaw-pack-") as tmp:
+        tarball = npm_pack(OPENCLAW_PLUGIN, Path(tmp), dry_run=args.dry_run)
+        run(
+            openclaw_cmd.argv(*profile_args, "plugins", "install", str(tarball)),
+            check=False,
+            dry_run=args.dry_run,
+        )
     run(
         openclaw_cmd.argv(*profile_args, "plugins", "enable", "sparseread-openclaw"),
         check=False,
         dry_run=args.dry_run,
     )
-    run(
-        openclaw_cmd.argv(*profile_args, "config", "patch", "--stdin"),
-        input_text=json.dumps({"plugins": {"load": {"paths": normalized_openclaw_load_paths(args.openclaw_profile)}}}),
-        dry_run=args.dry_run,
-    )
-    run(
-        openclaw_cmd.argv(*profile_args, "plugins", "registry", "--refresh", "--json"),
-        dry_run=args.dry_run,
-    )
+    run(openclaw_cmd.argv(*profile_args, "plugins", "registry", "--refresh", "--json"), dry_run=args.dry_run)
     patch = {
         "plugins": {
             "entries": {
@@ -361,12 +410,13 @@ def install_openclaw(args: argparse.Namespace) -> None:
                     "hooks": hook_policy,
                     "config": {
                         "policy": profile.policy,
-                        "bridgeCommand": json.dumps(bridge_command()),
-                        "projectRoot": str(ROOT),
+                        "bridgeCommand": json.dumps(bridge_command(managed_python)),
+                        "bridgeProtocol": BRIDGE_PROTOCOL_VERSION,
+                        "projectRoot": str(openclaw_profile_config_path(args.openclaw_profile).parent),
                         "workspaceRoot": str(Path(args.openclaw_workspace).expanduser().resolve())
                         if args.openclaw_workspace
                         else "",
-                        "bridgeModule": "sparseread.bridge.openclaw",
+                        "bridgeModule": "sparseread_openclaw.bridge",
                         "mode": profile.mode,
                         "hookMode": profile.openclaw_hook_mode,
                     },
@@ -394,14 +444,14 @@ def install_openclaw(args: argparse.Namespace) -> None:
     print("[openclaw] restart the gateway or start a new agent run after install")
 
 
-def bridge_smoke(module: str, *, dry_run: bool) -> None:
-    uv_cmd = command_spec("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
+def bridge_smoke(python: Path, module: str, *, dry_run: bool) -> None:
     with tempfile.TemporaryDirectory(prefix="sparseread-install-smoke-") as tmp:
         workspace = Path(tmp)
         target = workspace / "report.md"
         target.write_text("# Report\n\nROOT_CAUSE: cache invalidation used tenant_id.\n", encoding="utf-8")
         payload = "\n".join(
             [
+                json.dumps({"id": "0", "method": "version", "params": {}}),
                 json.dumps({"id": "1", "method": "preview", "params": {"path": str(target)}}),
                 json.dumps({"id": "2", "method": "trace", "params": {}}),
                 json.dumps({"id": "3", "method": "shutdown", "params": {}}),
@@ -409,7 +459,7 @@ def bridge_smoke(module: str, *, dry_run: bool) -> None:
             ]
         )
         proc = run(
-            bridge_invocation(uv_cmd, "-m", module, "--workspace", str(workspace), "--mode", "force"),
+            bridge_invocation(python, "-m", module, "--workspace", str(workspace), "--mode", "force"),
             input_text=payload,
             check=False,
             dry_run=dry_run,
@@ -418,6 +468,8 @@ def bridge_smoke(module: str, *, dry_run: bool) -> None:
             return
         if proc.returncode != 0:
             raise SystemExit(f"{module} smoke failed:\n{proc.stderr}")
+        if f'"protocol_version":"{BRIDGE_PROTOCOL_VERSION}"' not in proc.stdout.replace(" ", ""):
+            raise SystemExit(f"{module} smoke reported an incompatible bridge protocol:\n{proc.stdout}")
         if '"sro_preview_calls":1' not in proc.stdout.replace(" ", ""):
             raise SystemExit(f"{module} smoke did not report preview call:\n{proc.stdout}")
         print(f"[doctor] {module} bridge smoke passed")
@@ -430,12 +482,12 @@ def doctor(args: argparse.Namespace) -> None:
     command_spec("npm")
     if args.platform in {"opencode", "both"}:
         command_spec(args.opencode_cmd)
-        bridge_smoke("sparseread.bridge.opencode", dry_run=args.dry_run)
+        bridge_smoke(runtime_python(opencode_runtime_dir(Path(args.opencode_workspace or os.getcwd()).expanduser().resolve())), "sparseread_opencode.bridge", dry_run=args.dry_run)
         if not args.dry_run:
             validate_opencode_workspace(Path(args.opencode_workspace or os.getcwd()).expanduser().resolve())
     if args.platform in {"openclaw", "both"}:
         openclaw_cmd = command_spec(args.openclaw_cmd)
-        bridge_smoke("sparseread.bridge.openclaw", dry_run=args.dry_run)
+        bridge_smoke(runtime_python(openclaw_runtime_dir(args.openclaw_profile)), "sparseread_openclaw.bridge", dry_run=args.dry_run)
         if not args.dry_run:
             profile_args = ["--profile", args.openclaw_profile] if args.openclaw_profile else []
             inspect = run(
@@ -452,13 +504,14 @@ def doctor(args: argparse.Namespace) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Install repo-backed SparseRead adapters.")
+    parser = argparse.ArgumentParser(description="Install self-contained SparseRead framework adapters.")
     parser.add_argument("--platform", choices=["opencode", "openclaw", "both"], default="both")
-    parser.add_argument("--opencode-workspace", default="", help="Workspace to receive .opencode/plugins/sparseread.ts")
+    parser.add_argument("--opencode-workspace", default="", help="Workspace to receive the OpenCode SparseRead plugin")
     parser.add_argument("--opencode-cmd", default="opencode")
     parser.add_argument("--openclaw-cmd", default="openclaw")
     parser.add_argument("--openclaw-profile", default="", help="Optional OpenClaw profile name")
     parser.add_argument("--openclaw-workspace", default="", help="Optional OpenClaw default SparseRead workspaceRoot")
+    parser.add_argument("--python", default=sys.executable, help="Python used to create the managed SparseRead runtime")
     parser.add_argument(
         "--sparseread-mode",
         choices=["auto", "advisory"],

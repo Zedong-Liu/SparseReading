@@ -6,7 +6,9 @@
     "strict": true,
     "skipLibCheck": true,
     "types": ["node"],
-    "noEmit": true
+    "declaration": true,
+    "outDir": "dist",
+    "rootDir": "."
   },
   "include": ["sparseread.ts"]
 }

@@ -48,7 +48,12 @@
       },
       "bridgeModule": {
         "type": "string",
-        "default": "sparseread.bridge.openclaw"
+        "default": "sparseread_openclaw.bridge"
+      },
+      "bridgeProtocol": {
+        "type": "string",
+        "const": "1.0",
+        "default": "1.0"
       },
       "mode": {
         "type": "string",

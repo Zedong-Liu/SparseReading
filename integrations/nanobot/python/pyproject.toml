@@ -1,0 +1,21 @@
+[project]
+name = "sparseread-nanobot"
+version = "0.1.0"
+description = "NanoBot compatibility adapter for SparseRead"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["sparseread-core>=0.1,<0.2"]
+
+[project.entry-points."sparseread.adapters"]
+nanobot = "sparseread_nanobot.adapter:NanobotAdapter"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sparseread_nanobot"]
+
+[tool.uv.sources]
+sparseread-core = { path = "../../../packages/sparseread-core", editable = true }

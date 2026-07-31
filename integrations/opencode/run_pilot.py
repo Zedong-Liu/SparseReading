@@ -205,7 +205,7 @@ def install_plugin(run_dir: Path) -> None:
         {
             "projectRoot": str(ROOT),
             "python": sys.executable,
-            "bridgeModule": "sparseread.bridge.opencode",
+            "bridgeModule": "sparseread_opencode.bridge",
             "mode": "auto",
         },
     )
@@ -309,9 +309,9 @@ def opencode_policy(mode: str) -> str:
 def opencode_gate_profile(runtime: Path, task: str) -> dict[str, Any]:
     if str(SR_PROJECT) not in sys.path:
         sys.path.insert(0, str(SR_PROJECT))
-    from nanobot.sparse_reading.detector import inspect_file
+    from sparseread.core.detector import inspect_file
     from sparseread import SparseRead
-    from sparseread.bridge.opencode import classify_opencode_gate
+    from sparseread_opencode.bridge import classify_opencode_gate
     from sparseread.config import SparseReadConfig
 
     target = sro_target(runtime, task)
@@ -504,7 +504,7 @@ def simulate_sro(runtime: Path, task: str, trace: dict[str, Any], args: argparse
     target = sro_target(runtime, task)
     bridge_cmd = bridge_command_prefix(args) + [
         "-m",
-        "sparseread.bridge.opencode",
+        "sparseread_opencode.bridge",
         "--workspace",
         str(runtime),
         "--mode",
@@ -1082,7 +1082,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--bridge-command",
         default="",
-        help="Optional JSON array or whitespace command prefix used before '-m sparseread.bridge.opencode'",
+        help="Optional JSON array or whitespace command prefix used before '-m sparseread_opencode.bridge'",
     )
     parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument(

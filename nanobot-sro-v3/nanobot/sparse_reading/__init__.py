@@ -1,5 +1,5 @@
-"""Sparse Reading Orchestrator protocol implementation."""
+"""Deprecated NanoBot namespace forwarding to standalone SparseRead core."""
 
-from nanobot.sparse_reading.orchestrator import SparseReadingOrchestrator
+from sparseread.core.orchestrator import SparseReadingOrchestrator
 
 __all__ = ["SparseReadingOrchestrator"]

@@ -1,11 +1,12 @@
 # SparseRead Framework Integrations
 
-This directory contains framework-specific SparseRead integrations.  The
-SparseRead runtime, readers, benefit gate, shared bridge, and public facade live
-under `nanobot-sro-v3/`; framework code should stay thin and delegate to:
+This directory contains framework-specific SparseRead integrations. The
+framework-neutral runtime lives in `packages/sparseread-core`; each framework
+owns one thin Python adapter and, where needed, one JavaScript plugin package:
 
 ```bash
-python -m sparseread.bridge.<framework>
+python -m sparseread_opencode.bridge
+python -m sparseread_openclaw.bridge
 ```
 
 ## Layout
@@ -13,35 +14,42 @@ python -m sparseread.bridge.<framework>
 ```text
 integrations/
   openclaw/
-    plugin/                 # OpenClaw plugin package
+    python/                 # sparseread-openclaw bridge adapter
+    plugin/                 # @sparseread/openclaw package
     run_openclaw_*.py       # local validation runners
   opencode/
-    plugin/                 # OpenCode plugin source
+    python/                 # sparseread-opencode bridge adapter
+    plugin/                 # @sparseread/opencode package
     run_pilot.py            # offline/live pilot runner
+  nanobot/
+    python/                 # sparseread-nanobot adapter entry point
 ```
 
-Compatibility symlinks remain at `openclaw_pilot/` and `opencode_pilot/` so
-older runbook commands and local tooling continue to work.  New documentation
-and development should use `integrations/openclaw` and `integrations/opencode`.
+The old root-level `openclaw_pilot/` and `opencode_pilot/` copies were removed.
+They had drifted from the canonical implementations and are not release APIs.
 
 ## Default Install Shape
 
-For users who already have OpenCode or OpenClaw installed, use the source
-installer from the repository root:
+For users who already have OpenCode or OpenClaw installed, use the installer
+from the repository root:
 
 ```bash
 python3 scripts/install_sparseread.py --platform opencode --opencode-workspace /path/to/project --doctor
 python3 scripts/install_sparseread.py --platform openclaw --doctor
 ```
 
-The full fresh-machine guide is `docs/sparseread_installation.md`.
+The installer creates a managed Python runtime containing `sparseread-core`
+and only the selected framework adapter. It installs packed JavaScript
+artifacts rather than linking the source checkout.
 
 ## Boundary
 
-- Shared behavior belongs in `nanobot-sro-v3/sparseread/bridge/server.py`.
-- Platform policy belongs in `sparseread.bridge.openclaw` or
-  `sparseread.bridge.opencode`.
+- Shared behavior belongs in `packages/sparseread-core/src/sparseread/`.
+- Platform policy belongs in `sparseread_openclaw.bridge` or
+  `sparseread_opencode.bridge`.
 - Plugin code should only register tools, wire lifecycle hooks, and present
   framework-specific prompts or block/nudge messages.
 - Benchmark-only prompts, fixed targets, and diagnostic slots belong in runner
   code, not in product adapters or SR core.
+- Core and plugins use bridge protocol `1.0`; plugins reject incompatible
+  bridge runtimes before serving tool calls.

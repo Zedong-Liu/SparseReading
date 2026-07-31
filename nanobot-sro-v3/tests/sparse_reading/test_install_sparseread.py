@@ -4,9 +4,8 @@ import importlib.util
 import json
 import subprocess
 import sys
-from types import SimpleNamespace
 from pathlib import Path
-
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[3]
 INSTALLER_PATH = ROOT / "scripts" / "install_sparseread.py"
@@ -55,31 +54,22 @@ def test_npm_install_and_build_uses_resolved_command(monkeypatch, tmp_path: Path
     ]
 
 
-def test_bridge_command_keeps_appendable_prefix_for_plugin() -> None:
+def test_bridge_command_uses_managed_python() -> None:
     installer = load_installer()
-    spec = installer.CommandSpec("C:/Users/me/bin/uv.cmd")
+    python = Path("C:/Users/me/.sparseread/Scripts/python.exe")
 
-    command = installer.bridge_command(spec)
+    command = installer.bridge_command(python)
 
-    assert command[0] == "C:/Users/me/bin/uv.cmd"
-    assert "-m" not in command
+    assert command == [str(python)]
 
 
-def test_bridge_invocation_wraps_cmd_after_full_args() -> None:
+def test_bridge_invocation_appends_module_to_managed_python() -> None:
     installer = load_installer()
-    spec = installer.CommandSpec("C:/Users/me/bin/uv.cmd")
+    python = Path("/opt/sparseread/bin/python")
 
-    command = installer.bridge_invocation(spec, "-m", "sparseread.bridge.openclaw")
+    command = installer.bridge_invocation(python, "-m", "sparseread_openclaw.bridge")
 
-    assert command == [
-        "cmd.exe",
-        "/d",
-        "/s",
-        "/c",
-        "C:/Users/me/bin/uv.cmd --project "
-        + str(installer.CORE)
-        + " run --with pymupdf python -m sparseread.bridge.openclaw",
-    ]
+    assert command == [str(python), "-m", "sparseread_openclaw.bridge"]
 
 
 def test_public_install_mode_auto_maps_to_internal_defaults() -> None:
@@ -123,6 +113,9 @@ def test_install_opencode_writes_persistent_workspace_config(monkeypatch, tmp_pa
 
     monkeypatch.setattr(installer, "command_spec", lambda *_args, **_kwargs: installer.CommandSpec("/bin/true"))
     monkeypatch.setattr(installer, "npm_install_and_build", lambda *_args, **_kwargs: None)
+    managed_python = tmp_path / "managed" / "bin" / "python"
+    monkeypatch.setattr(installer, "install_python_runtime", lambda *_args, **_kwargs: managed_python)
+    monkeypatch.setattr(installer, "install_opencode_plugin_package", lambda *_args, **_kwargs: None)
 
     installer.install_opencode(
         SimpleNamespace(
@@ -138,8 +131,9 @@ def test_install_opencode_writes_persistent_workspace_config(monkeypatch, tmp_pa
     config = json.loads(config_target.read_text(encoding="utf-8"))
 
     assert plugin_target.exists()
-    assert config["projectRoot"] == str(installer.ROOT)
-    assert config["bridgeModule"] == "sparseread.bridge.opencode"
+    assert config["projectRoot"] == str(workspace.resolve())
+    assert config["bridgeModule"] == "sparseread_opencode.bridge"
+    assert config["bridgeProtocol"] == "1.0"
     assert config["policy"] == "auto"
     assert config["mode"] == "auto"
     assert isinstance(config["bridgeCommand"], list)
@@ -154,7 +148,8 @@ def test_openclaw_install_patch_defaults_enforce_hook_mode(monkeypatch, tmp_path
 
     monkeypatch.setattr(installer, "command_spec", lambda *_args, **_kwargs: installer.CommandSpec("/bin/true"))
     monkeypatch.setattr(installer, "npm_install_and_build", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(installer, "normalized_openclaw_load_paths", lambda _profile: [str(installer.OPENCLAW_PLUGIN)])
+    monkeypatch.setattr(installer, "install_python_runtime", lambda *_args, **_kwargs: tmp_path / "runtime" / "bin" / "python")
+    monkeypatch.setattr(installer, "npm_pack", lambda *_args, **_kwargs: tmp_path / "sparseread-openclaw.tgz")
 
     def fake_run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
         calls.append(cmd)
@@ -167,8 +162,7 @@ def test_openclaw_install_patch_defaults_enforce_hook_mode(monkeypatch, tmp_path
                 json.dumps(
                     {
                         "status": "loaded",
-                        "plugin": {"rootDir": str(installer.OPENCLAW_PLUGIN)},
-                        "install": {"sourcePath": str(installer.OPENCLAW_PLUGIN)},
+                        "plugin": {"rootDir": str(tmp_path / "installed-openclaw")},
                         "toolNames": list(installer.OPENCLAW_RUNTIME_TOOLS),
                         "hookCount": 5,
                         "typedHooks": [
@@ -197,11 +191,10 @@ def test_openclaw_install_patch_defaults_enforce_hook_mode(monkeypatch, tmp_path
         )
     )
 
-    load_paths_patch = patches[0]["plugins"]["load"]["paths"]
-    entry = patches[1]["plugins"]["entries"]["sparseread-openclaw"]
+    entry = patches[0]["plugins"]["entries"]["sparseread-openclaw"]
     config = entry["config"]
-    assert load_paths_patch == [str(installer.OPENCLAW_PLUGIN)]
     assert config["hookMode"] == "enforce"
+    assert config["bridgeProtocol"] == "1.0"
     assert entry["hooks"]["allowPromptInjection"] is True
     assert entry["hooks"]["allowConversationAccess"] is True
     assert any(cmd[-2:] == ["sparseread-openclaw", "--force"] for cmd in calls)
@@ -214,7 +207,8 @@ def test_openclaw_install_patch_advisory_mode_has_no_before_tool_call_policy(mon
 
     monkeypatch.setattr(installer, "command_spec", lambda *_args, **_kwargs: installer.CommandSpec("/bin/true"))
     monkeypatch.setattr(installer, "npm_install_and_build", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(installer, "normalized_openclaw_load_paths", lambda _profile: [str(installer.OPENCLAW_PLUGIN)])
+    monkeypatch.setattr(installer, "install_python_runtime", lambda *_args, **_kwargs: tmp_path / "runtime" / "bin" / "python")
+    monkeypatch.setattr(installer, "npm_pack", lambda *_args, **_kwargs: tmp_path / "sparseread-openclaw.tgz")
 
     def fake_run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
         if cmd[-3:] == ["config", "patch", "--stdin"]:
@@ -226,8 +220,7 @@ def test_openclaw_install_patch_advisory_mode_has_no_before_tool_call_policy(mon
                 json.dumps(
                     {
                         "status": "loaded",
-                        "plugin": {"rootDir": str(installer.OPENCLAW_PLUGIN)},
-                        "install": {"sourcePath": str(installer.OPENCLAW_PLUGIN)},
+                        "plugin": {"rootDir": str(tmp_path / "installed-openclaw")},
                         "toolNames": list(installer.OPENCLAW_RUNTIME_TOOLS),
                         "hookCount": 2,
                         "hookNames": ["before_prompt_build", "agent_end"],
@@ -250,7 +243,7 @@ def test_openclaw_install_patch_advisory_mode_has_no_before_tool_call_policy(mon
         )
     )
 
-    entry = patches[1]["plugins"]["entries"]["sparseread-openclaw"]
+    entry = patches[0]["plugins"]["entries"]["sparseread-openclaw"]
     assert entry["config"]["policy"] == "advisory"
     assert entry["config"]["mode"] == "auto"
     assert entry["config"]["hookMode"] == "prompt"
@@ -261,8 +254,7 @@ def test_validate_openclaw_runtime_accepts_hookless_production_payload() -> None
     installer = load_installer()
     payload = {
         "status": "loaded",
-        "plugin": {"rootDir": str(installer.OPENCLAW_PLUGIN)},
-        "install": {"sourcePath": str(installer.OPENCLAW_PLUGIN)},
+        "plugin": {"rootDir": "/tmp/sparseread-installed-openclaw"},
         "toolNames": list(installer.OPENCLAW_RUNTIME_TOOLS),
         "hookCount": 0,
         "hookNames": [],
@@ -275,8 +267,7 @@ def test_validate_openclaw_runtime_accepts_prompt_only_payload() -> None:
     installer = load_installer()
     payload = {
         "status": "loaded",
-        "plugin": {"rootDir": str(installer.OPENCLAW_PLUGIN)},
-        "install": {"sourcePath": str(installer.OPENCLAW_PLUGIN)},
+        "plugin": {"rootDir": "/tmp/sparseread-installed-openclaw"},
         "toolNames": list(installer.OPENCLAW_RUNTIME_TOOLS),
         "hookCount": 1,
         "hookNames": ["before_prompt_build"],
@@ -289,8 +280,7 @@ def test_validate_openclaw_runtime_accepts_enforce_payload() -> None:
     installer = load_installer()
     payload = {
         "status": "loaded",
-        "plugin": {"rootDir": str(installer.OPENCLAW_PLUGIN)},
-        "install": {"sourcePath": str(installer.OPENCLAW_PLUGIN)},
+        "plugin": {"rootDir": "/tmp/sparseread-installed-openclaw"},
         "toolNames": list(installer.OPENCLAW_RUNTIME_TOOLS),
         "hookCount": 3,
         "typedHooks": [
@@ -307,8 +297,7 @@ def test_validate_openclaw_runtime_rejects_enforce_without_before_tool_call() ->
     installer = load_installer()
     payload = {
         "status": "loaded",
-        "plugin": {"rootDir": str(installer.OPENCLAW_PLUGIN)},
-        "install": {"sourcePath": str(installer.OPENCLAW_PLUGIN)},
+        "plugin": {"rootDir": "/tmp/sparseread-installed-openclaw"},
         "toolNames": list(installer.OPENCLAW_RUNTIME_TOOLS),
         "hookCount": 2,
         "typedHooks": [{"name": "before_prompt_build"}, {"name": "after_tool_call"}],
@@ -326,8 +315,7 @@ def test_validate_openclaw_runtime_rejects_prompt_native_lifecycle_hooks() -> No
     installer = load_installer()
     payload = {
         "status": "loaded",
-        "plugin": {"rootDir": str(installer.OPENCLAW_PLUGIN)},
-        "install": {"sourcePath": str(installer.OPENCLAW_PLUGIN)},
+        "plugin": {"rootDir": "/tmp/sparseread-installed-openclaw"},
         "toolNames": list(installer.OPENCLAW_RUNTIME_TOOLS),
         "hookCount": 2,
         "hookNames": ["before_prompt_build", "before_tool_call"],
@@ -345,8 +333,7 @@ def test_validate_openclaw_runtime_rejects_duplicate_sparse_read_plugins() -> No
     installer = load_installer()
     payload = {
         "status": "loaded",
-        "plugin": {"rootDir": str(installer.OPENCLAW_PLUGIN)},
-        "install": {"sourcePath": str(installer.OPENCLAW_PLUGIN)},
+        "plugin": {"rootDir": "/tmp/sparseread-installed-openclaw"},
         "toolNames": list(installer.OPENCLAW_RUNTIME_TOOLS),
         "hookCount": 0,
         "hookNames": [],

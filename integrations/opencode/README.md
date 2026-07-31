@@ -4,7 +4,7 @@ This directory contains the OpenCode plugin, bridge harness, and local runner
 for comparing OpenCode native truncation against SparseRead.
 
 The plugin keeps SparseRead core behavior in `nanobot-sro-v3` unchanged. It
-calls `python -m sparseread.bridge.opencode` through a stdio JSONL bridge.
+calls `python -m sparseread_opencode.bridge` through a stdio JSONL bridge.
 On this workspace, launch the bridge through `uv run --project nanobot-sro-v3
 python` so Python 3.11+ and project dependencies are used.
 
@@ -84,7 +84,5 @@ The runner also passes the per-case runtime through OpenCode's explicit `--dir`
 option. Relying on the subprocess working directory alone lets OpenCode discover
 the outer repository root and run the agent against unrelated benchmark files.
 
-Legacy path compatibility currently remains as a tracked `opencode_pilot/`
-copy. New development must use `integrations/opencode/`; the duplicate tree is
-scheduled for removal before packaging so the release has one canonical plugin
-source.
+This directory is the only OpenCode implementation source. The former
+root-level `opencode_pilot/` copy was removed to prevent release drift.

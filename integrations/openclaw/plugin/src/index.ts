@@ -5,6 +5,7 @@ import { definePluginEntry, type OpenClawPluginDefinition } from "openclaw/plugi
 
 type Json = unknown
 type JsonObject = Record<string, Json>
+const BRIDGE_PROTOCOL_VERSION = "1.0"
 
 type BridgeRequest = {
   id: string
@@ -26,6 +27,7 @@ type SparseReadConfig = {
   projectRoot: string
   workspaceRoot: string
   bridgeModule: string
+  bridgeProtocol: string
   mode: "auto" | "bench_protocol" | "force" | "force_sro" | "native" | "advisory"
   hookMode: "off" | "trace" | "prompt" | "enforce"
 }
@@ -35,6 +37,7 @@ class SparseReadBridge {
   private nextID = 1
   private buffer = ""
   private pending = new Map<string, { resolve: (value: Json) => void; reject: (error: Error) => void }>()
+  private protocolCheck?: Promise<void>
 
   constructor(
     private readonly command: string,
@@ -44,6 +47,16 @@ class SparseReadBridge {
 
   request(method: string, params: JsonObject = {}): Promise<JsonObject> {
     this.ensure()
+    if (method === "version") return this.requestRaw(method, params)
+    this.protocolCheck ??= this.requestRaw("version", {}).then((result) => {
+      if (result.protocol_version !== BRIDGE_PROTOCOL_VERSION) {
+        throw new Error(`SparseRead bridge protocol mismatch: expected ${BRIDGE_PROTOCOL_VERSION}, got ${String(result.protocol_version ?? "missing")}`)
+      }
+    })
+    return this.protocolCheck.then(() => this.requestRaw(method, params))
+  }
+
+  private requestRaw(method: string, params: JsonObject): Promise<JsonObject> {
     const id = String(this.nextID++)
     const payload: BridgeRequest = { id, method, params }
     return new Promise((resolve, reject) => {
@@ -64,6 +77,7 @@ class SparseReadBridge {
     }
     this.process.kill()
     this.process = undefined
+    this.protocolCheck = undefined
   }
 
   private ensure() {
@@ -83,6 +97,7 @@ class SparseReadBridge {
       for (const pending of this.pending.values()) pending.reject(error)
       this.pending.clear()
       this.process = undefined
+      this.protocolCheck = undefined
     })
   }
 
@@ -128,7 +143,8 @@ function config(raw: Json): SparseReadConfig {
     bridgeCommand: stringValue(obj.bridgeCommand ?? process.env.SPARSEREAD_BRIDGE_COMMAND, ""),
     projectRoot: stringValue(obj.projectRoot ?? process.env.SPARSEREAD_PROJECT_ROOT, process.cwd()),
     workspaceRoot: stringValue(obj.workspaceRoot ?? process.env.SPARSEREAD_WORKSPACE_ROOT, ""),
-    bridgeModule: stringValue(obj.bridgeModule ?? process.env.SPARSEREAD_BRIDGE_MODULE, "sparseread.bridge.openclaw"),
+    bridgeModule: stringValue(obj.bridgeModule ?? process.env.SPARSEREAD_BRIDGE_MODULE, "sparseread_openclaw.bridge"),
+    bridgeProtocol: stringValue(obj.bridgeProtocol ?? process.env.SPARSEREAD_BRIDGE_PROTOCOL, "1.0"),
     mode: sparseMode(obj.mode ?? process.env.SPARSEREAD_MODE),
     hookMode: hookMode(obj.hookMode ?? process.env.SPARSEREAD_OPENCLAW_HOOK_MODE),
   }

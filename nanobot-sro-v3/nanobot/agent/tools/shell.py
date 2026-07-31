@@ -19,7 +19,7 @@ from nanobot.agent.tools.sandbox import wrap_command
 from nanobot.agent.tools.schema import IntegerSchema, StringSchema, tool_parameters_schema
 from nanobot.config.paths import get_media_dir
 from nanobot.config.schema import Base
-from nanobot.sparse_reading.policy import SparseCommandPolicy
+from sparseread.core.policy import SparseCommandPolicy
 
 _IS_WINDOWS = sys.platform == "win32"
 

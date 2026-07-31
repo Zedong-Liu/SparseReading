@@ -1,1 +1,1 @@
-"""Typed readers used by Sparse Reading Orchestrator."""
+"""Compatibility reader namespace forwarding to SparseRead core."""

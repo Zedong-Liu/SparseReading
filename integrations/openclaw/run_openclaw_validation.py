@@ -198,7 +198,7 @@ def set_plugin_enabled(profile: str, enabled: bool, *, policy: str = "advisory",
             "bridgeCommand": bridge_command,
             "projectRoot": str(REPO),
             "workspaceRoot": str(workspace) if workspace else "",
-            "bridgeModule": "sparseread.bridge.openclaw",
+            "bridgeModule": "sparseread_openclaw.bridge",
             "mode": "auto",
             "hookMode": "enforce",
         }
