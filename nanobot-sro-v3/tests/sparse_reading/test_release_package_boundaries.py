@@ -30,12 +30,18 @@ def test_each_framework_adapter_is_an_independent_distribution() -> None:
         "nanobot": "sparseread-nanobot",
         "opencode": "sparseread-opencode",
         "openclaw": "sparseread-openclaw",
+        "claude": "sparseread-claude",
     }
     for framework, distribution in expected.items():
         pyproject = ROOT / "integrations" / framework / "python" / "pyproject.toml"
         payload = tomllib.loads(pyproject.read_text(encoding="utf-8"))
         assert payload["project"]["name"] == distribution
-        assert payload["project"]["dependencies"] == ["sparseread-core>=0.1,<0.2"]
+        expected_deps = (
+            ["sparseread-core>=0.1,<0.2", "mcp>=1.26,<2.0"]
+            if framework == "claude"
+            else ["sparseread-core>=0.1,<0.2"]
+        )
+        assert payload["project"]["dependencies"] == expected_deps
 
 
 def test_javascript_plugins_are_publishable_and_versioned() -> None:

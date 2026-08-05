@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CORE_PACKAGE = ROOT / "packages" / "sparseread-core"
 OPENCODE_ADAPTER = ROOT / "integrations" / "opencode" / "python"
 OPENCLAW_ADAPTER = ROOT / "integrations" / "openclaw" / "python"
+CLAUDE_ADAPTER = ROOT / "integrations" / "claude" / "python"
 OPENCODE_PLUGIN = ROOT / "integrations" / "opencode" / "plugin"
 OPENCLAW_PLUGIN = ROOT / "integrations" / "openclaw" / "plugin"
 BRIDGE_PROTOCOL_VERSION = "1.0"
@@ -24,6 +25,16 @@ WINDOWS_COMMAND_SUFFIXES = (".cmd", ".exe", ".bat")
 WINDOWS_SHELL_EXTS = {".cmd", ".bat"}
 OPENCODE_RUNTIME_TOOLS = ("sro_preview", "sro_raw", "sro_card", "sro_read", "sro_trace")
 OPENCLAW_RUNTIME_TOOLS = ("sro_preview", "sro_raw", "sro_card", "sro_read", "sro_decide", "sro_trace")
+CLAUDE_RUNTIME_TOOLS = (
+    "sro_preview",
+    "sro_read",
+    "sro_card",
+    "sro_raw",
+    "sro_decide",
+    "sro_trace",
+    "sro_preflight",
+    "sro_usage",
+)
 
 
 @dataclass(frozen=True)
@@ -152,6 +163,84 @@ def opencode_runtime_dir(workspace: Path) -> Path:
 
 def openclaw_runtime_dir(profile: str) -> Path:
     return openclaw_profile_config_path(profile).parent / "sparseread" / "runtime"
+
+
+def claude_runtime_dir() -> Path:
+    return Path.home() / ".sparseread" / "claude"
+
+
+def claude_mcp_config(workspace: Path, python: Path, mode: str) -> dict[str, object]:
+    return {
+        "mcpServers": {
+            "sparseread": {
+                "command": str(python),
+                "args": [
+                    "-m",
+                    "sparseread_claude.claude_mcp",
+                    "--workspace",
+                    str(workspace),
+                    "--mode",
+                    mode,
+                ],
+                "env": {"SRO_ENABLED": "1"},
+            }
+        }
+    }
+
+
+def claude_settings_config(workspace: Path, python: Path) -> dict[str, object]:
+    hook_entry = {
+        "type": "session",
+        "command": str(python),
+        "args": ["-m", "sparseread_claude.hook", "--workspace", str(workspace)],
+    }
+    return {
+        "enabledMcpjsonServers": ["sparseread"],
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "Read|Bash", "hooks": [hook_entry]},
+            ],
+            "PostToolUse": [
+                {"matcher": "Read|Bash", "hooks": [hook_entry]},
+            ],
+        },
+    }
+
+
+def merge_json(path: Path, patch: dict[str, object], *, dry_run: bool) -> None:
+    """Merge a JSON config file with a patch, preserving unrelated keys."""
+    if dry_run:
+        return
+    payload: dict[str, object] = {}
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(existing, dict):
+                payload = existing
+        except (OSError, json.JSONDecodeError):
+            payload = {}
+    for key, value in patch.items():
+        if key == "hooks" and isinstance(value, dict) and isinstance(payload.get("hooks"), dict):
+            hooks = dict(payload["hooks"])
+            for event, entries in value.items():
+                existing_entries = hooks.get(event)
+                if not isinstance(existing_entries, list):
+                    hooks[event] = entries
+                    continue
+                merged = list(existing_entries)
+                for entry in entries:
+                    if entry not in merged:
+                        merged.append(entry)
+                hooks[event] = merged
+            payload["hooks"] = hooks
+        elif key == "mcpServers" and isinstance(value, dict) and isinstance(payload.get("mcpServers"), dict):
+            servers = dict(payload["mcpServers"])
+            servers.update(value)
+            payload["mcpServers"] = servers
+        else:
+            payload[key] = value
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def opencode_workspace_config(workspace: Path, python: Path, policy: str, mode: str) -> dict[str, object]:
@@ -367,6 +456,43 @@ def install_opencode(args: argparse.Namespace) -> None:
     print("[opencode] launch with: opencode run ...")
 
 
+def install_claude(args: argparse.Namespace) -> None:
+    profile = install_profile(args)
+    workspace = Path(args.claude_workspace or os.getcwd()).expanduser().resolve()
+    managed_python = install_python_runtime(
+        claude_runtime_dir(),
+        CLAUDE_ADAPTER,
+        python=getattr(args, "python", sys.executable),
+        dry_run=args.dry_run,
+    )
+    print(f"[claude] install workspace: {workspace}")
+    if not args.dry_run:
+        merge_json(
+            workspace / ".mcp.json",
+            claude_mcp_config(workspace, managed_python, profile.mode),
+            dry_run=False,
+        )
+        merge_json(
+            workspace / ".claude" / "settings.local.json",
+            claude_settings_config(workspace, managed_python),
+            dry_run=False,
+        )
+        claude_md = workspace / "CLAUDE.md"
+        if not claude_md.exists():
+            template = ROOT / "integrations" / "claude" / "CLAUDE.md"
+            if template.exists():
+                claude_md.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
+        else:
+            print(
+                "[claude] CLAUDE.md already exists; copy SRO guidance from "
+                f"{ROOT / 'integrations' / 'claude' / 'CLAUDE.md'} if needed"
+            )
+    print(f"[claude] mcp config: {workspace / '.mcp.json'}")
+    print(f"[claude] hook config: {workspace / '.claude' / 'settings.local.json'}")
+    print(f"[claude] managed python: {managed_python}")
+    print("[claude] restart Claude Code or start a new session after install")
+
+
 def install_openclaw(args: argparse.Namespace) -> None:
     profile = install_profile(args)
     openclaw_cmd = command_spec(args.openclaw_cmd)
@@ -501,16 +627,23 @@ def doctor(args: argparse.Namespace) -> None:
                     f"Inspect stderr:\n{inspect.stderr}\nInspect stdout:\n{inspect.stdout}"
                 )
             validate_openclaw_runtime(inspect.stdout, hook_mode=profile.openclaw_hook_mode)
+    if args.platform == "claude":
+        bridge_smoke(runtime_python(claude_runtime_dir()), "sparseread_claude.bridge", dry_run=args.dry_run)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Install self-contained SparseRead framework adapters.")
-    parser.add_argument("--platform", choices=["opencode", "openclaw", "both"], default="both")
+    parser.add_argument(
+        "--platform",
+        choices=["opencode", "openclaw", "claude", "both"],
+        default="both",
+    )
     parser.add_argument("--opencode-workspace", default="", help="Workspace to receive the OpenCode SparseRead plugin")
     parser.add_argument("--opencode-cmd", default="opencode")
     parser.add_argument("--openclaw-cmd", default="openclaw")
     parser.add_argument("--openclaw-profile", default="", help="Optional OpenClaw profile name")
     parser.add_argument("--openclaw-workspace", default="", help="Optional OpenClaw default SparseRead workspaceRoot")
+    parser.add_argument("--claude-workspace", default="", help="Workspace to receive the Claude Code SRO config")
     parser.add_argument("--python", default=sys.executable, help="Python used to create the managed SparseRead runtime")
     parser.add_argument(
         "--sparseread-mode",
@@ -557,6 +690,8 @@ def main() -> int:
         install_opencode(args)
     if args.platform in {"openclaw", "both"}:
         install_openclaw(args)
+    if args.platform == "claude":
+        install_claude(args)
     if args.doctor:
         doctor(args)
     return 0
