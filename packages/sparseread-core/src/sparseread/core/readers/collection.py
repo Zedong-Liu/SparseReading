@@ -12,6 +12,7 @@ from typing import Any
 
 import yaml
 
+from sparseread.core.denoise import denoise_text
 from sparseread.core.models import EvidenceBlock, EvidencePack, HintSpec
 
 
@@ -31,7 +32,7 @@ class CollectionReader:
     """Index and selectively expand a small-document collection."""
 
     _COLLECTION_EXTS = {
-        ".txt", ".md", ".markdown", ".rst", ".eml",
+        ".txt", ".md", ".markdown", ".rst", ".eml", ".html", ".htm",
         ".csv", ".tsv", ".json", ".yaml", ".yml", ".xml",
         ".log", ".py", ".sh", ".toml", ".ini", ".cfg", ".conf",
     }
@@ -126,7 +127,7 @@ class CollectionReader:
             if item is None:
                 continue
             try:
-                text = item.path.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n")
+                text = self._read_source_text(item.path)
             except OSError:
                 continue
             source_texts[item.name] = text
@@ -170,15 +171,18 @@ class CollectionReader:
             blocks = [EvidenceBlock("collection_audit_closure", audit_closure, 12.0)]
             covered_sources = sorted(source_texts)
         elif panel_closure:
-            blocks.insert(0, EvidenceBlock("collection_panel_did_closure", panel_closure, 12.0))
-            blocks = [block for block in blocks if block.anchor == "collection_panel_did_closure" or self._is_analysis_source_anchor(block.anchor)]
+            blocks = [EvidenceBlock("collection_panel_did_closure", panel_closure, 12.0)]
+            covered_sources = sorted(
+                name for name in source_texts
+                if self._is_analysis_source_anchor(name) or "panel" in Path(name).name.lower()
+            )
         elif rule_script_closure:
             blocks = [EvidenceBlock("collection_rule_table_script_closure", rule_script_closure, 12.0)]
             covered_sources = sorted(source_texts)
         elif ledger_compact:
             blocks = [EvidenceBlock("collection_diagnostic_ledger", ledger_compact, 12.0)]
             covered_sources = sorted(source_texts)
-        unresolved = self._unresolved(hint, blocks)
+        unresolved = [] if panel_closure else self._unresolved(hint, blocks)
         allowed_next = ["write_file", "run short calculation from these excerpts", "verify specific missing fact only"]
         instruction = "Use these source-keyed excerpts as evidence. Do not reread every file; verify only a named missing fact."
         slot_digest: dict[str, Any] | None = None
@@ -203,11 +207,11 @@ class CollectionReader:
             )
             slot_digest = self._audit_slot_digest(artifact_id, audit_closure)
         elif panel_closure:
-            allowed_next = ["write_file", "exec generated analysis script", "verify specific missing fact only"]
+            allowed_next = ["write_file", "exec generated analysis script"]
             instruction = (
-                "The panel DID closure already identifies the fields, model, and deliverables. "
-                "Write the analysis script that reads the local CSV files, run it once, and write the summary from its printed results. "
-                "Do not read the full CSV into the conversation."
+                "The panel DID closure is the complete implementation contract. Write both deliverables in one script, "
+                "run the script once, and inspect only the exit code plus the two deliverables. "
+                "Do not verify or reread covered source files into the conversation."
             )
         elif rule_script_closure:
             allowed_next = ["write_file", "exec generated script once"]
@@ -242,8 +246,16 @@ class CollectionReader:
                 "allowed_next": allowed_next,
                 "instruction": instruction,
                 "covered_sources": covered_sources,
-                "required_outputs": ["security_analysis_report.md", "command_classifications.json"] if security_closure else [],
-                "overall_status": "ready" if security_closure or audit_closure or rule_script_closure or (ledger_compact and ledger_ready) else None,
+                "required_outputs": (
+                    ["security_analysis_report.md", "command_classifications.json"] if security_closure
+                    else ["did_regression.py", "did_results_summary.md"] if panel_closure
+                    else []
+                ),
+                "overall_status": (
+                    "ready" if security_closure or audit_closure or rule_script_closure or (ledger_compact and ledger_ready)
+                    else "ready_for_compute" if panel_closure
+                    else None
+                ),
                 "_diagnostic_sections": ledger_sections,
             },
         )
@@ -323,7 +335,7 @@ class CollectionReader:
             if entry.suffix.lower() not in self._COLLECTION_EXTS and not entry.name.lower().startswith("readme"):
                 continue
             try:
-                text = entry.read_text(encoding="utf-8", errors="replace")
+                text = self._read_source_text(entry)
                 stat = entry.stat()
             except OSError:
                 continue
@@ -368,9 +380,23 @@ class CollectionReader:
             return "yaml"
         if suffix == ".tsv":
             return "csv"
+        if suffix in {".html", ".htm"}:
+            return "html"
         if suffix.startswith("."):
             return suffix[1:]
         return "text"
+
+    @staticmethod
+    def _read_source_text(path: Path) -> str:
+        text = path.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n")
+        suffix = path.suffix.lower()
+        if suffix in {".html", ".htm"}:
+            return denoise_text(text, source_kind="html").text
+        if suffix == ".log":
+            return denoise_text(text, source_kind="log").text
+        if suffix in {".txt", ".md", ".markdown", ".rst", ".eml"}:
+            return denoise_text(text, source_kind="text").text
+        return text
 
     def _structured_snippet(self, path: Path, text: str, kind: str) -> str:
         try:
@@ -435,7 +461,7 @@ class CollectionReader:
             if item.name not in selected_names:
                 continue
             try:
-                text = item.path.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n").strip()
+                text = self._read_source_text(item.path).strip()
             except OSError:
                 continue
             body = self._compact_file_text(item, text, hint)
@@ -1066,6 +1092,13 @@ class CollectionReader:
             column for column in panel_info.get("columns", [])
             if column in {"log_assets", "leverage", "roa", "employees_thousands", "rd_intensity"}
         ]
+        metadata_overlap = sorted(
+            (set(panel_info.get("columns", [])) & set(metadata_info.get("columns", []))) - {"firm_id"}
+        )
+        metadata_only = [
+            column for column in metadata_info.get("columns", [])
+            if column == "firm_id" or column not in panel_info.get("columns", [])
+        ]
 
         findings = [
             "FILE: collection_panel_did_closure",
@@ -1076,9 +1109,14 @@ class CollectionReader:
                 f"treated_firms={treated_count}; control_firms={control_count}"
             ),
             f"columns: {', '.join(panel_info.get('columns', []))}",
+            "identifier_type_contract: keep firm_id as a string/categorical identifier; never coerce firm_id to numeric",
             (
                 "model_contract: outcome=revenue_growth_pct; key_regressor=did; "
                 "fixed_effects=firm_id and year; cluster_standard_errors=firm_id"
+            ),
+            (
+                "implementation_contract: use statsmodels OLS with did + C(firm_id) + C(year) and "
+                "cov_type=cluster/groups=firm_id"
             ),
             (
                 "controls_contract: "
@@ -1086,7 +1124,8 @@ class CollectionReader:
             ),
             (
                 "parallel_trends_contract: restrict to pre-period years before 2020; "
-                "interact treated with pre-year dummies excluding a base year; report joint test or individual pre-trend p-values"
+                "use the valid formula `revenue_growth_pct ~ treated + C(year) + treated:C(year)` on the pre-period; "
+                "jointly test only the `treated:C(year)` coefficients and report their p-value"
             ),
         ]
         if metadata_name:
@@ -1094,6 +1133,13 @@ class CollectionReader:
                 f"industry_contract: merge {metadata_name} on firm_id; "
                 f"metadata_rows={metadata_info.get('rows', 'unknown')}; summarize revenue growth by industry and treatment"
             )
+            if metadata_overlap:
+                findings.append(
+                    "merge_collision_contract: the panel and metadata both contain "
+                    f"{', '.join(metadata_overlap)}. Preserve panel columns by selecting only firm_id plus "
+                    "non-overlapping metadata fields before merge. Exact metadata merge columns: "
+                    f"{', '.join(metadata_only)}."
+                )
         if true_att is not None:
             findings.append(f"ground_truth: true_planted_ATT={true_att:g}")
         if raw_did is not None:
@@ -1106,9 +1152,26 @@ class CollectionReader:
             "and write did_results_summary.md"
         )
         findings.append(
-            "closure_instruction: do not read full panel_data.csv into chat after this closure; use the local CSV path in the script and rely on printed aggregate results"
+            "minimal_implementation_recipe: use pandas plus statsmodels formula OLS; fit "
+            "`revenue_growth_pct ~ did + C(firm_id) + C(year)` with "
+            "`cov_type='cluster', cov_kwds={'groups': df['firm_id']}`; use the pre-period interaction formula above; "
+            "compute industry summaries from the preserved panel industry column. Keep the script under roughly 160 lines "
+            "and write did_results_summary.md directly—no plots, intermediate JSON, or exploratory diagnostics."
         )
-        return self._clip("\n".join(findings), 2600)
+        findings.append(
+            "report_contract: did_results_summary.md must include the numeric DID estimate, clustered SE, confidence interval, "
+            "p-value, true-ATT comparison, numeric parallel-trends p-values, and at least one numeric industry breakdown."
+        )
+        findings.append(
+            "execution_contract: write both deliverables in one script, then run exactly "
+            "`python3 did_regression.py > did_regression_output.txt 2>&1`. Inspect the exit code and deliverable existence only. "
+            "On failure, inspect only the final traceback lines. If the run exits 0 and both deliverables exist, stop without "
+            "rereading stdout, rerunning, or rewriting the script."
+        )
+        findings.append(
+            "closure_instruction: do not read full panel_data.csv into chat after this closure; use the local CSV path in the script"
+        )
+        return self._clip("\n".join(findings), 4200)
 
     def _rule_table_script_closure(self, source_texts: dict[str, str], hint: HintSpec) -> str:
         if not self._goal_wants_rule_table_script(hint):
@@ -1937,7 +2000,12 @@ class CollectionReader:
 
     @staticmethod
     def _goal_wants_panel_did(hint: HintSpec) -> bool:
-        hay = " ".join([hint.goal, *hint.needles, *hint.must_keep]).lower()
+        slot_terms = [
+            term
+            for slot in hint.slots
+            for term in (slot.id, slot.question, slot.expected, *slot.aliases)
+        ]
+        hay = " ".join([hint.goal, *hint.needles, *hint.must_keep, *slot_terms]).lower()
         has_did = any(term in hay for term in ("did", "difference-in-differences", "difference in differences"))
         has_panel = any(term in hay for term in ("panel", "firm fixed", "entity fixed", "year fixed", "time fixed", "parallel trends"))
         return has_did and has_panel

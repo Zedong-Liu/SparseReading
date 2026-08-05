@@ -226,12 +226,19 @@ function bridgeKey(ctx: Json, cfg: SparseReadConfig): string {
   return `${workspaceOf(ctx, cfg)}:${cfg.bridgeModule}:${cfg.mode}:${session}`
 }
 
-function shutdownBridgeFor(ctx: Json, cfg: SparseReadConfig) {
-  const key = bridgeKey(ctx, cfg)
-  const bridge = bridges.get(key)
-  if (!bridge) return
-  bridge.shutdown()
-  bridges.delete(key)
+function bridgeEntriesFor(ctx: Json, cfg: SparseReadConfig): Array<[string, SparseReadBridge]> {
+  const exactKey = bridgeKey(ctx, cfg)
+  const obj = asObject(ctx)
+  const sessions = [obj.sessionKey, obj.sessionId, obj.runId]
+    .filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+  if (sessions.length === 0) {
+    const exact = bridges.get(exactKey)
+    return exact ? [[exactKey, exact]] : []
+  }
+  const adapterKey = `:${cfg.bridgeModule}:${cfg.mode}:`
+  return Array.from(bridges.entries()).filter(([key]) => (
+    key === exactKey || (key.includes(adapterKey) && sessions.some((session) => key.endsWith(`:${session}`)))
+  ))
 }
 
 function workspaceOf(ctx: Json, cfg?: SparseReadConfig): string {
@@ -243,10 +250,51 @@ function runtimeContext(event: any, ctx: Json): JsonObject {
   const base = asObject(ctx)
   const nested = asObject(event?.context)
   const merged: JsonObject = { ...base, ...nested }
-  for (const key of ["runId", "sessionKey", "sessionId", "workspaceDir"] as const) {
+  for (const key of [
+    "runId",
+    "sessionKey",
+    "sessionId",
+    "conversationId",
+    "turnId",
+    "messageId",
+    "toolCallId",
+    "workspaceDir",
+  ] as const) {
     if (typeof event?.[key] === "string" && event[key].trim()) merged[key] = event[key]
   }
   return merged
+}
+
+function bridgeRequestContext(ctx: Json, event?: any, toolCallId?: string): JsonObject {
+  const merged = runtimeContext(event, ctx)
+  const conversationID = stringValue(
+    merged.sessionKey ?? merged.sessionId ?? merged.conversationId ?? merged.runId,
+    "default",
+  )
+  const turnID = stringValue(merged.turnId ?? merged.runId, "")
+  const messageID = stringValue(merged.messageId, "")
+  const callID = stringValue(toolCallId ?? merged.toolCallId, "")
+  return {
+    conversation_id: conversationID,
+    ...(turnID ? { turn_id: turnID } : {}),
+    ...(messageID ? { message_id: messageID } : {}),
+    ...(callID ? { tool_call_id: callID } : {}),
+  }
+}
+
+function hasStableConversation(ctx: Json, event?: any): boolean {
+  const merged = runtimeContext(event, ctx)
+  return [merged.sessionKey, merged.sessionId, merged.conversationId, merged.runId]
+    .some((value) => typeof value === "string" && Boolean(value.trim()))
+}
+
+function withBridgeContext(
+  params: JsonObject,
+  ctx: Json,
+  event?: any,
+  toolCallId?: string,
+): JsonObject {
+  return { ...params, context: bridgeRequestContext(ctx, event, toolCallId) }
 }
 
 function toolText(result: JsonObject): string {
@@ -381,7 +429,7 @@ function outputTruncated(value: Json): boolean {
 
 async function decideGate(bridge: SparseReadBridge, candidate: string | undefined, ctx: Json, cfg: SparseReadConfig): Promise<JsonObject | undefined> {
   if (!candidate) return undefined
-  const result = await bridge.request("decide", { path: absolutePath(candidate, ctx, cfg) })
+  const result = await bridge.request("decide", withBridgeContext({ path: absolutePath(candidate, ctx, cfg) }, ctx))
   return asObject(result.openclaw_gate)
 }
 
@@ -422,24 +470,6 @@ function sparseReadBlockReason(
   return `SparseRead enforce: call ${previewCall(target)} first; then follow preview.next_action.`
 }
 
-function preflightPrompt(result: JsonObject): string {
-  const handoffs = Array.isArray(result.handoffs) ? result.handoffs.filter(isObject) : []
-  if (handoffs.length === 0) return ""
-  const first = handoffs[0]
-  const firstPath = String(first.relative_path || first.path || "").trim()
-  if (!firstPath) return ""
-  if (handoffs.length === 1) {
-    return ` SparseRead preflight: first action for this high-confidence evidence target is ${previewCall(firstPath)}. Do not start with native reads, listing, grep, or exec inspection.`
-  }
-  const targets = handoffs
-    .map((item) => String(item.relative_path || item.path || "").trim())
-    .filter(Boolean)
-    .slice(0, 3)
-    .map((item) => JSON.stringify(item))
-    .join(", ")
-  return ` SparseRead preflight: high-confidence evidence targets detected: ${targets}. First preview the target matching the task before native reads, listing, grep, or exec inspection.`
-}
-
 async function recordNative(
   bridge: SparseReadBridge,
   phase: string,
@@ -447,6 +477,7 @@ async function recordNative(
   params: JsonObject,
   output?: Json,
   reason = "",
+  context: JsonObject = {},
 ) {
   await bridge.request("native_event", {
     phase,
@@ -455,8 +486,60 @@ async function recordNative(
     truncated: output ? outputTruncated(output) : false,
     output_chars: output ? outputText(output).length : 0,
     reason,
+    context,
   })
 }
+
+async function failOpenBridge<T>(label: string, operation: () => Promise<T>): Promise<T | undefined> {
+  try {
+    return await operation()
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    console.error(`[sparseread openclaw] ${label} failed open: ${detail}`)
+    return undefined
+  }
+}
+
+async function closeBridge(
+  ctx: Json,
+  cfg: SparseReadConfig,
+  lifecycleType: "session_reset" | "session_end",
+  event?: any,
+) {
+  for (const [key, bridge] of bridgeEntriesFor(ctx, cfg)) {
+    try {
+      await bridge.request("lifecycle_event", withBridgeContext({ type: lifecycleType }, ctx, event))
+    } catch {
+      // Session cleanup must remain fail-open when the bridge has already exited.
+    } finally {
+      bridge.shutdown()
+      bridges.delete(key)
+    }
+  }
+}
+
+const episodeHintSchema = Type.Object({
+  relation: Type.Optional(Type.Union([
+    Type.Literal("new"),
+    Type.Literal("continue"),
+    Type.Literal("switch"),
+    Type.Literal("unknown"),
+  ])),
+  goal: Type.Optional(Type.Union([
+    Type.Literal("selective_read"),
+    Type.Literal("cross_file_evidence"),
+    Type.Literal("full_fidelity"),
+    Type.Literal("structured_compute"),
+    Type.Literal("edit_or_execute"),
+    Type.Literal("unknown"),
+  ])),
+  coverage: Type.Optional(Type.Union([
+    Type.Literal("selective"),
+    Type.Literal("exhaustive"),
+    Type.Literal("unknown"),
+  ])),
+  summary: Type.Optional(Type.String({ maxLength: 500 })),
+}, { description: "Optional host-model judgment at a reading-episode boundary." })
 
 const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
   id: "sparseread-openclaw",
@@ -472,8 +555,9 @@ const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
         target: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "Use {path} or {artifact_id}." })),
         path: Type.Optional(Type.String({ description: "File, document, or directory path to preview." })),
         artifact_id: Type.Optional(Type.String({ description: "Existing SparseRead artifact id to preview." })),
+        episode_hint: Type.Optional(episodeHintSchema),
       }),
-      async execute(_id: string, params: JsonObject, ctx: Json) {
+      async execute(id: string, params: JsonObject, ctx: Json) {
         const cfg = pluginConfig(ctx, registeredConfig)
         const normalizedParams = { ...params }
         if (typeof normalizedParams.path === "string") {
@@ -482,7 +566,7 @@ const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
         if (isObject(normalizedParams.target) && typeof normalizedParams.target.path === "string") {
           normalizedParams.target = normalizeTarget(normalizedParams.target, ctx, cfg)
         }
-        const result = await bridgeFor(ctx, cfg).request("preview", normalizedParams)
+        const result = await bridgeFor(ctx, cfg).request("preview", withBridgeContext(normalizedParams, ctx, undefined, id))
         return toolResult(result)
       },
     })
@@ -495,9 +579,9 @@ const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
         range: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "Optional byte range: {start,end}." })),
         selector: Type.Optional(Type.String({ description: "Optional case-insensitive line selector." })),
       }),
-      async execute(_id: string, params: JsonObject, ctx: Json) {
+      async execute(id: string, params: JsonObject, ctx: Json) {
         const cfg = pluginConfig(ctx, registeredConfig)
-        const result = await bridgeFor(ctx, cfg).request("raw", params)
+        const result = await bridgeFor(ctx, cfg).request("raw", withBridgeContext(params, ctx, undefined, id))
         return toolResult(result)
       },
     })
@@ -508,9 +592,14 @@ const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
       parameters: Type.Object({
         path: Type.String({ description: "File, document, or directory path to inspect." }),
       }),
-      async execute(_id: string, params: JsonObject, ctx: Json) {
+      async execute(id: string, params: JsonObject, ctx: Json) {
         const cfg = pluginConfig(ctx, registeredConfig)
-        const result = await bridgeFor(ctx, cfg).request("card", { path: absolutePath(String(params.path), ctx, cfg) })
+        const result = await bridgeFor(ctx, cfg).request("card", withBridgeContext(
+          { path: absolutePath(String(params.path), ctx, cfg) },
+          ctx,
+          undefined,
+          id,
+        ))
         return toolResult(result)
       },
     })
@@ -531,14 +620,15 @@ const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
           Type.Literal("verify"),
         ]),
         hint: Type.Record(Type.String(), Type.Unknown(), { description: "HintSpec with goal, needles, slots, want, scope, type_hint." }),
+        episode_hint: Type.Optional(episodeHintSchema),
       }),
-      async execute(_id: string, params: JsonObject, ctx: Json) {
+      async execute(id: string, params: JsonObject, ctx: Json) {
         const cfg = pluginConfig(ctx, registeredConfig)
-        const result = await bridgeFor(ctx, cfg).request("read", {
+        const result = await bridgeFor(ctx, cfg).request("read", withBridgeContext({
           ...params,
           target: normalizeTarget(params.target, ctx, cfg),
           hint: normalizeHint(params.hint),
-        })
+        }, ctx, undefined, id))
         return toolResult(result)
       },
     })
@@ -549,9 +639,14 @@ const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
       parameters: Type.Object({
         path: Type.String({ description: "File, document, or directory path to inspect." }),
       }),
-      async execute(_id: string, params: JsonObject, ctx: Json) {
+      async execute(id: string, params: JsonObject, ctx: Json) {
         const cfg = pluginConfig(ctx, registeredConfig)
-        const result = await bridgeFor(ctx, cfg).request("decide", { path: absolutePath(String(params.path), ctx, cfg) })
+        const result = await bridgeFor(ctx, cfg).request("decide", withBridgeContext(
+          { path: absolutePath(String(params.path), ctx, cfg) },
+          ctx,
+          undefined,
+          id,
+        ))
         return toolResult(result)
       },
     })
@@ -560,9 +655,9 @@ const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
       name: "sro_trace",
       description: "Return SparseRead, native tool, truncation, usage, ready-after-read, and gate trace for this session.",
       parameters: Type.Object({}),
-      async execute(_id: string, _params: JsonObject, ctx: Json) {
+      async execute(id: string, _params: JsonObject, ctx: Json) {
         const cfg = pluginConfig(ctx, registeredConfig)
-        const result = await bridgeFor(ctx, cfg).request("trace", {})
+        const result = await bridgeFor(ctx, cfg).request("trace", withBridgeContext({}, ctx, undefined, id))
         return toolResult(result)
       },
     })
@@ -574,13 +669,25 @@ const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
         const runCtx = runtimeContext(event, ctx)
         const cfg = pluginConfig(runCtx, registeredConfig)
         if (cfg.policy !== "enforce" && cfg.policy !== "auto") return
+        if (!hasStableConversation(runCtx, event)) return
         const toolName = String(event?.toolName ?? "")
         const params = asObject(event?.params)
-        const bridge = bridgeFor(runCtx, cfg)
-        await recordNative(bridge, "before", toolName, params)
+        const bridge = await failOpenBridge("before_tool_call bridge", async () => bridgeFor(runCtx, cfg))
+        if (!bridge) return
+        await failOpenBridge("before_tool_call native_event", () => recordNative(
+          bridge,
+          "before",
+          toolName,
+          params,
+          undefined,
+          "",
+          bridgeRequestContext(runCtx, event),
+        ))
 
         if (toolName === "read" || toolName === "read_file") {
-          const gate = await decideGate(bridge, paramsPath(params), runCtx, cfg)
+          const gate = await failOpenBridge("before_tool_call decide", () => (
+            decideGate(bridge, paramsPath(params), runCtx, cfg)
+          ))
           if (gate?.block_native_read !== true) return
           if (isBroadRead(params) || gate?.mode === "enforce") {
             const handoffPath = typeof gate.handoff_path === "string" ? gate.handoff_path : paramsPath(params)
@@ -593,7 +700,9 @@ const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
 
         if (toolName === "list" || toolName === "list_dir" || toolName === "dir_list") {
           if (!isBroadList(params)) return
-          const gate = await decideGate(bridge, paramsPath(params), runCtx, cfg)
+          const gate = await failOpenBridge("before_tool_call decide", () => (
+            decideGate(bridge, paramsPath(params), runCtx, cfg)
+          ))
           if (gate?.block_native_read === true) {
             const handoffPath = typeof gate.handoff_path === "string" ? gate.handoff_path : paramsPath(params)
             return {
@@ -604,7 +713,9 @@ const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
         }
 
         if (toolName === "grep") {
-          const gate = await decideGate(bridge, paramsPath(params), runCtx, cfg)
+          const gate = await failOpenBridge("before_tool_call decide", () => (
+            decideGate(bridge, paramsPath(params), runCtx, cfg)
+          ))
           if (gate?.block_native_search === true) {
             return {
               block: true,
@@ -619,7 +730,9 @@ const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
           const rawCopy = looksLikeRawCopy(command)
           if (!rawDump && !rawCopy) return
           for (const candidate of commandPaths(command)) {
-            const gate = await decideGate(bridge, candidate, runCtx, cfg)
+            const gate = await failOpenBridge("before_tool_call decide", () => (
+              decideGate(bridge, candidate, runCtx, cfg)
+            ))
             if (gate?.block_native_exec_dump === true) {
               return {
                 block: true,
@@ -638,7 +751,15 @@ const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
         const toolName = String(event?.toolName ?? event?.name ?? "")
         const params = asObject(event?.params)
         const result = event?.result ?? event?.toolResult ?? event?.output
-        await recordNative(bridgeFor(runCtx, cfg), "after", toolName, params, result)
+        await failOpenBridge("after_tool_call native_event", async () => recordNative(
+          bridgeFor(runCtx, cfg),
+          "after",
+          toolName,
+          params,
+          result,
+          "",
+          bridgeRequestContext(runCtx, event),
+        ))
       }, { priority: 0, timeoutMs: 15000 })
 
       api.on("llm_output", async (event: any, ctx: Json) => {
@@ -646,12 +767,12 @@ const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
         const cfg = pluginConfig(runCtx, registeredConfig)
         const usage = event?.usage ?? event?.message?.usage
         if (!usage) return
-        await bridgeFor(runCtx, cfg).request("usage_event", {
+        await failOpenBridge("llm_output usage_event", async () => bridgeFor(runCtx, cfg).request("usage_event", withBridgeContext({
           provider: event?.provider,
           model: event?.model,
           usage,
           request_id: event?.callId ?? event?.requestId,
-        })
+        }, runCtx, event)))
       }, { priority: 0, timeoutMs: 10000 })
     }
 
@@ -660,24 +781,36 @@ const sparseReadPlugin: OpenClawPluginDefinition = definePluginEntry({
         const runCtx = runtimeContext(event, ctx)
         const cfg = pluginConfig(runCtx, registeredConfig)
         if (cfg.policy === "native") return
-        let preflight = ""
-        try {
-          preflight = preflightPrompt(await bridgeFor(runCtx, cfg).request("preflight", { max_candidates: 24, max_results: 3 }))
-        } catch {
-          preflight = ""
-        }
         const systemContext =
-          "SparseRead is available for long documents, PDFs, and compact evidence closures. Production SparseRead starts with sro_preview(path), which returns the minimal card, structure, samples, signals, raw_ref, and next action. Use native reads for small files, small logs, config edits, scripts, calculations, and full-table work. Call sro_read only after preview when targeted evidence is needed and provide a concrete HintSpec. For evidence collections: preview first, then at most one sro_read(mode=collect) when slots are explicit. Once slots are ready, write the deliverable immediately. Do not verify, refine, or re-read resolved slots. sro_card remains a compatibility/debug path, and bench_protocol keeps the older sro_card -> sro_read flow." + preflight
+          "SparseRead is available for selective long-document reading, cross-file evidence work, and one bounded evidence/schema plan before large multi-table analysis. At the first sro_preview or sro_read of a reading episode, include episode_hint with relation (new/continue/switch), goal (selective_read/cross_file_evidence/full_fidelity/structured_compute/edit_or_execute/unknown), coverage (selective/exhaustive/unknown), and a short summary. Reuse continue only for the same goal and resource scope; use switch when the conversation moves to unrelated resources or work. The gate keeps unsupported, small, full-fidelity, edit/execute, and single-table exact-compute work native; large multi-table structured analysis may use one SparseRead plan before native calculation. Production SparseRead starts with sro_preview(path); follow its next action and provide a concrete HintSpec to sro_read when targeted evidence is needed. Once evidence is ready, write the deliverable or run the one bounded calculation instead of rereading resolved scope. sro_card remains a compatibility/debug path, and bench_protocol keeps the older sro_card -> sro_read flow."
         return {
-          prependContext: preflight.trim() ? preflight.trim() : undefined,
           appendSystemContext: systemContext,
         }
       }, { priority: -20, timeoutMs: 10000 })
     }
 
-    api.on("agent_end", async (event: any, ctx: Json) => {
+    api.on("before_agent_finalize", async (event: any, ctx: Json) => {
       const runCtx = runtimeContext(event, ctx)
-      shutdownBridgeFor(runCtx, pluginConfig(runCtx, registeredConfig))
+      const cfg = pluginConfig(runCtx, registeredConfig)
+      for (const [, bridge] of bridgeEntriesFor(runCtx, cfg)) {
+        try {
+          await bridge.request("lifecycle_event", withBridgeContext({ type: "assistant_final" }, runCtx, event))
+        } catch {
+          // Finalization must not fail when SparseRead is unavailable.
+        }
+      }
+    }, { priority: 0, timeoutMs: 5000 })
+
+    api.on("before_reset", async (event: any, ctx: Json) => {
+      const runCtx = runtimeContext(event, ctx)
+      await closeBridge(runCtx, pluginConfig(runCtx, registeredConfig), "session_reset", event)
+    }, { priority: 0, timeoutMs: 5000 })
+
+    api.on("session_end", async (event: any, ctx: Json) => {
+      const reason = String(event?.reason ?? "").trim().toLowerCase()
+      if (reason !== "reset" && reason !== "deleted" && reason !== "shutdown") return
+      const runCtx = runtimeContext(event, ctx)
+      await closeBridge(runCtx, pluginConfig(runCtx, registeredConfig), "session_end", event)
     }, { priority: 0, timeoutMs: 5000 })
 
     api.lifecycle?.registerRuntimeLifecycle?.({

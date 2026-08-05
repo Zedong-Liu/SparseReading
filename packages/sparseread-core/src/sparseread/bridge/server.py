@@ -7,20 +7,22 @@ import copy
 import json
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from sparseread import SparseRead
 from sparseread.config import SparseReadConfig
-from sparseread.core.benefit_gate import BenefitDecision
+from sparseread.core.benefit_gate import BenefitDecision, GateContext
 from sparseread.core.detector import FileInfo, inspect_file
+from sparseread.core.episode import ReadingEpisode
 from sparseread.protocol import BRIDGE_PROTOCOL_VERSION
 
 GateClassifier = Callable[[FileInfo, BenefitDecision], dict[str, Any]]
 
 READ_LIKE_TOOLS = {"read", "read_file", "list", "list_dir", "dir_list", "grep", "exec", "bash", "shell"}
-WRITE_LIKE_TOOLS = {"write", "write_file", "edit", "apply_patch"}
+WRITE_LIKE_TOOLS = {"write", "write_file", "edit", "edit_file", "apply_patch"}
 
 
 @dataclass(slots=True)
@@ -51,6 +53,7 @@ class SparseReadBridgeServer:
     """Stateful adapter around one SparseRead runtime."""
 
     _MAX_ADAPTER_ARTIFACTS = 512
+    _READY_STATUSES = {"ready", "ready_for_compute"}
 
     def __init__(
         self,
@@ -71,35 +74,62 @@ class SparseReadBridgeServer:
         self.gate_events: list[dict[str, Any]] = []
         self.ready_after_native_reads = 0
         self.deliverable_written = False
+        self._ready_after_native_reads_by_conversation: dict[str, int] = {}
+        self._deliverable_written_conversations: set[str] = set()
         self._adapter_once_artifacts: set[str] = set()
         self._adapter_ready_artifacts: dict[str, dict[str, Any]] = {}
         self._adapter_card_results: dict[str, dict[str, Any]] = {}
         self._adapter_artifact_roots: dict[str, Path] = {}
         self._adapter_verify_passes: dict[str, int] = {}
         self._adapter_guard_hits = 0
+        self._adapter_guard_hits_by_conversation: dict[str, int] = {}
+        # The bridge and the runtime must share one episode lease.  Keeping a
+        # second controller here lets the adapter classify with one decision
+        # while FileCard/read recompute against another.
+        self.episodes = self.runtime.orchestrator.episodes
+        self._adapter_ready_conversations: dict[str, set[str]] = {}
 
     def preview(self, params: dict[str, Any]) -> dict[str, Any]:
         target = params.get("target")
         if target is None:
             target = {"artifact_id": params.get("artifact_id")} if params.get("artifact_id") else {"path": params.get("path")}
+        target_path = target.get("path") if isinstance(target, dict) else target
+        if isinstance(params.get("episode_hint"), dict):
+            self.runtime.orchestrator.clear_episode_hint_probe(target_path)
+        elif isinstance(target_path, str) and target_path:
+            probe = self.runtime.orchestrator.episode_hint_probe(target_path, tool_name="sro_preview")
+            if probe:
+                self._record("sro_episode_probe", {"target": target}, probe)
+                return probe
         pack = self.runtime.orchestrator.preview(target).to_dict()
         result = {"preview_pack": pack}
         card = pack.get("card") if isinstance(pack.get("card"), dict) else {}
         artifact_id = str(pack.get("artifact_id") or card.get("artifact_id") or "")
         card_path = str(card.get("path") or (target.get("path") if isinstance(target, dict) else "") or "")
         if artifact_id and card_path and not pack.get("error"):
+            info = inspect_file(Path(card_path))
+            decision, episode = self._episode_decision(info.path, params, info=info)
+            gate = self.classifier(info, decision)
+            result["decision"] = self._decision_payload(decision)
+            result[self.policy.gate_key] = gate
+            card["sparse_recommended"] = decision.mode == "force_sro"
+            card["recommended_mode"] = decision.recommended_mode
+            card["reason"] = decision.reason
+            pack["preview_recommended"] = decision.preview_recommended
             self._remember_adapter_card(
                 artifact_id,
-                {"file_card": copy.deepcopy(card)} if card else result,
+                copy.deepcopy(result),
                 Path(card_path),
                 once=str(card.get("type") or "") == "collection",
             )
+            result["episode"] = episode.to_dict()
         self._record("sro_preview", {"target": target}, result)
         return result
 
     def raw(self, params: dict[str, Any]) -> dict[str, Any]:
         raw_ref = self._require_str(params, "raw_ref")
-        ready_artifact = self._adapter_ready_artifact_for_raw_ref(raw_ref)
+        conversation_id = self._conversation_id(params)
+        ready_artifact = self._adapter_ready_artifact_for_raw_ref(raw_ref, conversation_id)
         selector = str(params.get("selector") or "") or None
         if ready_artifact and self._adapter_ready_guard_covers_selector(ready_artifact, selector):
             result = {"raw": self._adapter_already_ready_raw(ready_artifact, raw_ref)}
@@ -117,17 +147,20 @@ class SparseReadBridgeServer:
 
     def card(self, params: dict[str, Any]) -> dict[str, Any]:
         path = self._require_str(params, "path")
-        if self.policy.guard_cards_after_ready:
-            ready_artifact = self._adapter_ready_artifact_for_path(path)
+        requested_path = Path(path)
+        info = inspect_file(requested_path)
+        decision, episode = self._episode_decision(info.path, params, info=info)
+        native_passthrough = self._native_passthrough_path(requested_path)
+        if self.policy.guard_cards_after_ready and not native_passthrough:
+            ready_artifact = self._adapter_ready_artifact_for_path(path, self._conversation_id(params))
             if ready_artifact:
                 result = self._adapter_already_ready_card(ready_artifact, path)
+                result["episode"] = episode.to_dict()
                 self._record("sro_card", {"path": path}, result)
                 return result
-        info = inspect_file(Path(path))
-        decision = self.runtime.orchestrator.benefit_gate.decide(info)
         gate = self.classifier(info, decision)
-        card = self.runtime.orchestrator.card(Path(path))
-        if self._native_passthrough_path(Path(path)):
+        card = self.runtime.orchestrator.card(requested_path)
+        if native_passthrough:
             gate = native_passthrough_gate(
                 f"{self.policy.platform} native pass-through: generated/runtime artifacts should not re-enter SparseRead",
                 include_search=self.policy.gate_key == "openclaw_gate",
@@ -136,16 +169,21 @@ class SparseReadBridgeServer:
             card.recommended_mode = "native"
             card.reason = gate["reason"]
         else:
-            parent_gate = self._force_collection_parent_gate(Path(path))
+            parent_gate = self._force_collection_parent_gate(Path(path), params)
             if parent_gate:
                 parent_path = Path(str(parent_gate["handoff_path"]))
                 card = self.runtime.orchestrator.card(parent_path)
                 gate = parent_gate
+                episode = self.episodes.current(self._conversation_id(params)) or episode
         if gate.get("mode") == "native":
             card.sparse_recommended = False
             card.recommended_mode = "native"
             card.reason = str(gate.get("reason") or f"{self.policy.platform} native path is cheaper than SparseRead")
-        result: dict[str, Any] = {"file_card": card.to_dict(), self.policy.gate_key: gate}
+        result: dict[str, Any] = {
+            "file_card": card.to_dict(),
+            self.policy.gate_key: gate,
+            "episode": episode.to_dict(),
+        }
         if card.sparse_recommended:
             mode = "collect" if "collect" in card.recommended_mode else card.recommended_mode
             result["next_action"] = {
@@ -197,7 +235,25 @@ class SparseReadBridgeServer:
         if not isinstance(hint, dict):
             raise ValueError("hint must be an object")
         hint = self._normalize_bridge_hint(hint)
-        ready_artifact = self._adapter_ready_artifact_for_target(target, hint)
+        conversation_id = self._conversation_id(params)
+        scope = self._scope_for_target(target, {})
+        episode = None
+        if scope:
+            _, episode = self._episode_decision(Path(scope), params)
+        allow_extend = self._episode_hint(params).relation == "continue"
+        ready_artifact = self._adapter_ready_artifact_for_target(
+            target,
+            hint,
+            conversation_id,
+            allow_extend=allow_extend,
+        )
+        requested_artifact = str(target.get("artifact_id") or hint.get("artifact") or "").strip()
+        if (
+            allow_extend
+            and not ready_artifact
+            and requested_artifact in self._adapter_ready_conversations.get(conversation_id, set())
+        ):
+            self.runtime.orchestrator.reopen_artifact(requested_artifact)
         if ready_artifact and self._allow_bounded_ready_verify(ready_artifact, mode):
             ready_artifact = ""
         if ready_artifact:
@@ -206,14 +262,28 @@ class SparseReadBridgeServer:
             return result
         pack = self.runtime.orchestrator.read(target, mode, hint)
         packed = self._adapter_pack(pack.to_dict())
-        self._remember_adapter_ready_pack(packed, hint)
+        self._remember_adapter_ready_pack(packed, hint, conversation_id=conversation_id)
+        scope = scope or self._scope_for_target(target, packed)
+        if scope:
+            if episode is None:
+                _, episode = self._episode_decision(Path(scope), params)
+            if self._pack_is_ready(packed):
+                episode = self.episodes.mark_ready(
+                    conversation_id=conversation_id,
+                    scope=scope,
+                    closure_ref=str(packed.get("artifact_id") or ""),
+                ) or episode
+                packed["episode_status"] = "evidence_ready"
+                packed["closure_ref"] = str(packed.get("artifact_id") or "")
         result = {"evidence_pack": packed}
+        if episode is not None:
+            result["episode"] = episode.to_dict()
         self._record("sro_read", {"target": target, "mode": mode, "hint": hint}, result)
         return result
 
     def decide(self, params: dict[str, Any]) -> dict[str, Any]:
         path = self._require_str(params, "path")
-        info, decision, gate = self._classified_gate_for_path(Path(path))
+        info, decision, gate, episode = self._classified_gate_for_path(Path(path), params)
         result = {
             "path": str(info.path),
             "type": info.type,
@@ -222,14 +292,11 @@ class SparseReadBridgeServer:
             "structured": info.structured,
             "size_bytes": info.size_bytes,
             "decision": {
-                "mode": decision.mode,
-                "action": decision.action,
-                "reason": decision.reason,
-                "confidence": decision.confidence,
-                "recommended_mode": decision.recommended_mode,
+                **self._decision_payload(decision),
             },
             self.policy.gate_key: gate,
-            "should_handoff_read": self.runtime.orchestrator.should_handoff_read(Path(path)),
+            "episode": episode.to_dict(),
+            "should_handoff_read": gate.get("block_native_read") is True,
         }
         self._record("sro_decide", {"path": path}, result)
         self._record_gate(path, info, decision, gate)
@@ -242,8 +309,11 @@ class SparseReadBridgeServer:
         handoffs: list[dict[str, Any]] = []
         seen_handoff_paths: set[str] = set()
         root_handoff: dict[str, Any] | None = None
+        hint = self._episode_hint(params)
         for candidate in self._preflight_candidates(workspace, max_candidates=max_candidates):
-            info, decision, gate = self._classified_gate_for_path(candidate)
+            info = inspect_file(candidate)
+            decision = self.runtime.orchestrator.benefit_gate.decide(info, hint)
+            gate = self.classifier(info, decision)
             if (
                 gate.get("mode") != "enforce"
                 or gate.get("trajectory") != "sro_first"
@@ -291,8 +361,10 @@ class SparseReadBridgeServer:
         return result
 
     def native_event(self, params: dict[str, Any]) -> dict[str, Any]:
+        conversation_id = self._conversation_id(params)
         event = {
             "time": round(time.time(), 3),
+            "conversation_id": conversation_id,
             "phase": str(params.get("phase") or "unknown"),
             "tool": str(params.get("tool") or "unknown"),
             "params": self._jsonable(params.get("params") or {}),
@@ -303,13 +375,43 @@ class SparseReadBridgeServer:
         self.native_events.append(event)
         if event["phase"] == "after" and event["tool"] in WRITE_LIKE_TOOLS:
             self.deliverable_written = True
+            self._deliverable_written_conversations.add(conversation_id)
+            self._record_native_output_path(params.get("params"))
+            self.episodes.mark_output_started(self._conversation_id(params))
         if event["phase"] == "after" and event["tool"] in READ_LIKE_TOOLS and self._has_ready_evidence():
             self.ready_after_native_reads += 1
+            self._ready_after_native_reads_by_conversation[conversation_id] = (
+                self._ready_after_native_reads_by_conversation.get(conversation_id, 0) + 1
+            )
         return {"ok": True, "native_event_count": len(self.native_events)}
+
+    def lifecycle_event(self, params: dict[str, Any]) -> dict[str, Any]:
+        event_type = str(params.get("type") or "").strip().lower()
+        conversation_id = self._conversation_id(params)
+        if event_type in {"session_reset", "session_end"}:
+            episode = self.runtime.orchestrator.end_conversation(conversation_id)
+        elif event_type == "assistant_final":
+            episode = self.episodes.mark_final(conversation_id)
+        else:
+            episode = self.episodes.current(conversation_id)
+        if event_type in {"session_reset", "session_end"}:
+            owned_artifacts = self._adapter_ready_conversations.pop(conversation_id, set())
+            for artifact_id in owned_artifacts:
+                self._adapter_ready_artifacts.pop(artifact_id, None)
+                self._adapter_card_results.pop(artifact_id, None)
+                self._adapter_artifact_roots.pop(artifact_id, None)
+                self._adapter_verify_passes.pop(artifact_id, None)
+                self._adapter_once_artifacts.discard(artifact_id)
+        return {
+            "ok": True,
+            "type": event_type,
+            "episode": episode.to_dict() if episode else None,
+        }
 
     def usage_event(self, params: dict[str, Any]) -> dict[str, Any]:
         event = {
             "time": round(time.time(), 3),
+            "conversation_id": self._conversation_id(params),
             "provider": params.get("provider"),
             "model": params.get("model"),
             "usage": self._jsonable(params.get("usage") or {}),
@@ -320,8 +422,11 @@ class SparseReadBridgeServer:
 
     def trace(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         orchestrator = self.runtime.orchestrator
+        conversation_id = self._conversation_id(params or {})
         artifacts: list[dict[str, Any]] = []
         for artifact_id, info in getattr(orchestrator, "_artifacts", {}).items():
+            if getattr(orchestrator, "_artifact_conversations", {}).get(artifact_id, "default") != conversation_id:
+                continue
             artifacts.append(
                 {
                     "artifact_id": artifact_id,
@@ -338,16 +443,29 @@ class SparseReadBridgeServer:
             "uptime_seconds": round(time.time() - self.started_at, 3),
             "artifacts": artifacts,
             "macro_requested": bool(getattr(orchestrator, "macro_requested", False)),
-            "ready_collection_artifacts": sorted(getattr(orchestrator, "_ready_collection_artifacts", {}).keys()),
-            "slot_digest_artifacts": sorted(getattr(orchestrator, "_slot_digests", {}).keys()),
-            "adapter_ready_artifacts": sorted(self._adapter_ready_artifacts),
-            "adapter_verify_passes": dict(sorted(self._adapter_verify_passes.items())),
-            "adapter_guard_hits": self._adapter_guard_hits,
-            "events": self.events,
-            "native_events": self.native_events,
-            "usage_events": self.usage_events,
-            "gate_events": self.gate_events,
-            "summary": self._trace_summary(),
+            "ready_collection_artifacts": sorted(
+                artifact_id
+                for artifact_id in getattr(orchestrator, "_ready_collection_artifacts", {})
+                if getattr(orchestrator, "_artifact_conversations", {}).get(artifact_id, "default") == conversation_id
+            ),
+            "slot_digest_artifacts": sorted(
+                artifact_id
+                for artifact_id in getattr(orchestrator, "_slot_digests", {})
+                if getattr(orchestrator, "_artifact_conversations", {}).get(artifact_id, "default") == conversation_id
+            ),
+            "adapter_ready_artifacts": sorted(self._adapter_ready_conversations.get(conversation_id, set())),
+            "adapter_verify_passes": {
+                artifact_id: count
+                for artifact_id, count in sorted(self._adapter_verify_passes.items())
+                if getattr(orchestrator, "_artifact_conversations", {}).get(artifact_id, "default") == conversation_id
+            },
+            "adapter_guard_hits": self._adapter_guard_hits_by_conversation.get(conversation_id, 0),
+            "events": [event for event in self.events if event.get("conversation_id") == conversation_id],
+            "native_events": [event for event in self.native_events if event.get("conversation_id") == conversation_id],
+            "usage_events": [event for event in self.usage_events if event.get("conversation_id") == conversation_id],
+            "gate_events": [event for event in self.gate_events if event.get("conversation_id") == conversation_id],
+            "episodes": [episode.to_dict()] if (episode := self.episodes.current(conversation_id)) else [],
+            "summary": self._trace_summary(conversation_id),
         }
 
     def handle(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -355,6 +473,12 @@ class SparseReadBridgeServer:
         params = request.get("params") or {}
         if not isinstance(params, dict):
             raise ValueError("params must be an object")
+        self.runtime.orchestrator.set_context(
+            {
+                "conversation_id": self._conversation_id(params),
+                "turn_id": self._turn_id(params),
+            }
+        )
         if method == "preview":
             return self.preview(params)
         if method == "raw":
@@ -371,6 +495,8 @@ class SparseReadBridgeServer:
             return self.native_event(params)
         if method == "usage_event":
             return self.usage_event(params)
+        if method == "lifecycle_event":
+            return self.lifecycle_event(params)
         if method == "trace":
             return self.trace(params)
         if method == "version":
@@ -396,13 +522,22 @@ class SparseReadBridgeServer:
         pack["protocol_next"] = "write_file_now"
         return pack
 
-    def _remember_adapter_ready_pack(self, pack: dict[str, Any], hint: dict[str, Any] | None = None) -> None:
+    def _remember_adapter_ready_pack(
+        self,
+        pack: dict[str, Any],
+        hint: dict[str, Any] | None = None,
+        *,
+        conversation_id: str = "default",
+    ) -> None:
         artifact_id = str(pack.get("artifact_id") or "")
         if not artifact_id:
             return
         next_action = pack.get("next_action") if isinstance(pack.get("next_action"), dict) else {}
         slot_digest = pack.get("slot_digest") if isinstance(pack.get("slot_digest"), dict) else {}
-        ready = slot_digest.get("overall_status") == "ready" or next_action.get("overall_status") == "ready"
+        ready = (
+            slot_digest.get("overall_status") in self._READY_STATUSES
+            or next_action.get("overall_status") in self._READY_STATUSES
+        )
         if not ready:
             return
         pack_type = str(pack.get("type") or "")
@@ -413,8 +548,8 @@ class SparseReadBridgeServer:
         resolved_slots = self._resolved_slots(slot_digest)
         requested_terms = self._requested_slot_terms(hint or {})
         existing = self._adapter_ready_artifacts.get(artifact_id) or {}
-        merged_ids = set(str(item).lower() for item in existing.get("resolved_slot_ids") or []) | resolved_slots["ids"]
-        merged_text = set(str(item).lower() for item in existing.get("resolved_slot_text") or []) | resolved_slots["text"] | requested_terms
+        merged_ids = {str(item).lower() for item in existing.get("resolved_slot_ids") or []} | resolved_slots["ids"]
+        merged_text = {str(item).lower() for item in existing.get("resolved_slot_text") or []} | resolved_slots["text"] | requested_terms
         compact_digest = self._compact_slot_digest(slot_digest)
         if merged_ids:
             compact_digest["resolved_slot_ids"] = sorted(merged_ids)
@@ -433,6 +568,7 @@ class SparseReadBridgeServer:
             ]
             or list(existing.get("evidence_anchors") or []),
         }
+        self._adapter_ready_conversations.setdefault(conversation_id or "default", set()).add(artifact_id)
         self._prune_adapter_artifacts()
 
     def _remember_adapter_card(self, artifact_id: str, result: dict[str, Any], path: Path, *, once: bool) -> None:
@@ -452,20 +588,38 @@ class SparseReadBridgeServer:
             self._adapter_ready_artifacts.pop(artifact_id, None)
             self._adapter_verify_passes.pop(artifact_id, None)
             self._adapter_once_artifacts.discard(artifact_id)
+            for artifacts in self._adapter_ready_conversations.values():
+                artifacts.discard(artifact_id)
 
-    def _adapter_ready_artifact_for_target(self, target: dict[str, Any], hint: dict[str, Any]) -> str:
+    def _adapter_ready_artifact_for_target(
+        self,
+        target: dict[str, Any],
+        hint: dict[str, Any],
+        conversation_id: str,
+        *,
+        allow_extend: bool = False,
+    ) -> str:
         artifact_id = str(target.get("artifact_id") or hint.get("artifact") or "").strip()
-        if artifact_id in self._adapter_ready_artifacts and self._adapter_ready_guard_covers_hint(artifact_id, hint):
+        ready_ids = self._adapter_ready_conversations.get(conversation_id or "default", set())
+        if artifact_id in ready_ids and self._adapter_ready_guard_covers_hint(
+            artifact_id,
+            hint,
+            allow_extend=allow_extend,
+        ):
             return artifact_id
         path = str(target.get("path") or "").strip()
         if not path:
             return ""
-        path_artifact = self._adapter_ready_artifact_for_path(path)
-        if path_artifact and self._adapter_ready_guard_covers_hint(path_artifact, hint):
+        path_artifact = self._adapter_ready_artifact_for_path(path, conversation_id)
+        if path_artifact and self._adapter_ready_guard_covers_hint(
+            path_artifact,
+            hint,
+            allow_extend=allow_extend,
+        ):
             return path_artifact
         return ""
 
-    def _adapter_ready_artifact_for_path(self, path: str | Path) -> str:
+    def _adapter_ready_artifact_for_path(self, path: str | Path, conversation_id: str = "default") -> str:
         if not path:
             return ""
         try:
@@ -475,22 +629,33 @@ class SparseReadBridgeServer:
             candidate = candidate.resolve(strict=False)
         except Exception:
             return ""
-        for artifact_id in self._adapter_ready_artifacts:
+        for artifact_id in self._adapter_ready_conversations.get(conversation_id or "default", set()):
             root = self._adapter_artifact_roots.get(artifact_id)
             if root and self._is_same_or_descendant(candidate, root):
                 return artifact_id
         return ""
 
-    def _adapter_ready_artifact_for_raw_ref(self, raw_ref: str) -> str:
+    def _adapter_ready_artifact_for_raw_ref(self, raw_ref: str, conversation_id: str = "default") -> str:
         parts = raw_ref.split(":")
         if len(parts) < 2 or parts[0] != "raw":
             return ""
         artifact_id = parts[1]
-        return artifact_id if artifact_id in self._adapter_ready_artifacts else ""
+        ready_ids = self._adapter_ready_conversations.get(conversation_id or "default", set())
+        return artifact_id if artifact_id in ready_ids else ""
 
-    def _adapter_ready_guard_covers_hint(self, artifact_id: str, hint: dict[str, Any]) -> bool:
+    def _adapter_ready_guard_covers_hint(
+        self,
+        artifact_id: str,
+        hint: dict[str, Any],
+        *,
+        allow_extend: bool = False,
+    ) -> bool:
         ready = self._adapter_ready_artifacts.get(artifact_id) or {}
-        if str(ready.get("type") or "") == "collection" and artifact_id in self._adapter_once_artifacts:
+        if (
+            not allow_extend
+            and str(ready.get("type") or "") == "collection"
+            and artifact_id in self._adapter_once_artifacts
+        ):
             return True
         requested = self._requested_slot_terms(hint)
         if not requested:
@@ -521,7 +686,7 @@ class SparseReadBridgeServer:
         return True
 
     def _adapter_already_ready_card(self, artifact_id: str, requested_path: str) -> dict[str, Any]:
-        self._adapter_guard_hits += 1
+        self._record_adapter_guard_hit()
         base = copy.deepcopy(self._adapter_card_results.get(artifact_id) or {})
         ready = self._adapter_ready_artifacts.get(artifact_id, {})
         if not base:
@@ -556,7 +721,7 @@ class SparseReadBridgeServer:
         return base
 
     def _adapter_already_ready_pack(self, artifact_id: str, mode: str) -> dict[str, Any]:
-        self._adapter_guard_hits += 1
+        self._record_adapter_guard_hit()
         ready = self._adapter_ready_artifacts.get(artifact_id, {})
         next_action = copy.deepcopy(ready.get("next_action") or {})
         required_outputs = next_action.get("required_outputs") if isinstance(next_action, dict) else []
@@ -584,7 +749,7 @@ class SparseReadBridgeServer:
         }
 
     def _adapter_already_ready_raw(self, artifact_id: str, raw_ref: str) -> dict[str, Any]:
-        self._adapter_guard_hits += 1
+        self._record_adapter_guard_hit()
         return {
             "raw_ref": raw_ref,
             "artifact_id": artifact_id,
@@ -713,14 +878,17 @@ class SparseReadBridgeServer:
             or orchestrator.is_runtime_artifact(path)
         )
 
-    def _force_collection_parent_gate(self, path: Path) -> dict[str, Any] | None:
+    def _force_collection_parent_gate(self, path: Path, params: dict[str, Any]) -> dict[str, Any] | None:
         child_info = inspect_file(path)
         if child_info.type == "collection":
             return None
-        child_decision = self.runtime.orchestrator.benefit_gate.decide(child_info)
+        context = self._episode_hint(params)
+        child_decision = self.runtime.orchestrator.benefit_gate.decide(child_info, context)
         if child_decision.mode == "force_sro":
             return None
-        nearest = getattr(self.runtime.orchestrator, "_nearest_force_collection_root")(path)
+        nearest = self._active_force_collection_root(path, params)
+        if nearest is None:
+            nearest = self._nearest_force_collection_root(path, context)
         if nearest is None:
             return None
         try:
@@ -730,7 +898,7 @@ class SparseReadBridgeServer:
             if str(nearest) == str(path):
                 return None
         parent_info = inspect_file(nearest)
-        parent_decision = self.runtime.orchestrator.benefit_gate.decide(parent_info)
+        parent_decision, _ = self._episode_decision(parent_info.path, params, info=parent_info)
         gate = self.classifier(parent_info, parent_decision)
         if gate.get("block_native_read") is not True:
             return None
@@ -742,20 +910,32 @@ class SparseReadBridgeServer:
         )
         return gate
 
-    def _classified_gate_for_path(self, path: Path) -> tuple[FileInfo, BenefitDecision, dict[str, Any]]:
+    def _classified_gate_for_path(
+        self,
+        path: Path,
+        params: dict[str, Any] | None = None,
+    ) -> tuple[FileInfo, BenefitDecision, dict[str, Any], ReadingEpisode]:
+        params = params or {}
         info = inspect_file(path)
-        decision = self.runtime.orchestrator.benefit_gate.decide(info)
+        decision, episode = self._episode_decision(info.path, params, info=info)
         gate = self.classifier(info, decision)
-        if self._native_passthrough_path(path):
+        native_passthrough = self._native_passthrough_path(path)
+        if native_passthrough:
             gate = native_passthrough_gate(
                 f"{self.policy.platform} native pass-through: generated/runtime artifacts should not re-enter SparseRead",
                 include_search=self.policy.gate_key == "openclaw_gate",
             )
         else:
-            parent_gate = self._force_collection_parent_gate(path)
+            parent_gate = self._force_collection_parent_gate(path, params)
             if parent_gate:
                 gate = parent_gate
-        ready_artifact = self._adapter_ready_artifact_for_path(path)
+                parent_path = Path(str(parent_gate.get("handoff_path") or path))
+                _, episode = self._episode_decision(parent_path, params)
+        ready_artifact = (
+            ""
+            if native_passthrough
+            else self._adapter_ready_artifact_for_path(path, self._conversation_id(params))
+        )
         if ready_artifact:
             gate = copy.deepcopy(gate)
             gate.update(
@@ -770,7 +950,173 @@ class SparseReadBridgeServer:
                     "reason": "adapter closure already ready; write the deliverable instead of rereading source files",
                 }
             )
-        return info, decision, gate
+        return info, decision, gate, episode
+
+    def _episode_decision(
+        self,
+        path: Path,
+        params: dict[str, Any],
+        *,
+        info: FileInfo | None = None,
+    ) -> tuple[BenefitDecision, ReadingEpisode]:
+        inspected = info or inspect_file(path)
+        hint = self._episode_hint(params)
+        proposed = self.runtime.orchestrator.benefit_gate.decide(inspected, hint)
+        conversation_id = self._conversation_id(params)
+        previous = self.episodes.current(conversation_id)
+        previous_id = previous.episode_id if previous else ""
+        previous_goal = previous.goal if previous else "unknown"
+        previous_coverage = previous.coverage if previous else "unknown"
+        decision, episode = self.episodes.bind(
+            conversation_id=conversation_id,
+            turn_id=self._turn_id(params),
+            scope=inspected.path,
+            proposed=proposed,
+            hint=hint,
+        )
+        semantic_changed = bool(
+            previous_id
+            and previous_id == episode.episode_id
+            and (
+                (hint.goal != "unknown" and hint.goal != previous_goal)
+                or (hint.coverage != "unknown" and hint.coverage != previous_coverage)
+            )
+        )
+        if previous_id and (previous_id != episode.episode_id or semantic_changed):
+            self._forget_ready_for_scope(conversation_id, inspected.path)
+            self.runtime.orchestrator.reopen_path(inspected.path)
+        return decision, episode
+
+    def _active_force_collection_root(self, path: Path, params: dict[str, Any]) -> Path | None:
+        episode = self.episodes.current(self._conversation_id(params))
+        if episode is None or episode.status == "resolved" or episode.decision.mode != "force_sro":
+            return None
+        try:
+            child = path.resolve(strict=False)
+            scope = episode.scope.resolve(strict=False)
+        except (OSError, RuntimeError):
+            child = path
+            scope = episode.scope
+        if scope not in child.parents:
+            return None
+        try:
+            return scope if inspect_file(scope).type == "collection" else None
+        except OSError:
+            return None
+
+    def _record_native_output_path(self, value: Any) -> None:
+        if not isinstance(value, dict):
+            return
+        raw_path = next(
+            (
+                str(value.get(key)).strip()
+                for key in ("path", "filePath", "file_path")
+                if isinstance(value.get(key), str) and str(value.get(key)).strip()
+            ),
+            "",
+        )
+        if not raw_path:
+            return
+        output = Path(raw_path)
+        if self.workspace and not output.is_absolute():
+            output = Path(self.workspace) / output
+        self.runtime.orchestrator.record_output_write(output)
+
+    def _nearest_force_collection_root(self, path: Path, context: GateContext) -> Path | None:
+        try:
+            resolved = path.resolve(strict=False)
+        except Exception:
+            return None
+        workspace = Path(self.workspace).resolve(strict=False) if self.workspace else None
+        for parent in [resolved.parent, *list(resolved.parents)[:4]]:
+            if workspace and parent != workspace and workspace not in parent.parents:
+                continue
+            if not parent.exists() or not parent.is_dir():
+                continue
+            info = inspect_file(parent)
+            if info.type != "collection":
+                continue
+            decision = self.runtime.orchestrator.benefit_gate.decide(info, context)
+            if decision.mode == "force_sro":
+                return parent
+        return None
+
+    def _forget_ready_for_scope(self, conversation_id: str, scope: Path) -> None:
+        ready_ids = self._adapter_ready_conversations.get(conversation_id or "default")
+        if not ready_ids:
+            return
+        normalized = scope.resolve(strict=False)
+        for artifact_id in list(ready_ids):
+            root = self._adapter_artifact_roots.get(artifact_id)
+            if root and (root == normalized or root in normalized.parents or normalized in root.parents):
+                ready_ids.discard(artifact_id)
+                self._adapter_ready_artifacts.pop(artifact_id, None)
+                self._adapter_card_results.pop(artifact_id, None)
+                self._adapter_artifact_roots.pop(artifact_id, None)
+                self._adapter_verify_passes.pop(artifact_id, None)
+                self._adapter_once_artifacts.discard(artifact_id)
+
+    def _scope_for_target(self, target: dict[str, Any], pack: dict[str, Any]) -> str:
+        path = str(target.get("path") or "").strip()
+        if path:
+            return path
+        artifact_id = str(target.get("artifact_id") or pack.get("artifact_id") or "").strip()
+        root = self._adapter_artifact_roots.get(artifact_id)
+        return str(root) if root else ""
+
+    @classmethod
+    def _pack_is_ready(cls, pack: dict[str, Any]) -> bool:
+        slot_digest = pack.get("slot_digest") if isinstance(pack.get("slot_digest"), dict) else {}
+        next_action = pack.get("next_action") if isinstance(pack.get("next_action"), dict) else {}
+        return (
+            slot_digest.get("overall_status") in cls._READY_STATUSES
+            or next_action.get("overall_status") in cls._READY_STATUSES
+        )
+
+    @staticmethod
+    def _decision_payload(decision: BenefitDecision) -> dict[str, Any]:
+        return {
+            "mode": decision.mode,
+            "action": decision.action,
+            "reason": decision.reason,
+            "confidence": decision.confidence,
+            "recommended_mode": decision.recommended_mode,
+            "code": decision.code,
+            "preview_recommended": decision.preview_recommended,
+            "scope_kind": decision.scope_kind,
+        }
+
+    @staticmethod
+    def _request_context(params: dict[str, Any]) -> dict[str, Any]:
+        context = params.get("context")
+        return context if isinstance(context, dict) else {}
+
+    @classmethod
+    def _conversation_id(cls, params: dict[str, Any]) -> str:
+        context = cls._request_context(params)
+        return str(
+            context.get("conversation_id")
+            or context.get("session_id")
+            or context.get("sessionID")
+            or params.get("conversation_id")
+            or "default"
+        )
+
+    @classmethod
+    def _turn_id(cls, params: dict[str, Any]) -> str:
+        context = cls._request_context(params)
+        return str(
+            context.get("turn_id")
+            or context.get("message_id")
+            or context.get("messageID")
+            or params.get("turn_id")
+            or ""
+        )
+
+    @staticmethod
+    def _episode_hint(params: dict[str, Any]) -> GateContext:
+        hint = params.get("episode_hint")
+        return GateContext.from_value(hint if isinstance(hint, dict) else None)
 
     def _preflight_candidates(self, workspace: Path, *, max_candidates: int) -> list[Path]:
         candidates: list[Path] = []
@@ -803,6 +1149,7 @@ class SparseReadBridgeServer:
         self.events.append(
             {
                 "time": round(time.time(), 3),
+                "conversation_id": self.runtime.orchestrator._conversation_id(),
                 "kind": kind,
                 "params": self._jsonable(params),
                 "summary": self._summarize_result(kind, result),
@@ -813,6 +1160,7 @@ class SparseReadBridgeServer:
         self.gate_events.append(
             {
                 "time": round(time.time(), 3),
+                "conversation_id": self.runtime.orchestrator._conversation_id(),
                 "path": str(path),
                 "type": info.type,
                 "decision_mode": decision.mode,
@@ -825,20 +1173,32 @@ class SparseReadBridgeServer:
 
     def _has_ready_evidence(self) -> bool:
         orchestrator = self.runtime.orchestrator
+        conversation_id = orchestrator._conversation_id()
+        owners = getattr(orchestrator, "_artifact_conversations", {})
         return bool(
-            getattr(orchestrator, "_ready_collection_artifacts", {})
-            or getattr(orchestrator, "_slot_digests", {})
-            or self._adapter_ready_artifacts
+            any(
+                owners.get(artifact_id, "default") == conversation_id
+                for artifact_id in getattr(orchestrator, "_ready_collection_artifacts", {})
+            )
+            or any(
+                owners.get(artifact_id, "default") == conversation_id
+                for artifact_id in getattr(orchestrator, "_slot_digests", {})
+            )
+            or bool(self._adapter_ready_conversations.get(conversation_id))
         )
 
-    def _trace_summary(self) -> dict[str, Any]:
-        sro_preview_calls = sum(1 for event in self.events if event["kind"] == "sro_preview")
-        sro_raw_calls = sum(1 for event in self.events if event["kind"] == "sro_raw")
-        sro_card_calls = sum(1 for event in self.events if event["kind"] == "sro_card")
-        sro_read_calls = sum(1 for event in self.events if event["kind"] == "sro_read")
-        native_truncations = sum(1 for event in self.native_events if event.get("truncated"))
+    def _trace_summary(self, conversation_id: str) -> dict[str, Any]:
+        events = [event for event in self.events if event.get("conversation_id") == conversation_id]
+        native_events = [event for event in self.native_events if event.get("conversation_id") == conversation_id]
+        usage_events = [event for event in self.usage_events if event.get("conversation_id") == conversation_id]
+        gate_events = [event for event in self.gate_events if event.get("conversation_id") == conversation_id]
+        sro_preview_calls = sum(1 for event in events if event["kind"] == "sro_preview")
+        sro_raw_calls = sum(1 for event in events if event["kind"] == "sro_raw")
+        sro_card_calls = sum(1 for event in events if event["kind"] == "sro_card")
+        sro_read_calls = sum(1 for event in events if event["kind"] == "sro_read")
+        native_truncations = sum(1 for event in native_events if event.get("truncated"))
         total_tokens = 0
-        for event in self.usage_events:
+        for event in usage_events:
             usage = event.get("usage") or {}
             total_tokens += int(
                 usage.get("total_tokens")
@@ -851,8 +1211,8 @@ class SparseReadBridgeServer:
             )
         return {
             "tokens": total_tokens,
-            "requests": len(self.usage_events),
-            "tool_calls": len([event for event in self.native_events if event.get("phase") == "after"])
+            "requests": len(usage_events),
+            "tool_calls": len([event for event in native_events if event.get("phase") == "after"])
             + sro_preview_calls
             + sro_raw_calls
             + sro_card_calls
@@ -862,12 +1222,19 @@ class SparseReadBridgeServer:
             "sro_raw_calls": sro_raw_calls,
             "sro_card_calls": sro_card_calls,
             "sro_read_calls": sro_read_calls,
-            "ready_after_native_reads": self.ready_after_native_reads,
-            "deliverable_written": self.deliverable_written,
-            "gate_modes": sorted({str(event.get("adapter_mode")) for event in self.gate_events}),
-            "adapter_ready_artifacts": len(self._adapter_ready_artifacts),
-            "adapter_guard_hits": self._adapter_guard_hits,
+            "ready_after_native_reads": self._ready_after_native_reads_by_conversation.get(conversation_id, 0),
+            "deliverable_written": conversation_id in self._deliverable_written_conversations,
+            "gate_modes": sorted({str(event.get("adapter_mode")) for event in gate_events}),
+            "adapter_ready_artifacts": len(self._adapter_ready_conversations.get(conversation_id, set())),
+            "adapter_guard_hits": self._adapter_guard_hits_by_conversation.get(conversation_id, 0),
         }
+
+    def _record_adapter_guard_hit(self) -> None:
+        conversation_id = self.runtime.orchestrator._conversation_id()
+        self._adapter_guard_hits += 1
+        self._adapter_guard_hits_by_conversation[conversation_id] = (
+            self._adapter_guard_hits_by_conversation.get(conversation_id, 0) + 1
+        )
 
     @staticmethod
     def _require_str(params: dict[str, Any], key: str) -> str:

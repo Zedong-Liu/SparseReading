@@ -12,7 +12,6 @@ from sparseread.core.detector import FileInfo
 
 
 def classify_opencode_gate(info: FileInfo, decision: BenefitDecision) -> dict[str, Any]:
-    reason = decision.reason.lower()
     profile: dict[str, Any] = {
         "mode": "native",
         "prompt_style": "native",
@@ -22,6 +21,8 @@ def classify_opencode_gate(info: FileInfo, decision: BenefitDecision) -> dict[st
         "nudge_native": False,
         "trajectory": "native",
         "reason": decision.reason,
+        "decision_code": decision.code,
+        "preview_recommended": decision.preview_recommended,
     }
     if decision.mode == "native":
         return profile
@@ -32,40 +33,6 @@ def classify_opencode_gate(info: FileInfo, decision: BenefitDecision) -> dict[st
                 "prompt_style": "optional",
                 "nudge_native": True,
                 "trajectory": "optional",
-            }
-        )
-        return profile
-    if info.type == "collection" and "command-security bundle" in reason:
-        profile.update(
-            {
-                "mode": "advisory",
-                "prompt_style": "closure_once",
-                "block_native_read": False,
-                "nudge_native": True,
-                "trajectory": "one_collect_then_write",
-                "reason": (
-                    "command-security bundle has compact closure facts; in OpenCode prefer "
-                    "one collection collect, but allow native reads for small templates and "
-                    "named unresolved files"
-                ),
-            }
-        )
-        return profile
-    enforceable_collection = (
-        "audit bundle has code plus state/output evidence" in reason
-        or "collection contains a long pdf/report" in reason
-        or "multi-file text collection" in reason
-        or "large audit/diagnosis bundle" in reason
-        or "diagnosis bundle contains long log" in reason
-    )
-    if info.type == "collection" and not enforceable_collection:
-        profile.update(
-            {
-                "mode": "advisory",
-                "prompt_style": "optional",
-                "nudge_native": True,
-                "trajectory": "optional",
-                "reason": f"OpenCode advisory adaptation: {decision.reason}",
             }
         )
         return profile

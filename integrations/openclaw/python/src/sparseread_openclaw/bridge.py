@@ -10,11 +10,7 @@ from sparseread.bridge.server import BridgePolicy, SparseReadBridgeServer, serve
 from sparseread.core.benefit_gate import BenefitDecision
 from sparseread.core.detector import FileInfo
 
-OPENCLAW_TEXT_ENFORCE_BYTES = 12_288
-
-
 def classify_openclaw_gate(info: FileInfo, decision: BenefitDecision) -> dict[str, Any]:
-    reason = decision.reason.lower()
     profile: dict[str, Any] = {
         "mode": "native",
         "prompt_style": "native",
@@ -24,6 +20,8 @@ def classify_openclaw_gate(info: FileInfo, decision: BenefitDecision) -> dict[st
         "nudge_native": False,
         "trajectory": "native",
         "reason": decision.reason,
+        "decision_code": decision.code,
+        "preview_recommended": decision.preview_recommended,
     }
     if decision.mode == "native":
         return profile
@@ -37,62 +35,15 @@ def classify_openclaw_gate(info: FileInfo, decision: BenefitDecision) -> dict[st
             }
         )
         return profile
-    if info.type == "collection" and "command-security bundle" in reason:
-        profile.update(
-            {
-                "mode": "advisory",
-                "prompt_style": "closure_once",
-                "block_native_read": False,
-                "block_native_search": False,
-                "block_native_exec_dump": False,
-                "nudge_native": True,
-                "trajectory": "one_collect_then_write",
-                "reason": (
-                    "command-security bundle has useful SR closure facts, but OpenClaw should "
-                    "keep small native template and unresolved-slot reads available; use one "
-                    "collection collect, then write"
-                ),
-            }
-        )
-        return profile
-    if info.type in {"txt", "text", "md"} and info.size_bytes < OPENCLAW_TEXT_ENFORCE_BYTES:
-        profile.update(
-            {
-                "reason": (
-                    "OpenClaw native adaptation: text/log object is below adapter enforce threshold; "
-                    "native read is cheaper than SparseRead negotiation"
-                ),
-            }
-        )
-        return profile
-    enforceable_file = info.type == "pdf" or (
-        info.type in {"txt", "text", "md"} and info.size_bytes >= OPENCLAW_TEXT_ENFORCE_BYTES
-    )
-    enforceable_collection = info.type == "collection" and (
-        "audit bundle has code plus state/output evidence" in reason
-        or "collection contains a long pdf/report" in reason
-        or "multi-file text collection" in reason
-    )
-    if enforceable_file or enforceable_collection:
-        profile.update(
-            {
-                "mode": "enforce",
-                "prompt_style": "sro_first",
-                "block_native_read": True,
-                "block_native_search": True,
-                "block_native_exec_dump": True,
-                "nudge_native": True,
-                "trajectory": "sro_first",
-            }
-        )
-        return profile
     profile.update(
         {
-            "mode": "advisory",
-            "prompt_style": "optional",
+            "mode": "enforce",
+            "prompt_style": "sro_first",
+            "block_native_read": True,
+            "block_native_search": True,
+            "block_native_exec_dump": True,
             "nudge_native": True,
-            "trajectory": "optional",
-            "reason": f"OpenClaw advisory adaptation: {decision.reason}",
+            "trajectory": "sro_first",
         }
     )
     return profile

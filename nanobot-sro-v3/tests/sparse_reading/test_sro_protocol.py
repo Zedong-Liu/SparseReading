@@ -77,8 +77,15 @@ def test_benefit_gate_core_decisions(tmp_path, monkeypatch):
     (audit / "config.yaml").write_text("output:\n  csv_summary: true\n", encoding="utf-8")
     (audit / "fetch_state.json").write_text('{"seen_ids":["1"]}', encoding="utf-8")
     (audit / "output" / "announcements.json").write_text('[{"important": true}]', encoding="utf-8")
-    (audit / "run_scheduled_fetch.py").write_text("print('fetch')\n", encoding="utf-8")
-    assert sro.benefit_gate.decide(sro.inspect(audit)).mode == "force_sro"
+    (audit / "run_scheduled_fetch.py").write_text(
+        "print('fetch')\n" + ("# evidence source\n" * 800),
+        encoding="utf-8",
+    )
+    audit_decision = sro.benefit_gate.decide(
+        sro.inspect(audit),
+        {"goal": "cross_file_evidence", "coverage": "selective"},
+    )
+    assert (audit_decision.mode, audit_decision.code) == ("force_sro", "multi_file_evidence")
 
     code = tmp_path / "plain_code"
     code.mkdir()
@@ -89,7 +96,9 @@ def test_benefit_gate_core_decisions(tmp_path, monkeypatch):
     discount.mkdir()
     (discount / "discount_rules.json").write_text('{"discount": 0.1}', encoding="utf-8")
     (discount / "users.csv").write_text("user_id,status\nu1,active\n", encoding="utf-8")
-    assert sro.benefit_gate.decide(sro.inspect(discount)).mode == "native"
+    assert sro.benefit_gate.decide(
+        sro.inspect(discount), {"goal": "edit_or_execute"}
+    ).mode == "native"
 
     forecast = tmp_path / "forecast_bundle"
     (forecast / "data").mkdir(parents=True)
@@ -98,7 +107,9 @@ def test_benefit_gate_core_decisions(tmp_path, monkeypatch):
     (forecast / "data" / "actual_future_values.csv").write_text("step,actual\n1,2\n", encoding="utf-8")
     (forecast / "data" / "baseline_forecasts.csv").write_text("step,baseline\n1,1\n", encoding="utf-8")
     (forecast / "config" / "analysis_parameters.json").write_text('{"normalization_factor":10}', encoding="utf-8")
-    assert sro.benefit_gate.decide(sro.inspect(forecast)).mode == "native"
+    assert sro.benefit_gate.decide(
+        sro.inspect(forecast), {"goal": "structured_compute"}
+    ).mode == "native"
 
     did = tmp_path / "did_bundle"
     (did / "data").mkdir(parents=True)
@@ -107,7 +118,9 @@ def test_benefit_gate_core_decisions(tmp_path, monkeypatch):
     (did / "data" / "firm_metadata.csv").write_text("firm_id,industry\nF001,Manufacturing\n", encoding="utf-8")
     (did / "data" / "data_dictionary.json").write_text('{"ATT":3.5}', encoding="utf-8")
     (did / "scripts" / "did_regression.py").write_text("# regression script\n", encoding="utf-8")
-    assert sro.benefit_gate.decide(sro.inspect(did)).mode == "native"
+    assert sro.benefit_gate.decide(
+        sro.inspect(did), {"goal": "structured_compute"}
+    ).mode == "native"
 
     query = tmp_path / "query_bundle"
     (query / "docs").mkdir(parents=True)
@@ -118,13 +131,15 @@ def test_benefit_gate_core_decisions(tmp_path, monkeypatch):
     (query / "docs" / "sparql_examples.md").write_text("PREFIX : <http://example#>\n", encoding="utf-8")
     (query / "config" / "endpoint_config.yaml").write_text("endpoint: local\n", encoding="utf-8")
     (query / "scripts" / "load_data.sh").write_text("# load triplestore\n", encoding="utf-8")
-    assert sro.benefit_gate.decide(sro.inspect(query)).mode == "native"
+    assert sro.benefit_gate.decide(
+        sro.inspect(query), {"goal": "edit_or_execute"}
+    ).mode == "native"
 
     emails = tmp_path / "emails"
     emails.mkdir()
     for idx in range(3):
         (emails / f"email_{idx}.txt").write_text(f"Subject: Project Alpha {idx}\n", encoding="utf-8")
-    assert sro.benefit_gate.decide(sro.inspect(emails)).mode == "force_sro"
+    assert sro.benefit_gate.decide(sro.inspect(emails)).mode == "advisory"
 
 
 def test_sro_card_and_artifact_followup_for_csv(tmp_path, monkeypatch):
@@ -291,7 +306,7 @@ def test_collection_card_and_focus_then_verify(tmp_path, monkeypatch):
 
     card = sro.card(emails)
     assert card.type == "collection"
-    assert card.recommended_mode == "collect"
+    assert card.recommended_mode == "sro_optional"
     assert card.details["file_count"] == 3
     assert card.details["files"][0]["subject"]
 
@@ -426,7 +441,7 @@ def test_command_security_closure_triggers_from_collection_shape_with_generic_hi
     assert "prefix=claude; is_injection=false" in text
 
 
-def test_command_security_bundle_uses_force_sro_for_all_models(tmp_path, monkeypatch):
+def test_broad_command_security_bundle_stays_advisory(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     monkeypatch.setenv("MODEL", "DeepSeek-V4-Flash")
     bundle = tmp_path / "security_bundle"
@@ -441,14 +456,17 @@ def test_command_security_bundle_uses_force_sro_for_all_models(tmp_path, monkeyp
     (bundle / "docs" / "command_prefix_guide.md").write_text("Command prefix guide\n", encoding="utf-8")
     (bundle / "docs" / "security_bulletin_2025.md").write_text("SAB-2025-001\n", encoding="utf-8")
     (bundle / "data" / "test_commands.csv").write_text("command,expected_prefix,is_injection,notes\n", encoding="utf-8")
+    for index in range(4):
+        (bundle / "docs" / f"reference_{index}.md").write_text("security reference\n" * 600, encoding="utf-8")
     sro = SparseReadingOrchestrator(tmp_path)
 
-    decision = sro.benefit_gate.decide(sro.inspect(bundle))
+    decision = sro.benefit_gate.decide(
+        sro.inspect(bundle),
+        {"goal": "cross_file_evidence", "coverage": "exhaustive"},
+    )
 
-    # Command-security bundles now use force_sro for all models (model-specific native bypass removed)
-    assert decision.mode == "force_sro"
-    assert decision.action == "intercept"
-    assert sro.should_handoff_list(bundle)
+    assert (decision.mode, decision.code) == ("advisory", "broad_evidence_boundary")
+    assert decision.action == "nudge"
 
 
 def test_force_collection_child_handoff_targets_parent_collection(tmp_path, monkeypatch):
@@ -461,6 +479,12 @@ def test_force_collection_child_handoff_targets_parent_collection(tmp_path, monk
     (bundle / "docs" / "scan_template.md").write_text("Security analysis template\n", encoding="utf-8")
     (bundle / "scripts" / "run_pipeline.sh").write_text("claude -p \"执行任务\" --dangerously-skip-permissions\n", encoding="utf-8")
     sro = SparseReadingOrchestrator(tmp_path)
+    sro.set_context({"conversation_id": "security", "turn_id": "t1"})
+    decision, _ = sro.bind_episode(
+        bundle,
+        {"goal": "cross_file_evidence", "coverage": "selective", "relation": "new"},
+    )
+    assert decision.mode == "force_sro"
     tool = ReadFileTool(workspace=tmp_path, sro=sro)
 
     result = asyncio.run(tool.execute(path="security_bundle/docs/command_prefix_guide.md"))
@@ -472,7 +496,7 @@ def test_force_collection_child_handoff_targets_parent_collection(tmp_path, monk
     assert payload["next_action"]["mode"] == "collect"
 
 
-def test_list_dir_collection_hands_off(tmp_path, monkeypatch):
+def test_list_dir_tiny_collection_stays_native(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     emails = tmp_path / "emails"
     emails.mkdir()
@@ -485,10 +509,8 @@ def test_list_dir_collection_hands_off(tmp_path, monkeypatch):
 
     result = asyncio.run(tool.execute(path="emails"))
 
-    payload = json.loads(result)
-    assert payload["sro_handoff"] is True
-    assert payload["file_card"]["type"] == "collection"
-    assert payload["next_action"]["mode"] == "collect"
+    assert "email_0.txt" in result
+    assert "sro_handoff" not in result
 
 
 def test_read_file_child_of_advisory_collection_stays_native(tmp_path, monkeypatch):
@@ -508,7 +530,7 @@ def test_read_file_child_of_advisory_collection_stays_native(tmp_path, monkeypat
     assert "print('x')" in result
 
 
-def test_small_discount_bundle_is_native_but_card_keeps_metadata(tmp_path, monkeypatch):
+def test_small_discount_bundle_is_native_with_compute_hint_but_card_keeps_metadata(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     bundle = tmp_path / "discount_task"
     bundle.mkdir()
@@ -529,26 +551,18 @@ def test_small_discount_bundle_is_native_but_card_keeps_metadata(tmp_path, monke
     card = sro.card(bundle)
 
     assert card.type == "collection"
-    assert card.recommended_mode == "native_read"
+    assert card.recommended_mode == "sro_optional"
     assert not card.sparse_recommended
     assert {item["name"] for item in card.details["files"]} >= {"discount_rules.json", "users.csv"}
     kinds = {item["name"]: item["kind"] for item in card.details["files"]}
     assert kinds["discount_rules.json"] == "json"
     assert kinds["users.csv"] == "csv"
 
-    focus = sro.read(
-        {"artifact_id": card.artifact_id},
-        "focus",
-        {
-            "goal": "Select files needed to compute per-user discounts from rules and users",
-            "needles": ["discount rules", "users", "inactive", "cap"],
-            "want": "list",
-            "type_hint": "collection",
-        },
+    decision = sro.benefit_gate.decide(
+        sro.inspect(bundle),
+        {"goal": "structured_compute"},
     )
-
-    assert focus.summary.startswith("low-sparse fallback")
-    assert focus.evidence == []
+    assert (decision.mode, decision.code) == ("native", "native_small_structured_compute")
 
 
 def test_native_discount_bundle_does_not_handoff_or_guard_children(tmp_path, monkeypatch):
@@ -588,27 +602,17 @@ def test_native_discount_bundle_does_not_handoff_or_guard_children(tmp_path, mon
     (tmp_path / "docs" / "discount_policy.md").write_text("JSON is the source of truth.\n", encoding="utf-8")
     sro = SparseReadingOrchestrator(tmp_path)
     card = sro.card(tmp_path)
-    assert card.recommended_mode == "native_read"
+    assert card.recommended_mode == "sro_optional"
     assert not card.sparse_recommended
+    decision = sro.benefit_gate.decide(
+        sro.inspect(tmp_path),
+        {"goal": "edit_or_execute"},
+    )
+    assert (decision.mode, decision.code) == ("native", "native_edit_or_execute")
 
     tool = ListDirTool(workspace=tmp_path, sro=sro)
     listing = asyncio.run(tool.execute(path=str(tmp_path), recursive=True))
     assert "sro_handoff" not in listing
-
-    pack = sro.read(
-        {"artifact_id": card.artifact_id},
-        "collect",
-        {
-            "goal": "Build a reusable discount calculator script from discount rules and users.csv rows",
-            "needles": ["discount_rules.json contents", "users.csv all rows", "promotion_schedule.json contents"],
-            "want": "fact",
-            "scope": "expand",
-            "type_hint": "collection",
-        },
-    )
-
-    assert pack.summary.startswith("low-sparse fallback")
-    assert "native read listed files" in pack.next_action["allowed_next"]
 
     reader = ReadFileTool(workspace=tmp_path, sro=sro)
     child_read = asyncio.run(reader.execute(path="data/discount_rules.json"))
@@ -955,29 +959,18 @@ def test_panel_did_bundle_uses_native_gate(tmp_path, monkeypatch):
     )
     sro = SparseReadingOrchestrator(tmp_path)
     card = sro.card(tmp_path)
-    assert card.recommended_mode == "native_read"
+    assert card.recommended_mode == "sro_optional"
+    decision = sro.benefit_gate.decide(
+        sro.inspect(tmp_path),
+        {"goal": "structured_compute"},
+    )
+    assert (decision.mode, decision.code) == ("native", "native_small_structured_compute")
 
     tool = ListDirTool(workspace=tmp_path, sro=sro)
     listing = asyncio.run(tool.execute(path=str(tmp_path), recursive=True))
     assert "sro_handoff" not in listing
     assert "data/panel_data.csv" in listing
     assert not sro.should_handoff_read(tmp_path / "data" / "panel_data.csv")
-
-    pack = sro.read(
-        {"artifact_id": card.artifact_id},
-        "collect",
-        {
-            "goal": "Run DID regression on panel data with firm fixed effects, year fixed effects, clustered standard errors, and parallel trends",
-            "needles": ["DID", "firm fixed effects", "year fixed effects", "parallel trends"],
-            "want": "fact",
-            "type_hint": "collection",
-        },
-    )
-
-    assert pack.summary.startswith("low-sparse fallback")
-    assert pack.next_action is not None
-    assert "native read listed files" in pack.next_action["allowed_next"]
-
 
 def test_native_workspace_still_intercepts_intrinsically_sparse_child(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
@@ -998,7 +991,7 @@ def test_native_workspace_still_intercepts_intrinsically_sparse_child(tmp_path, 
     root_card = sro.card(tmp_path)
     child_card = sro.card(long_report)
 
-    assert root_card.recommended_mode == "native_read"
+    assert root_card.recommended_mode == "sro_optional"
     assert SparseReadingOrchestrator.disabled_for_low_sparse_workspace(tmp_path)
     assert child_card.recommended_mode == "collect_if_multi_fact_else_scout"
     assert sro.should_handoff_read(long_report)
@@ -1072,7 +1065,9 @@ def test_access_handoff_ignores_small_log_inside_native_bundle(tmp_path, monkeyp
     (tmp_path / "scripts" / "send.py").write_text("print('send')\n", encoding="utf-8")
     sro = SparseReadingOrchestrator(tmp_path, macro_available=False)
 
-    assert sro.benefit_gate.decide(sro.inspect(tmp_path)).mode == "native"
+    assert sro.benefit_gate.decide(
+        sro.inspect(tmp_path), {"goal": "edit_or_execute"}
+    ).mode == "native"
     assert not sro.should_handoff_read(log)
 
 
@@ -1102,7 +1097,7 @@ def test_shell_policy_requests_lazy_macro_activation(tmp_path, monkeypatch):
     assert sro.macro_available is True
 
 
-def test_collection_collect_falls_back_for_small_full_analysis_bundle(tmp_path, monkeypatch):
+def test_small_full_analysis_bundle_routes_native_with_structured_hint(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     (tmp_path / "data").mkdir()
     (tmp_path / "config").mkdir()
@@ -1116,25 +1111,16 @@ def test_collection_collect_falls_back_for_small_full_analysis_bundle(tmp_path, 
         (tmp_path / name).write_text(text, encoding="utf-8")
     sro = SparseReadingOrchestrator(tmp_path)
     card = sro.card(tmp_path)
-    assert card.recommended_mode == "native_read"
+    assert card.recommended_mode == "sro_optional"
+    decision = sro.benefit_gate.decide(
+        sro.inspect(tmp_path),
+        {"goal": "structured_compute"},
+    )
+    assert (decision.mode, decision.code) == ("native", "native_small_structured_compute")
     tool = ListDirTool(workspace=tmp_path, sro=sro)
     listing = asyncio.run(tool.execute(path=str(tmp_path), recursive=True))
     assert "sro_handoff" not in listing
 
-    pack = sro.read(
-        {"artifact_id": card.artifact_id},
-        "collect",
-        {
-            "goal": "Create a statistical assessment report, metrics summary, and reproducible analysis.py script from forecast actual baseline data",
-            "needles": ["forecast", "actual", "baseline", "metrics", "analysis.py"],
-            "want": "fact",
-            "type_hint": "collection",
-        },
-    )
-
-    assert pack.summary.startswith("low-sparse fallback")
-    assert pack.next_action is not None
-    assert "native read listed files" in pack.next_action["allowed_next"]
     assert not sro.should_handoff_read(tmp_path / "config" / "analysis_parameters.json")
     assert not sro.should_handoff_list(tmp_path)
 
@@ -1154,25 +1140,26 @@ def test_low_sparse_workspace_disables_sro_runtime(tmp_path, monkeypatch):
     assert SparseReadingOrchestrator.disabled_for_low_sparse_workspace(tmp_path)
 
 
-def test_sro_does_not_handoff_generated_reports(tmp_path, monkeypatch):
+def test_preexisting_report_directory_does_not_bypass_gate(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     reports = tmp_path / "reports"
     reports.mkdir()
-    report = reports / "rag_forecast_assessment.md"
-    report.write_text("# Report\n\n" + ("metric: value\n" * 800), encoding="utf-8")
-    sro = SparseReadingOrchestrator(tmp_path)
+    report = reports / "input.md"
+    report.write_text("# Source report\n\n" + ("metric: value\n" * 800), encoding="utf-8")
+    sro = SparseReadingOrchestrator(tmp_path, macro_available=True)
 
-    assert not sro.should_handoff_read(report)
+    assert not sro.is_output_artifact(report)
+    assert sro.should_handoff_read(report)
 
 
-def test_sro_does_not_handoff_root_generated_diagnosis_report(tmp_path, monkeypatch):
+def test_preexisting_deliverable_like_name_does_not_bypass_gate(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     report = tmp_path / "diagnosis_report.md"
     report.write_text("# Diagnosis\n\n" + ("finding\n" * 900), encoding="utf-8")
-    sro = SparseReadingOrchestrator(tmp_path)
+    sro = SparseReadingOrchestrator(tmp_path, macro_available=True)
 
-    assert sro.is_output_artifact(report)
-    assert not sro.should_handoff_read(report)
+    assert not sro.is_output_artifact(report)
+    assert sro.should_handoff_read(report)
 
 
 def test_sro_does_not_handoff_builtin_skill_files(tmp_path, monkeypatch):
@@ -1185,20 +1172,52 @@ def test_sro_does_not_handoff_builtin_skill_files(tmp_path, monkeypatch):
     assert not sro.should_handoff_read(skill)
 
 
-def test_sro_does_not_handoff_runtime_artifacts(tmp_path, monkeypatch):
+def test_sro_does_not_handoff_hidden_runtime_artifacts(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     runtime = tmp_path / ".nanobot" / "tool-results" / "cli_task" / "large.txt"
     runtime.parent.mkdir(parents=True)
     runtime.write_text("tool output\n" * 800, encoding="utf-8")
-    session = tmp_path / "sessions" / "cli_task.jsonl"
-    session.parent.mkdir()
-    session.write_text("{}\n" * 800, encoding="utf-8")
     sro = SparseReadingOrchestrator(tmp_path)
 
     assert sro.is_runtime_artifact(runtime)
     assert not sro.should_handoff_read(runtime)
-    assert sro.is_runtime_artifact(session)
-    assert not sro.should_handoff_read(session)
+
+
+def test_ordinary_sessions_and_bootstrap_paths_do_not_bypass_gate(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    session = tmp_path / "src" / "sessions" / "history.md"
+    fixture = tmp_path / "bootstrap" / "fixtures" / "input.md"
+    session.parent.mkdir(parents=True)
+    fixture.parent.mkdir(parents=True)
+    session.write_text("session evidence\n" * 800, encoding="utf-8")
+    fixture.write_text("fixture evidence\n" * 800, encoding="utf-8")
+    sro = SparseReadingOrchestrator(tmp_path, macro_available=True)
+
+    for source in (session, fixture):
+        assert not sro.is_runtime_artifact(source)
+        assert sro.should_handoff_read(source)
+
+
+def test_recorded_write_is_native_only_in_own_conversation(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    report = tmp_path / "reports" / "generated.md"
+    report.parent.mkdir()
+    report.write_text("generated result\n" * 800, encoding="utf-8")
+    sro = SparseReadingOrchestrator(tmp_path, macro_available=True)
+
+    sro.set_context({"conversation_id": "writer", "turn_id": "t1"})
+    sro.record_output_write(report)
+    assert sro.is_output_artifact(report)
+    assert not sro.should_handoff_read(report)
+
+    sro.set_context({"conversation_id": "reader", "turn_id": "t1"})
+    assert not sro.is_output_artifact(report)
+    assert sro.should_handoff_read(report)
+
+    sro.end_conversation("writer")
+    sro.set_context({"conversation_id": "writer", "turn_id": "t2"})
+    assert not sro.is_output_artifact(report)
+    assert sro.should_handoff_read(report)
 
 
 def test_sro_does_not_handoff_workspace_external_scratch_file(tmp_path, monkeypatch):
@@ -1227,7 +1246,7 @@ def test_read_file_does_not_handoff_agent_written_file(tmp_path, monkeypatch):
     assert "# Report" in result
 
 
-def test_collection_collect_guards_covered_child_reads(tmp_path, monkeypatch):
+def test_small_single_log_collection_stays_native(tmp_path, monkeypatch):
     monkeypatch.setenv("SRO_ENABLED", "1")
     (tmp_path / "logs").mkdir()
     log = tmp_path / "logs" / "book_recommendation.log"
@@ -1238,7 +1257,7 @@ def test_collection_collect_guards_covered_child_reads(tmp_path, monkeypatch):
     )
     sro = SparseReadingOrchestrator(tmp_path)
     card = sro.card(tmp_path)
-    sro.read(
+    pack = sro.read(
         {"artifact_id": card.artifact_id},
         "collect",
         {
@@ -1252,10 +1271,9 @@ def test_collection_collect_guards_covered_child_reads(tmp_path, monkeypatch):
 
     result = asyncio.run(tool.execute(path=str(log)))
 
-    payload = json.loads(result)
-    assert payload["sro_guard"] is True
-    assert payload["covered_by_artifact"] == card.artifact_id
-    assert payload["next_action"]["tool"] == "write_file"
+    assert pack.summary.startswith("low-sparse fallback")
+    assert pack.next_action["recommended_mode"] == "native_read"
+    assert "Telegram API HTTPError 429" in result
 
 
 def test_ready_collection_repeated_sro_read_remains_terminal(tmp_path, monkeypatch):
@@ -1419,34 +1437,44 @@ def test_policy_blocks_head_on_large_supported_file(tmp_path):
     assert "broad shell dump" in blocked
 
 
-def test_policy_allows_cat_on_generated_report(tmp_path):
-    policy = SparseCommandPolicy()
+def test_policy_blocks_preexisting_report_directory_input(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
     reports = tmp_path / "reports"
     reports.mkdir()
     report = reports / "rag_forecast_assessment.md"
     report.write_text("# Report\n\n" + ("metric: value\n" * 800), encoding="utf-8")
+    sro = SparseReadingOrchestrator(tmp_path, macro_available=True)
+    policy = SparseCommandPolicy(sro)
 
-    allowed = policy.guard("cat reports/rag_forecast_assessment.md", str(tmp_path))
+    blocked = policy.guard("cat reports/rag_forecast_assessment.md", str(tmp_path))
 
-    assert allowed is None
+    assert blocked
+    assert "broad shell dump" in blocked
 
 
-def test_policy_allows_cat_on_root_generated_diagnosis_report(tmp_path):
-    policy = SparseCommandPolicy()
+def test_policy_allows_cat_after_recorded_write(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
     report = tmp_path / "diagnosis_report.md"
     report.write_text("# Diagnosis\n\n" + ("finding\n" * 900), encoding="utf-8")
+    sro = SparseReadingOrchestrator(tmp_path, macro_available=True)
+    sro.record_output_write(report)
+    policy = SparseCommandPolicy(sro)
 
     allowed = policy.guard("cat diagnosis_report.md", str(tmp_path))
 
     assert allowed is None
 
 
-def test_policy_allows_command_security_root_outputs(tmp_path):
-    policy = SparseCommandPolicy()
+def test_policy_uses_recorded_write_for_arbitrary_output_names(tmp_path, monkeypatch):
+    monkeypatch.setenv("SRO_ENABLED", "1")
     report = tmp_path / "security_analysis_report.md"
     report.write_text("# Security\n\n" + ("finding\n" * 900), encoding="utf-8")
     classifications = tmp_path / "command_classifications.json"
     classifications.write_text('{"analyzed_commands": []}\n' * 600, encoding="utf-8")
+    sro = SparseReadingOrchestrator(tmp_path, macro_available=True)
+    sro.record_output_write(report)
+    sro.record_output_write(classifications)
+    policy = SparseCommandPolicy(sro)
 
     assert policy.guard("cat security_analysis_report.md", str(tmp_path)) is None
     assert policy.guard("python3 -c \"import json; json.load(open('command_classifications.json'))\"", str(tmp_path)) is None

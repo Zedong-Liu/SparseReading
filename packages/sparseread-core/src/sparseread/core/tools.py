@@ -15,6 +15,28 @@ from sparseread.core.models import (
 )
 from sparseread.core.orchestrator import SparseReadingOrchestrator
 
+_EPISODE_HINT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "description": "Optional host-model judgment at a reading-episode boundary.",
+    "properties": {
+        "relation": {"type": "string", "enum": ["new", "continue", "switch", "unknown"]},
+        "goal": {
+            "type": "string",
+            "enum": [
+                "selective_read",
+                "cross_file_evidence",
+                "structured_compute",
+                "edit_or_execute",
+                "full_fidelity",
+                "unknown",
+            ],
+        },
+        "coverage": {"type": "string", "enum": ["selective", "exhaustive", "unknown"]},
+        "summary": {"type": "string", "maxLength": 500},
+    },
+    "additionalProperties": False,
+}
+
 
 class Tool:
     """Framework-neutral async tool contract used by SparseRead core.
@@ -52,6 +74,26 @@ class Tool:
 
     def cast_params(self, params: dict[str, Any]) -> dict[str, Any]:
         return params
+
+    def set_context(self, context: Any) -> None:
+        self.orchestrator.set_context(context)
+
+    def _episode_payload(self, episode_hint: Any) -> dict[str, Any]:
+        if not isinstance(episode_hint, dict):
+            return {}
+        episode = self.orchestrator.current_episode()
+        if episode is None:
+            return {}
+        return {
+            "episode": episode.to_dict(),
+            "decision": {
+                "mode": episode.decision.mode,
+                "code": episode.decision.code,
+                "reason": episode.decision.reason,
+                "confidence": episode.decision.confidence,
+                "preview_recommended": episode.decision.preview_recommended,
+            },
+        }
 
     def validate_params(self, params: dict[str, Any]) -> list[str]:
         if not isinstance(params, dict):
@@ -104,15 +146,17 @@ class SroCardTool(Tool):
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "Path to the file/object to inspect"},
+                "episode_hint": _EPISODE_HINT_SCHEMA,
             },
             "required": ["path"],
         }
 
-    async def execute(self, path: str, **kwargs: Any) -> str:
-        card = self.orchestrator.card(Path(path))
+    async def execute(self, path: str, episode_hint: Any = None, **kwargs: Any) -> str:
+        card = self.orchestrator.card(Path(path), episode_hint if isinstance(episode_hint, dict) else None)
         payload: dict[str, Any] = {
             "file_card": card.to_dict(),
             "compatibility_note": "sro_card is retained for benchmark/legacy flows; use sro_preview as the production entrypoint.",
+            **self._episode_payload(episode_hint),
         }
         if card.sparse_recommended:
             mode = "collect" if card.type == "collection" else "scout"
@@ -187,14 +231,31 @@ class SroPreviewTool(Tool):
                 },
                 "path": {"type": "string", "description": "Compatibility shortcut for target.path"},
                 "artifact_id": {"type": "string", "description": "Compatibility shortcut for target.artifact_id"},
+                "episode_hint": _EPISODE_HINT_SCHEMA,
             },
         }
 
-    async def execute(self, target: Any = None, path: str = "", artifact_id: str = "", **kwargs: Any) -> str:
+    async def execute(
+        self,
+        target: Any = None,
+        path: str = "",
+        artifact_id: str = "",
+        episode_hint: Any = None,
+        **kwargs: Any,
+    ) -> str:
         if target is None:
             target = {"artifact_id": artifact_id} if artifact_id else {"path": path}
-        pack = self.orchestrator.preview(target)
-        return json.dumps({"preview_pack": pack.to_dict()}, ensure_ascii=False, indent=2)
+        target_path = target.get("path") if isinstance(target, dict) else target
+        if not isinstance(episode_hint, dict) and isinstance(target_path, str) and target_path:
+            probe = self.orchestrator.episode_hint_probe(target_path, tool_name="sro_preview")
+            if probe:
+                return json.dumps(probe, ensure_ascii=False, indent=2)
+        pack = self.orchestrator.preview(target, episode_hint if isinstance(episode_hint, dict) else None)
+        return json.dumps(
+            {"preview_pack": pack.to_dict(), **self._episode_payload(episode_hint)},
+            ensure_ascii=False,
+            indent=2,
+        )
 
 
 class SroRawTool(Tool):
@@ -324,6 +385,7 @@ class SroReadTool(Tool):
                     },
                     "additionalProperties": False,
                 },
+                "episode_hint": _EPISODE_HINT_SCHEMA,
             },
             "required": ["target", "mode", "hint"],
         }
@@ -363,6 +425,7 @@ class SroReadTool(Tool):
         target: Any = None,
         mode: Any = None,
         hint: Any = None,
+        episode_hint: Any = None,
         **kwargs: Any,
     ) -> str:
         mode, hint = self._normalize_mode_hint(mode, hint)
@@ -373,5 +436,18 @@ class SroReadTool(Tool):
             return "Error: mode must be one of scout, focus, collect, refine, verify."
         if not isinstance(hint, dict):
             hint = {}
-        pack = self.orchestrator.read(target, mode, hint)
-        return json.dumps({"evidence_pack": pack.to_dict()}, ensure_ascii=False, indent=2)
+        else:
+            hint = dict(hint)
+        if not isinstance(episode_hint, dict) and isinstance(hint.get("episode_hint"), dict):
+            episode_hint = hint.pop("episode_hint")
+        pack = self.orchestrator.read(
+            target,
+            mode,
+            hint,
+            episode_hint if isinstance(episode_hint, dict) else None,
+        )
+        return json.dumps(
+            {"evidence_pack": pack.to_dict(), **self._episode_payload(episode_hint)},
+            ensure_ascii=False,
+            indent=2,
+        )

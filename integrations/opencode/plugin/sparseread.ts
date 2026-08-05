@@ -29,12 +29,6 @@ type NativeEvent = {
   reason?: string
 }
 
-type HandoffTarget = {
-  absolutePath: string
-  relativePath: string
-  reason: string
-}
-
 type SparseReadPluginOptions = {
   policy?: "auto" | "native" | "observe" | "advisory" | "nudge" | "enforce" | "block" | "replace_truncation_experimental"
   python?: string
@@ -342,6 +336,16 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
         .optional(),
     })
     .passthrough()
+  const episodeHintSchema = tool.schema
+    .object({
+      relation: tool.schema.enum(["new", "continue", "switch", "unknown"]).optional(),
+      goal: tool.schema
+        .enum(["selective_read", "cross_file_evidence", "structured_compute", "edit_or_execute", "full_fidelity", "unknown"])
+        .optional(),
+      coverage: tool.schema.enum(["selective", "exhaustive", "unknown"]).optional(),
+      summary: tool.schema.string().optional().describe("One short sentence describing the current evidence goal"),
+    })
+    .optional()
   const [bridgeCommand, bridgeArgsPrefix] = spawnCommand(commandPrefix)
   const bridge = new SparseReadBridge(
     bridgeCommand,
@@ -356,55 +360,13 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
     ],
     projectRoot,
   )
-  let pendingTargets: HandoffTarget[] = []
-  const readySessions = new Map<string, string>()
-  const sessionsWithWrites = new Set<string>()
-  const sessionsWithSro = new Set<string>()
-
-  function readyStatus(value: Json): string {
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        const status = readyStatus(item)
-        if (status) return status
-      }
-      return ""
-    }
-    if (!isObject(value)) return ""
-    if (["ready", "ready_for_write", "ready_for_compute"].includes(String(value.overall_status || ""))) {
-      return String(value.overall_status)
-    }
-    for (const item of Object.values(value)) {
-      const status = readyStatus(item)
-      if (status) return status
-    }
-    return ""
-  }
-
-  function rememberReady(context: any, result: Json) {
-    const status = readyStatus(result)
-    if (status && context?.sessionID) readySessions.set(context.sessionID, status)
-  }
-
-  function readyGuard(context: any, method: string): ToolResult | undefined {
-    const status = context?.sessionID ? readySessions.get(context.sessionID) : undefined
-    if (!status) return undefined
+  function requestContext(context: any, callID?: string) {
     return {
-      title: `sro_${method}`,
-      output: JSON.stringify({
-        sro_guard: true,
-        overall_status: status,
-        allowed_next: ["write/edit deliverable", "run one required local calculation", "final response"],
-        instruction: "SparseRead evidence is already terminal for this session. Do not call any sro_* tool again.",
-      }),
-      metadata: { sparseread: true, method, terminal: true },
+      conversation_id: String(context?.sessionID || "default"),
+      turn_id: String(context?.messageID || ""),
+      message_id: String(context?.messageID || ""),
+      tool_call_id: String(callID || context?.callID || ""),
     }
-  }
-
-  function lateSroGuard(context: any): ToolResult | undefined {
-    const sessionID = context?.sessionID
-    if (!sessionID || !sessionsWithWrites.has(sessionID) || sessionsWithSro.has(sessionID)) return undefined
-    readySessions.set(sessionID, "deliverable_write_started")
-    return readyGuard(context, "preview")
   }
 
   function reminderRoot() {
@@ -421,24 +383,6 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
     }
     if (!isObject(target) || typeof target.path !== "string") return target
     return { ...target, path: absoluteCandidate(target.path) }
-  }
-
-  function isSameOrDescendant(base: string, candidate: string) {
-    const relative = path.relative(base, candidate)
-    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
-  }
-
-  function handoffForCandidate(candidatePath: string | undefined) {
-    if (!candidatePath) return undefined
-    const absolute = absoluteCandidate(candidatePath)
-    let ancestorMatch: HandoffTarget | undefined
-    let descendantMatch: HandoffTarget | undefined
-    for (const target of pendingTargets) {
-      if (target.absolutePath === absolute) return target
-      if (!ancestorMatch && isSameOrDescendant(absolute, target.absolutePath)) ancestorMatch = target
-      if (!descendantMatch && isSameOrDescendant(target.absolutePath, absolute)) descendantMatch = target
-    }
-    return descendantMatch || ancestorMatch
   }
 
   function reminderText(target: string, action: string, reason: string) {
@@ -492,38 +436,11 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
     return rewriteCommandArgs(args, artifact.command)
   }
 
-  function loadPreflightTargets(result: any) {
-    const handoffs = Array.isArray(result?.handoffs) ? result.handoffs.filter(isObject) : []
-    pendingTargets = handoffs
-      .map((item: Record<string, Json>) => {
-        const relativePath = String(item.relative_path || item.path || "").trim()
-        if (!relativePath) return undefined
-        return {
-          absolutePath: absoluteCandidate(relativePath),
-          relativePath,
-          reason: String(item.reason || "SparseRead high-confidence handoff"),
-        }
-      })
-      .filter(Boolean) as HandoffTarget[]
-    debugLog({ event: "preflight", targets: pendingTargets })
-    return pendingTargets
-  }
-
-  async function refreshPreflightTargets() {
-    try {
-      return loadPreflightTargets(await bridge.request("preflight", { max_candidates: 24, max_results: 3 }))
-    } catch (error) {
-      pendingTargets = []
-      debugLog({ event: "preflight_error", error: error instanceof Error ? error.message : String(error) })
-      return pendingTargets
-    }
-  }
-
-  async function decideForPath(candidatePath: string | undefined) {
+  async function decideForPath(candidatePath: string | undefined, context?: any) {
     if (!candidatePath) return undefined
     const absolute = path.isAbsolute(candidatePath) ? candidatePath : path.join(workspaceRoot, candidatePath)
     try {
-      return await bridge.request("decide", { path: absolute })
+      return await bridge.request("decide", { path: absolute, context: requestContext(context) })
     } catch (error) {
       nativeEvents.push({
         time: now(),
@@ -536,8 +453,8 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
     }
   }
 
-  async function gateForPath(candidatePath: string | undefined) {
-    const decision = await decideForPath(candidatePath)
+  async function gateForPath(candidatePath: string | undefined, context?: any) {
+    const decision = await decideForPath(candidatePath, context)
     return { decision, gate: decision?.opencode_gate || {} }
   }
 
@@ -546,33 +463,14 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
     return `SparseRead enforce: call ${previewToolCall(target)} first. Do not run sro_preview inside bash or shell. After preview, call sro_read with the returned artifact_id only if targeted evidence is needed instead of native ${action}.`
   }
 
-  function preflightPrompt(result: any) {
-    const handoffs = loadPreflightTargets(result)
-    if (handoffs.length === 0) return ""
-    const first = handoffs[0]
-    const firstPath = String(first.relativePath || "").trim()
-    if (!firstPath) return ""
-    if (handoffs.length === 1) {
-      return ` High-confidence evidence target detected: ${previewToolCall(firstPath)} before broad read, grep, or bash inspection.`
-    }
-    const targets = handoffs
-      .map((item: HandoffTarget) => String(item.relativePath || "").trim())
-      .filter(Boolean)
-      .slice(0, 3)
-      .map((item: string) => previewToolCall(item))
-      .join("; ")
-    if (!targets) return ""
-    return ` High-confidence evidence targets detected: start with one of these tool calls: ${targets}.`
-  }
-
-  async function maybeNudge(toolName: string, args: Record<string, Json>, output: any) {
+  async function maybeNudge(toolName: string, args: Record<string, Json>, output: any, context?: any) {
     if (!allowsNudge(policy)) return
     if (!isObject(output) || typeof output.output !== "string") return
     const truncated = outputTruncated(output)
     const isDirectoryRead =
       toolName === "read" && isObject(output.metadata) && output.metadata.display?.type === "directory"
     const candidate = readPath(args) || (typeof args.path === "string" ? args.path : undefined)
-    const { decision, gate } = await gateForPath(candidate)
+    const { decision, gate } = await gateForPath(candidate, context)
     const shouldNudge =
       truncated ||
       gate?.nudge_native === true ||
@@ -603,19 +501,15 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
           target: targetSchema.optional().describe("Use {path} or {artifact_id}; path shortcut is also accepted"),
           path: tool.schema.string().optional().describe("Path to preview"),
           artifact_id: tool.schema.string().optional().describe("Existing SparseRead artifact id to preview"),
+          episode_hint: episodeHintSchema,
         },
         async execute(args, context): Promise<ToolResult> {
-          const terminal = readyGuard(context, "preview")
-          if (terminal) return terminal
-          const late = lateSroGuard(context)
-          if (late) return late
-          if (context?.sessionID) sessionsWithSro.add(context.sessionID)
           const result = await bridge.request("preview", {
             ...args,
+            context: requestContext(context),
             ...(typeof args.path === "string" ? { path: absoluteCandidate(args.path) } : {}),
             ...(args.target ? { target: normalizeTarget(args.target) } : {}),
           })
-          rememberReady(context, result)
           return {
             title: "sro_preview",
             output: JSON.stringify(result),
@@ -631,10 +525,7 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
           selector: tool.schema.string().optional().describe("Optional case-insensitive line selector"),
         },
         async execute(args, context): Promise<ToolResult> {
-          const terminal = readyGuard(context, "raw")
-          if (terminal) return terminal
-          const result = await bridge.request("raw", args)
-          rememberReady(context, result)
+          const result = await bridge.request("raw", { ...args, context: requestContext(context) })
           return {
             title: "sro_raw",
             output: JSON.stringify(result),
@@ -648,10 +539,10 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
           path: tool.schema.string().describe("Path to the file, document, or directory to inspect"),
         },
         async execute(args, context): Promise<ToolResult> {
-          const terminal = readyGuard(context, "card")
-          if (terminal) return terminal
-          const result = await bridge.request("card", { path: absoluteCandidate(args.path) })
-          rememberReady(context, result)
+          const result = await bridge.request("card", {
+            path: absoluteCandidate(args.path),
+            context: requestContext(context),
+          })
           return {
             title: "sro_card",
             output: JSON.stringify(result),
@@ -666,12 +557,14 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
           target: targetSchema.describe("Use {path} for first read or {artifact_id} for follow-up"),
           mode: tool.schema.enum(["scout", "focus", "collect", "refine", "verify"]),
           hint: hintSchema.describe("HintSpec with goal, needles, slots, want, scope, type_hint"),
+          episode_hint: episodeHintSchema,
         },
         async execute(args, context): Promise<ToolResult> {
-          const terminal = readyGuard(context, "read")
-          if (terminal) return terminal
-          const result = await bridge.request("read", { ...args, target: normalizeTarget(args.target) })
-          rememberReady(context, result)
+          const result = await bridge.request("read", {
+            ...args,
+            target: normalizeTarget(args.target),
+            context: requestContext(context),
+          })
           return {
             title: "sro_read",
             output: JSON.stringify(result),
@@ -682,8 +575,8 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
       sro_trace: tool({
         description: "Return SparseRead and native OpenCode read/grep/bash trace for this session.",
         args: {},
-        async execute(): Promise<ToolResult> {
-          const trace = await bridge.request("trace", {})
+        async execute(_args, context): Promise<ToolResult> {
+          const trace = await bridge.request("trace", { context: requestContext(context) })
           return {
             title: "sro_trace",
             output: JSON.stringify({ ...trace, native_events: nativeEvents }),
@@ -697,37 +590,47 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
       output.description +=
         "\nSparseRead: for large supported evidence, call the tool sro_preview with JSON args {\"path\": ...}; do not run sro_preview inside bash or shell. Use sro_read only for targeted evidence. Small setup reads and native code/data work are fine."
     },
-    "experimental.chat.system.transform": async (_input, output) => {
+    "experimental.chat.system.transform": async (input, output) => {
       if (policy === "native") return
-      const preflight = preflightPrompt(await bridge.request("preflight", { max_candidates: 24, max_results: 3 }).catch(() => ({})))
       output.system.push(
-        "SparseRead is available for long documents, PDFs, and compact evidence closures. When SparseRead is the right path, call the tool sro_preview with JSON args {\"path\": ...}. Do not run sro_preview inside bash or shell. After preview, call sro_read only for targeted evidence. Once any SRO response reports overall_status ready, ready_for_write, or ready_for_compute, do not call any sro_* tool again; write the deliverable or run the single required calculation immediately." + preflight,
+        "SparseRead is available for long documents, cross-file evidence work, and multi-table analysis planning. At the start of a reading episode, call sro_preview with episode_hint containing relation (new/continue/switch), goal, coverage, and a short summary. Preview is independent of enforcement. Native tools remain correct for small files, source editing/execution, and single-table exact computation. Once evidence is ready, write the deliverable or run the one bounded calculation; start a new episode only for a new question or resource scope.",
       )
     },
     event: async ({ event }) => {
-      if (event.type !== "session.deleted") return
       const properties = event.properties as any
       const sessionID = properties?.sessionID ?? properties?.info?.id
-      if (typeof sessionID === "string") {
-        readySessions.delete(sessionID)
-        sessionsWithWrites.delete(sessionID)
-        sessionsWithSro.delete(sessionID)
+      if (typeof sessionID !== "string") return
+      if (event.type === "session.idle") {
+        await bridge.request("lifecycle_event", {
+          type: "assistant_final",
+          context: { conversation_id: sessionID },
+        }).catch(() => undefined)
+        return
       }
+      if (event.type !== "session.deleted") return
+      await bridge.request("lifecycle_event", {
+        type: "session_end",
+        context: { conversation_id: sessionID },
+      }).catch(() => undefined)
     },
     "tool.execute.before": async (input, output) => {
       if (!shouldInspectTool(input.tool)) return
       const args = isObject(output.args) ? output.args : {}
       nativeEvents.push({ time: now(), phase: "before", tool: input.tool, args })
+      await bridge.request("native_event", {
+        phase: "before",
+        tool: input.tool,
+        params: args,
+        context: requestContext(input, input.callID),
+      }).catch(() => undefined)
       debugLog({ event: "before", tool: input.tool, args })
       if (!allowsNativeBlocking(policy)) return
-      if (pendingTargets.length === 0) await refreshPreflightTargets()
       if (input.tool === "read") {
         const candidate = readPath(args)
-        const { gate } = await gateForPath(candidate)
-        const handoff = handoffForCandidate(candidate)
-        const target = typeof gate?.handoff_path === "string" ? gate.handoff_path : handoff?.relativePath || candidate
-        if (gate?.block_native_read !== true && !handoff) return
-        const reason = String(gate?.reason || handoff?.reason || "SparseRead high-confidence handoff")
+        const { gate } = await gateForPath(candidate, input)
+        const target = typeof gate?.handoff_path === "string" ? gate.handoff_path : candidate
+        if (gate?.block_native_read !== true) return
+        const reason = String(gate?.reason || "SparseRead high-confidence handoff")
         nativeEvents.push({
           time: now(),
           phase: "rewrite",
@@ -741,11 +644,10 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
       }
       if (input.tool === "grep") {
         const candidate = typeof args.path === "string" ? args.path : readPath(args)
-        const { gate } = await gateForPath(candidate)
-        const handoff = handoffForCandidate(candidate)
-        const target = typeof gate?.handoff_path === "string" ? gate.handoff_path : handoff?.relativePath || candidate
-        if (gate?.block_native_search !== true && !handoff) return
-        const reason = String(gate?.reason || handoff?.reason || "SparseRead high-confidence grep handoff")
+        const { gate } = await gateForPath(candidate, input)
+        const target = typeof gate?.handoff_path === "string" ? gate.handoff_path : candidate
+        if (gate?.block_native_search !== true) return
+        const reason = String(gate?.reason || "SparseRead high-confidence grep handoff")
         nativeEvents.push({
           time: now(),
           phase: "rewrite",
@@ -762,11 +664,10 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
       const rawCopy = looksLikeRawCopy(command)
       if (!rawDump && !rawCopy) return
       for (const candidate of commandPaths(command)) {
-        const { gate } = await gateForPath(candidate)
-        const handoff = handoffForCandidate(candidate)
-        const target = typeof gate?.handoff_path === "string" ? gate.handoff_path : handoff?.relativePath || candidate
-        if (gate?.block_native_exec_dump !== true && !handoff) continue
-        const reason = String(gate?.reason || handoff?.reason || "SparseRead high-confidence exec handoff")
+        const { gate } = await gateForPath(candidate, input)
+        const target = typeof gate?.handoff_path === "string" ? gate.handoff_path : candidate
+        if (gate?.block_native_exec_dump !== true) continue
+        const reason = String(gate?.reason || "SparseRead high-confidence exec handoff")
         nativeEvents.push({
           time: now(),
           phase: "rewrite",
@@ -780,13 +681,18 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
       }
     },
     "tool.execute.after": async (input, output) => {
-      if (["write", "edit", "patch", "apply_patch"].includes(input.tool)) {
-        sessionsWithWrites.add(input.sessionID)
-      }
-      if (!shouldInspectTool(input.tool)) return
       const args = isObject(input.args) ? input.args : {}
       const text = outputText(output)
       const truncated = outputTruncated(output)
+      await bridge.request("native_event", {
+        phase: "after",
+        tool: input.tool,
+        params: args,
+        truncated,
+        output_chars: text.length,
+        context: requestContext(input, input.callID),
+      }).catch(() => undefined)
+      if (!shouldInspectTool(input.tool)) return
       nativeEvents.push({
         time: now(),
         phase: "after",
@@ -795,7 +701,7 @@ export const SparseReadOpenCodePlugin: Plugin = async ({ directory, worktree }, 
         truncated,
         outputChars: text.length,
       })
-      await maybeNudge(input.tool, args, output)
+      await maybeNudge(input.tool, args, output, input)
     },
     dispose: async () => {
       bridge.shutdown()

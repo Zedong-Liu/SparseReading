@@ -16,18 +16,41 @@ def _write_command_security_bundle(root: Path) -> Path:
     (assets / "legacy_rules.yaml").write_text("legacy: true\n", encoding="utf-8")
     (assets / "security_bulletin_2025.md").write_text("Known injection bulletin.\n", encoding="utf-8")
     (assets / "test_commands.csv").write_text("command,label\npython3 -c 'print(1)',safe\n", encoding="utf-8")
+    for index in range(4):
+        (assets / f"reference-{index}.txt").write_text("Supporting evidence.\n" * 40, encoding="utf-8")
     return assets
 
 
 def _write_audit_bundle(root: Path) -> Path:
     assets = root / "assets"
     assets.mkdir(parents=True)
-    (assets / "fetcher.py").write_text("def deduplicate(seen):\n    return list(seen)[-5000:]\n", encoding="utf-8")
+    (assets / "fetcher.py").write_text(
+        "def deduplicate(seen):\n    return list(seen)[-5000:]\n" + "# audit evidence\n" * 600,
+        encoding="utf-8",
+    )
     (assets / "state.json").write_text('{"seen_ids":["a","b"]}\n', encoding="utf-8")
     (assets / "output.json").write_text('[{"id":"a"}]\n', encoding="utf-8")
     (assets / "announcements_2026-02-09.json").write_text('[{"id":"b","important":true}]\n', encoding="utf-8")
     (assets / "config.yaml").write_text("summary_csv: true\n", encoding="utf-8")
     return assets
+
+
+def _write_mixed_evidence_collection(root: Path) -> Path:
+    root.mkdir(parents=True)
+    (root / "source.py").write_text("def load():\n    return True\n" + "# evidence\n" * 900, encoding="utf-8")
+    (root / "state.json").write_text('{"cursor":"42"}\n' * 80, encoding="utf-8")
+    (root / "config.yaml").write_text("enabled: true\n" * 80, encoding="utf-8")
+    (root / "events.log").write_text("INFO completed\n" * 80, encoding="utf-8")
+    (root / "notes.md").write_text("Supporting observation.\n" * 80, encoding="utf-8")
+    return root
+
+
+def _write_structured_analysis_collection(root: Path) -> Path:
+    root.mkdir(parents=True)
+    rows = "id,value\n" + "".join(f"{index},{index * 2}\n" for index in range(1_200))
+    for index in range(5):
+        (root / f"table-{index}.csv").write_text(rows, encoding="utf-8")
+    return root
 
 
 def test_shared_bridge_preview_raw_and_trace_for_both_frameworks(tmp_path: Path) -> None:
@@ -388,16 +411,39 @@ def test_adapter_gates_preserve_t86_advisory_and_audit_enforce(tmp_path: Path) -
 
     for bridge_cls, gate_key in ((OpenCodeBridge, "opencode_gate"), (OpenClawBridge, "openclaw_gate")):
         command_bridge = bridge_cls(workspace=tmp_path, mode="auto")
-        command_decision = command_bridge.handle({"method": "decide", "params": {"path": str(command_assets)}})
+        command_decision = command_bridge.handle(
+            {
+                "method": "decide",
+                "params": {
+                    "path": str(command_assets),
+                    "episode_hint": {
+                        "goal": "cross_file_evidence",
+                        "coverage": "exhaustive",
+                        "relation": "new",
+                    },
+                },
+            }
+        )
 
-        assert command_decision["decision"]["mode"] == "force_sro"
+        assert command_decision["decision"]["mode"] == "advisory"
         assert command_decision[gate_key]["mode"] == "advisory"
-        assert command_decision[gate_key]["trajectory"] == "one_collect_then_write"
+        assert command_decision[gate_key]["decision_code"] == "broad_evidence_boundary"
         assert command_decision[gate_key]["block_native_read"] is False
 
         audit_bridge = bridge_cls(workspace=tmp_path, mode="auto")
-        audit_decision = audit_bridge.handle({"method": "decide", "params": {"path": str(audit_assets)}})
-        child_decision = audit_bridge.handle({"method": "decide", "params": {"path": str(audit_assets / "fetcher.py")}})
+        params = {
+            "episode_hint": {
+                "goal": "cross_file_evidence",
+                "coverage": "selective",
+                "relation": "new",
+            }
+        }
+        audit_decision = audit_bridge.handle(
+            {"method": "decide", "params": {"path": str(audit_assets), **params}}
+        )
+        child_decision = audit_bridge.handle(
+            {"method": "decide", "params": {"path": str(audit_assets / "fetcher.py"), **params}}
+        )
 
         assert audit_decision[gate_key]["mode"] == "enforce"
         assert audit_decision[gate_key]["block_native_read"] is True
@@ -410,7 +456,10 @@ def test_adapter_gates_preserve_t86_advisory_and_audit_enforce(tmp_path: Path) -
 def test_bridge_preflight_reports_force_sro_first_action(tmp_path: Path) -> None:
     audit = tmp_path / "a_stock_announcements"
     audit.mkdir()
-    (audit / "fetcher.py").write_text("def deduplicate(seen):\n    return list(seen)[-5000:]\n", encoding="utf-8")
+    (audit / "fetcher.py").write_text(
+        "def deduplicate(seen):\n    return list(seen)[-5000:]\n" + "# audit evidence\n" * 600,
+        encoding="utf-8",
+    )
     (audit / "fetch_state.json").write_text('{"seen_ids":["a","b"]}\n', encoding="utf-8")
     (audit / "announcements_2026-02-09.json").write_text('[{"id":"b","important":true}]\n', encoding="utf-8")
     (audit / "config.yaml").write_text("summary_csv: true\n", encoding="utf-8")
@@ -418,7 +467,15 @@ def test_bridge_preflight_reports_force_sro_first_action(tmp_path: Path) -> None
 
     for bridge_cls in (OpenCodeBridge, OpenClawBridge):
         bridge = bridge_cls(workspace=tmp_path, mode="auto")
-        preflight = bridge.handle({"method": "preflight", "params": {"max_candidates": 8}})
+        preflight = bridge.handle(
+            {
+                "method": "preflight",
+                "params": {
+                    "max_candidates": 8,
+                    "episode_hint": {"goal": "cross_file_evidence", "coverage": "selective"},
+                },
+            }
+        )
 
         assert preflight["handoff_count"] == 1
         assert preflight["handoffs"][0]["relative_path"] == "a_stock_announcements"
@@ -431,7 +488,10 @@ def test_bridge_preflight_reports_force_sro_first_action(tmp_path: Path) -> None
 def test_bridge_preflight_prefers_specific_target_over_root_handoff(tmp_path: Path) -> None:
     audit = tmp_path / "a_stock_announcements"
     audit.mkdir()
-    (audit / "fetcher.py").write_text("def deduplicate(seen):\n    return list(seen)[-5000:]\n", encoding="utf-8")
+    (audit / "fetcher.py").write_text(
+        "def deduplicate(seen):\n    return list(seen)[-5000:]\n" + "# audit evidence\n" * 600,
+        encoding="utf-8",
+    )
     (audit / "state.json").write_text('{"seen_ids":["a","b"]}\n', encoding="utf-8")
     (audit / "announcements_2026-02-09.json").write_text('[{"id":"b","important":true}]\n', encoding="utf-8")
     (audit / "config.yaml").write_text("summary_csv: true\n", encoding="utf-8")
@@ -440,7 +500,15 @@ def test_bridge_preflight_prefers_specific_target_over_root_handoff(tmp_path: Pa
 
     for bridge_cls in (OpenCodeBridge, OpenClawBridge):
         bridge = bridge_cls(workspace=tmp_path, mode="auto")
-        preflight = bridge.handle({"method": "preflight", "params": {"max_candidates": 12}})
+        preflight = bridge.handle(
+            {
+                "method": "preflight",
+                "params": {
+                    "max_candidates": 12,
+                    "episode_hint": {"goal": "cross_file_evidence", "coverage": "selective"},
+                },
+            }
+        )
 
         assert preflight["handoff_count"] == 1
         assert [item["relative_path"] for item in preflight["handoffs"]] == ["a_stock_announcements"]
@@ -448,11 +516,21 @@ def test_bridge_preflight_prefers_specific_target_over_root_handoff(tmp_path: Pa
 
 
 def test_generated_outputs_stay_native_in_both_bridges(tmp_path: Path) -> None:
-    output = tmp_path / "fetch-audit.md"
+    output = tmp_path / "generated-report.md"
     output.write_text("audit report\n" * 600, encoding="utf-8")
 
     for bridge_cls, gate_key in ((OpenCodeBridge, "opencode_gate"), (OpenClawBridge, "openclaw_gate")):
         bridge = bridge_cls(workspace=tmp_path, mode="auto")
+        bridge.handle(
+            {
+                "method": "native_event",
+                "params": {
+                    "phase": "after",
+                    "tool": "write_file",
+                    "params": {"path": str(output)},
+                },
+            }
+        )
         decision = bridge.handle({"method": "decide", "params": {"path": str(output)}})
         card = bridge.handle({"method": "card", "params": {"path": str(output)}})
 
@@ -460,3 +538,225 @@ def test_generated_outputs_stay_native_in_both_bridges(tmp_path: Path) -> None:
         assert decision[gate_key]["block_native_read"] is False
         assert card["file_card"]["sparse_recommended"] is False
         assert card[gate_key]["mode"] == "native"
+
+
+def test_bridge_and_runtime_share_episode_decision_for_card_and_read(tmp_path: Path) -> None:
+    structured = _write_structured_analysis_collection(tmp_path / "structured")
+    report = tmp_path / "complete-report.md"
+    report.write_text("Full-fidelity source material.\n" * 500, encoding="utf-8")
+
+    for bridge_cls, gate_key in ((OpenCodeBridge, "opencode_gate"), (OpenClawBridge, "openclaw_gate")):
+        bridge = bridge_cls(workspace=tmp_path, mode="auto")
+        assert bridge.episodes is bridge.runtime.orchestrator.episodes
+
+        context = {"conversation_id": "force-scene", "turn_id": "turn-1"}
+        card = bridge.handle(
+            {
+                "method": "card",
+                "params": {
+                    "path": str(structured),
+                    "context": context,
+                    "episode_hint": {
+                        "goal": "edit_or_execute",
+                        "relation": "new",
+                        "coverage": "selective",
+                        "summary": "plan a bounded multi-table analysis before writing code",
+                    },
+                },
+            }
+        )
+
+        assert card[gate_key]["mode"] == "enforce"
+        assert card["file_card"]["sparse_recommended"] is True
+        assert card["file_card"]["recommended_mode"] == "collect"
+        assert card["next_action"]["mode"] == "collect"
+
+        native_bridge = bridge_cls(workspace=tmp_path, mode="auto")
+        native_context = {"conversation_id": "native-scene", "turn_id": "turn-1"}
+        native_card = native_bridge.handle(
+            {
+                "method": "card",
+                "params": {
+                    "path": str(report),
+                    "context": native_context,
+                    "episode_hint": {
+                        "goal": "full_fidelity",
+                        "relation": "new",
+                        "coverage": "exhaustive",
+                    },
+                },
+            }
+        )
+        native_read = native_bridge.handle(
+            {
+                "method": "read",
+                "params": {
+                    "target": {"artifact_id": native_card["file_card"]["artifact_id"]},
+                    "mode": "scout",
+                    "hint": {"goal": "read the complete source", "type_hint": "text"},
+                    "context": native_context,
+                    "episode_hint": {
+                        "goal": "full_fidelity",
+                        "relation": "continue",
+                        "coverage": "exhaustive",
+                    },
+                },
+            }
+        )
+
+        assert native_card[gate_key]["mode"] == "native"
+        assert native_read["evidence_pack"]["summary"].startswith("low-sparse fallback")
+
+
+def test_active_force_collection_scope_remains_child_handoff_without_repeated_hint(tmp_path: Path) -> None:
+    collection = _write_mixed_evidence_collection(tmp_path / "evidence")
+
+    for bridge_cls, gate_key in ((OpenCodeBridge, "opencode_gate"), (OpenClawBridge, "openclaw_gate")):
+        bridge = bridge_cls(workspace=tmp_path, mode="auto")
+        context = {"conversation_id": "scene", "turn_id": "turn-1"}
+        root = bridge.handle(
+            {
+                "method": "decide",
+                "params": {
+                    "path": str(collection),
+                    "context": context,
+                    "episode_hint": {
+                        "goal": "cross_file_evidence",
+                        "relation": "new",
+                        "coverage": "selective",
+                    },
+                },
+            }
+        )
+        child = bridge.handle(
+            {
+                "method": "decide",
+                "params": {
+                    "path": str(collection / "source.py"),
+                    "context": context,
+                },
+            }
+        )
+
+        assert root[gate_key]["mode"] == "enforce"
+        assert child["decision"]["mode"] == "force_sro"
+        assert child[gate_key]["mode"] == "enforce"
+        assert child[gate_key]["handoff_path"] == str(collection)
+
+
+def test_runtime_native_passthrough_wins_over_ready_collection_guard(tmp_path: Path) -> None:
+    collection = _write_mixed_evidence_collection(tmp_path / "evidence")
+
+    for bridge_cls, gate_key in ((OpenCodeBridge, "opencode_gate"), (OpenClawBridge, "openclaw_gate")):
+        bridge = bridge_cls(workspace=tmp_path, mode="auto")
+        context = {"conversation_id": "scene", "turn_id": "turn-1"}
+        preview = bridge.handle(
+            {
+                "method": "preview",
+                "params": {
+                    "path": str(collection),
+                    "context": context,
+                    "episode_hint": {
+                        "goal": "cross_file_evidence",
+                        "relation": "new",
+                        "coverage": "selective",
+                    },
+                },
+            }
+        )
+        artifact_id = preview["preview_pack"]["artifact_id"]
+        bridge._remember_adapter_ready_pack(
+            {
+                "artifact_id": artifact_id,
+                "type": "collection",
+                "slot_digest": {"overall_status": "ready", "slots": []},
+                "evidence": [],
+                "next_action": {"instruction": "write the requested output"},
+            },
+            conversation_id="scene",
+        )
+        generated = collection / ".sparseread" / "generated.md"
+        generated.parent.mkdir(exist_ok=True)
+        generated.write_text("generated result\n" * 500, encoding="utf-8")
+
+        decision = bridge.handle(
+            {"method": "decide", "params": {"path": str(generated), "context": context}}
+        )
+        card = bridge.handle(
+            {"method": "card", "params": {"path": str(generated), "context": context}}
+        )
+
+        assert decision[gate_key]["mode"] == "native"
+        assert decision[gate_key]["block_native_read"] is False
+        assert decision[gate_key].get("already_ready") is not True
+        assert card[gate_key]["mode"] == "native"
+        assert card["file_card"]["sparse_recommended"] is False
+        assert card.get("adapter_guard") is None
+
+
+def test_ready_for_compute_is_terminal_but_recorded_outputs_stay_native(tmp_path: Path) -> None:
+    collection = _write_structured_analysis_collection(tmp_path / "structured")
+
+    for bridge_cls, gate_key in ((OpenCodeBridge, "opencode_gate"), (OpenClawBridge, "openclaw_gate")):
+        bridge = bridge_cls(workspace=tmp_path, mode="auto")
+        context = {"conversation_id": "compute", "turn_id": "turn-1"}
+        card = bridge.handle(
+            {
+                "method": "card",
+                "params": {
+                    "path": str(collection),
+                    "context": context,
+                    "episode_hint": {
+                        "goal": "edit_or_execute",
+                        "relation": "new",
+                        "coverage": "selective",
+                    },
+                },
+            }
+        )
+        artifact_id = card["file_card"]["artifact_id"]
+        bridge._remember_adapter_ready_pack(
+            {
+                "artifact_id": artifact_id,
+                "type": "collection",
+                "slot_digest": {},
+                "evidence": [],
+                "next_action": {
+                    "overall_status": "ready_for_compute",
+                    "instruction": "write and run the implementation",
+                },
+            },
+            conversation_id="compute",
+        )
+        bridge.episodes.mark_ready(
+            conversation_id="compute",
+            scope=collection,
+            closure_ref=artifact_id,
+        )
+
+        source = collection / "table_0.csv"
+        source_decision = bridge.handle(
+            {"method": "decide", "params": {"path": str(source), "context": context}}
+        )
+        assert source_decision[gate_key].get("already_ready") is True
+        assert source_decision[gate_key]["block_native_read"] is True
+
+        output = collection / "analysis-result.md"
+        output.write_text("computed result\n" * 500, encoding="utf-8")
+        bridge.handle(
+            {
+                "method": "native_event",
+                "params": {
+                    "phase": "after",
+                    "tool": "write_file",
+                    "params": {"path": str(output)},
+                    "context": context,
+                },
+            }
+        )
+        output_decision = bridge.handle(
+            {"method": "decide", "params": {"path": str(output), "context": context}}
+        )
+        assert output_decision[gate_key]["mode"] == "native"
+        assert output_decision[gate_key]["block_native_read"] is False
+        assert output_decision[gate_key].get("already_ready") is not True

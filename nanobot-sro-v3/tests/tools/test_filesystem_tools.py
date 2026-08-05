@@ -9,7 +9,6 @@ from nanobot.agent.tools.filesystem import (
     _find_match,
 )
 
-
 # ---------------------------------------------------------------------------
 # ReadFileTool
 # ---------------------------------------------------------------------------
@@ -350,6 +349,40 @@ class TestWorkspaceRestriction:
         result = await tool.execute(path=str(outside / "hack.txt"), content="pwned")
         assert "Error" in result
         assert "outside" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_stale_workspace_absolute_path_is_rejected_with_relative_recovery(self, tmp_path):
+        from nanobot.agent.tools.filesystem import WriteFileTool
+
+        run_root = tmp_path / "run-task_21"
+        workspace = run_root / "agent_workspace"
+        workspace.mkdir(parents=True)
+        stale = tmp_path / "run-task-21" / "agent_workspace" / "answer.txt"
+        tool = WriteFileTool(workspace=workspace)
+
+        error = await tool.execute(path=str(stale), content="correct answers")
+        assert "stale workspace root" in error
+        assert "'answer.txt'" in error
+        assert str(workspace) in error
+        assert not stale.exists()
+
+        success = await tool.execute(path="answer.txt", content="correct answers")
+        assert "Successfully wrote" in success
+        assert (workspace / "answer.txt").read_text(encoding="utf-8") == "correct answers"
+
+    @pytest.mark.asyncio
+    async def test_workspace_symlink_alias_is_not_treated_as_stale(self, tmp_path):
+        from nanobot.agent.tools.filesystem import WriteFileTool
+
+        workspace = tmp_path / "real" / "agent_workspace"
+        workspace.mkdir(parents=True)
+        alias = tmp_path / "alias_workspace"
+        alias.symlink_to(workspace, target_is_directory=True)
+        tool = WriteFileTool(workspace=workspace)
+
+        result = await tool.execute(path=str(alias / "answer.txt"), content="ok")
+        assert "Successfully wrote" in result
+        assert (workspace / "answer.txt").read_text(encoding="utf-8") == "ok"
 
     @pytest.mark.asyncio
     async def test_read_still_blocked_for_unrelated_dir(self, tmp_path):

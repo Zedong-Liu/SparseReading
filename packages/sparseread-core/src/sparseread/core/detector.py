@@ -13,6 +13,8 @@ TEXT_EXTS = {
     ".md",
     ".markdown",
     ".rst",
+    ".html",
+    ".htm",
     ".log",
     ".py",
     ".sh",
@@ -49,6 +51,8 @@ def file_type(path: Path) -> str:
         return "yaml"
     if suffix in {".md", ".markdown", ".rst"}:
         return "text"
+    if suffix in {".html", ".htm"}:
+        return "html"
     if suffix in {".log", ".py", ".sh", ".toml", ".ini", ".cfg", ".conf"}:
         return "text"
     if suffix == ".tsv":

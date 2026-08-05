@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from sparseread.core.denoise import denoise_text
 from sparseread.core.models import (
     MAX_HINT_NEEDLES,
     EvidenceBlock,
@@ -756,7 +757,9 @@ class TextReader:
         if path.suffix.lower() == ".pdf":
             return self._load_pdf_units(path)
         text = path.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n")
-        return self._segment_text(text, kind="text")
+        kind = "html" if path.suffix.lower() in {".html", ".htm"} else "text"
+        text = denoise_text(text, source_kind=kind).text
+        return self._segment_text(text, kind=kind)
 
     def _load_pdf_units(self, path: Path) -> tuple[list[TextUnit], list[str], str]:
         try:

@@ -252,26 +252,14 @@ class SparseCommandPolicy:
             )
         return False
 
-    @staticmethod
-    def _is_output_artifact(path: str | Path) -> bool:
-        try:
-            resolved = Path(path).resolve(strict=False)
-        except Exception:
-            resolved = Path(path)
-        generated_names = {
-            "answer.txt",
-            "command_classifications.json",
-            "final_answer.md",
-            "diagnosis_report.md",
-            "did_results_summary.md",
-            "metrics_summary.json",
-            "analysis_results.json",
-            "security_analysis_report.md",
-        }
-        if resolved.name.lower() in generated_names:
-            return True
-        output_dirs = {"reports", "outputs", "results"}
-        return any(part.lower() in output_dirs for part in resolved.parts)
+    def _is_output_artifact(self, path: str | Path) -> bool:
+        if self._sro is None:
+            return False
+        for name in ("is_output_artifact", "is_runtime_artifact", "is_calc_artifact"):
+            checker = getattr(self._sro, name, None)
+            if callable(checker) and checker(path):
+                return True
+        return False
 
     @staticmethod
     def _resolve(token: str, cwd: str) -> Path | None:

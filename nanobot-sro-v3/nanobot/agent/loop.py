@@ -1412,6 +1412,8 @@ class AgentLoop:
         ctx.all_messages = all_msgs
         ctx.stop_reason = stop_reason
         ctx.had_injections = had_injections
+        if self._sro is not None:
+            self._sro.finish_episode(ctx.session_key)
         return "ok"
 
     async def _state_save(self, ctx: TurnContext) -> str:

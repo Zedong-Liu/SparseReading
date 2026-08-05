@@ -7,11 +7,13 @@ import json
 import os
 import re
 from collections.abc import Callable
+from contextvars import ContextVar
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
-from sparseread.core.benefit_gate import BenefitDecision, BenefitGate
+from sparseread.core.benefit_gate import BenefitDecision, BenefitGate, GateContext
 from sparseread.core.detector import FileInfo, inspect_file
+from sparseread.core.episode import EpisodeController, ReadingEpisode
 from sparseread.core.models import (
     VALID_MODES,
     EvidenceBlock,
@@ -29,9 +31,21 @@ from sparseread.core.readers.text import TextReader
 class SparseReadingOrchestrator:
     """Coordinate FileCard, HintSpec, typed readers, and artifact continuity."""
 
-    _STRUCTURED = {"csv", "xlsx", "json", "yaml", "xml"}
-    _TEXT = {"pdf", "text", "txt", "md", "markdown", "rst"}
+    _STRUCTURED: ClassVar[set[str]] = {"csv", "xlsx", "json", "yaml", "xml"}
+    _TEXT: ClassVar[set[str]] = {"pdf", "text", "txt", "md", "markdown", "rst", "html", "htm"}
     _MAX_RAW_REFS = 512
+    _MAX_EPISODE_HINT_PROBES = 256
+    _AMBIGUOUS_EPISODE_CODES: ClassVar[set[str]] = {
+        "collection_goal_required",
+        "large_text_collection_boundary",
+    }
+    _HIDDEN_RUNTIME_ROOTS: ClassVar[set[str]] = {
+        ".sparseread",
+        ".nanobot",
+        ".opencode",
+        ".openclaw",
+    }
+    _READY_STATUSES: ClassVar[set[str]] = {"ready", "ready_for_compute"}
 
     def __init__(
         self,
@@ -44,6 +58,7 @@ class SparseReadingOrchestrator:
         self.workspace = workspace
         self._path_to_artifact: dict[str, str] = {}
         self._artifacts: dict[str, FileInfo] = {}
+        self._artifact_conversations: dict[str, str] = {}
         self.structured_reader = StructuredReader()
         self.collection_reader = CollectionReader()
         self.benefit_gate = BenefitGate(self.collection_reader, override=benefit_gate_override)
@@ -59,12 +74,22 @@ class SparseReadingOrchestrator:
         self._native_escape_collection_artifacts: set[str] = set()
         self._required_outputs_by_artifact: dict[str, set[str]] = {}
         self._written_outputs_by_artifact: dict[str, set[str]] = {}
+        self._written_paths_by_conversation: dict[str, set[str]] = {}
         self._native_collection_roots: set[str] = set()
         self._diagnostic_sections: dict[str, dict[str, str]] = {}
         self._raw_refs: dict[str, Path] = {}
         self._macro_activation_callback = macro_activation_callback
         self._macro_available = macro_available
         self._macro_requested = False
+        self.episodes = EpisodeController()
+        self._request_context: ContextVar[dict[str, str] | None] = ContextVar(
+            f"sparseread_request_context_{id(self)}",
+            default=None,
+        )
+        # A missing semantic hint gets one bounded retry per host turn.  The
+        # second omission fails open to native/advisory behavior, so a model
+        # that ignores the probe cannot enter a tool-call loop.
+        self._episode_hint_probes: dict[str, int] = {}
 
     @property
     def macro_available(self) -> bool:
@@ -76,6 +101,224 @@ class SparseReadingOrchestrator:
 
     def mark_macro_available(self) -> None:
         self._macro_available = True
+
+    def set_context(self, context: Any) -> None:
+        """Bind host request identity to the current async execution context."""
+        if isinstance(context, dict):
+            get = context.get
+        else:
+            get = lambda key, default=None: getattr(context, key, default)
+        conversation_id = str(
+            get("conversation_id")
+            or get("session_key")
+            or get("session_id")
+            or "default"
+        )
+        turn_id = str(get("turn_id") or get("message_id") or "")
+        self._request_context.set({"conversation_id": conversation_id, "turn_id": turn_id})
+
+    def bind_episode(
+        self,
+        path: str | Path,
+        context: GateContext | dict[str, Any] | None = None,
+    ) -> tuple[BenefitDecision, ReadingEpisode]:
+        info = self.inspect(path)
+        hint = GateContext.from_value(context)
+        if hint.goal != "unknown" or hint.relation != "unknown" or hint.coverage != "unknown":
+            self._episode_hint_probes.pop(self._episode_hint_probe_key(), None)
+            self._forget_native_roots_related_to(info.path)
+        proposed = self.benefit_gate.decide(info, hint)
+        request = self._request_context.get() or {"conversation_id": "default", "turn_id": ""}
+        conversation_id = request.get("conversation_id", "default")
+        previous = self.episodes.current(conversation_id)
+        previous_id = previous.episode_id if previous else ""
+        previous_goal = previous.goal if previous else "unknown"
+        previous_coverage = previous.coverage if previous else "unknown"
+        decision, episode = self.episodes.bind(
+            conversation_id=conversation_id,
+            turn_id=request.get("turn_id", ""),
+            scope=info.path,
+            proposed=proposed,
+            hint=hint,
+        )
+        semantic_changed = bool(
+            previous_id
+            and previous_id == episode.episode_id
+            and (
+                (hint.goal != "unknown" and hint.goal != previous_goal)
+                or (hint.coverage != "unknown" and hint.coverage != previous_coverage)
+            )
+        )
+        if (previous_id and previous_id != episode.episode_id) or semantic_changed:
+            self.reopen_path(info.path)
+            self._forget_native_roots_related_to(info.path)
+        return decision, episode
+
+    def episode_hint_probe(self, path: str | Path, *, tool_name: str) -> dict[str, Any] | None:
+        """Ask once for model intent when file shape alone cannot route safely."""
+        if not self.enabled() or self._outside_workspace(path):
+            return None
+        info = self.inspect(path)
+        if self._active_episode_decision(info) is not None:
+            return None
+        decision = self.benefit_gate.decide(info)
+        if decision.code not in self._AMBIGUOUS_EPISODE_CODES:
+            return None
+        # Ask only when a tested semantic route can actually cross the force
+        # boundary. Tiny/advisory-only collections stay native without paying
+        # for a model retry.
+        force_candidate = any(
+            self.benefit_gate.decide(info, candidate).mode == "force_sro"
+            for candidate in (
+                GateContext(goal="cross_file_evidence", coverage="selective"),
+                GateContext(goal="structured_compute", coverage="selective"),
+            )
+        )
+        if not force_candidate:
+            return None
+
+        key = self._episode_hint_probe_key()
+        attempts = self._episode_hint_probes.get(key, 0)
+        if attempts:
+            self._episode_hint_probes[key] = 2
+            self._remember_native_collection_root(info)
+            return None
+        self._episode_hint_probes[key] = 1
+        while len(self._episode_hint_probes) > self._MAX_EPISODE_HINT_PROBES:
+            self._episode_hint_probes.pop(next(iter(self._episode_hint_probes)))
+
+        prior = self.current_episode()
+        payload: dict[str, Any] = {
+            "sro_gate_probe": True,
+            "message": (
+                "This collection is useful for both native work and SparseRead evidence work, "
+                "so its shape alone is not enough to choose. Re-evaluate the current user goal "
+                "and retry this same tool once with episode_hint. If you omit it again, the tool "
+                "will continue natively instead of asking again."
+            ),
+            "decision_boundary": decision.code,
+            "next_action": {
+                "tool": tool_name,
+                "path": str(info.path),
+                "episode_hint": {
+                    "relation": "new | continue | switch",
+                    "goal": (
+                        "selective_read | cross_file_evidence | structured_compute | "
+                        "edit_or_execute | full_fidelity"
+                    ),
+                    "coverage": "selective | exhaustive | unknown",
+                    "summary": "one short statement of the current goal and resource scope",
+                },
+            },
+        }
+        if prior is not None:
+            payload["prior_episode"] = {
+                "scope": str(prior.scope),
+                "goal": prior.goal,
+                "coverage": prior.coverage,
+                "summary": prior.summary,
+                "status": prior.status,
+            }
+        return payload
+
+    def _episode_hint_probe_key(self) -> str:
+        request = self._request_context.get() or {"conversation_id": "default", "turn_id": ""}
+        return f"{request.get('conversation_id', 'default')}\0{request.get('turn_id', '')}"
+
+    def clear_episode_hint_probe(self, path: str | Path | None = None) -> None:
+        self._episode_hint_probes.pop(self._episode_hint_probe_key(), None)
+        if path is not None:
+            self._forget_native_roots_related_to(path)
+
+    def finish_episode(self, conversation_id: str | None = None) -> ReadingEpisode | None:
+        request = self._request_context.get() or {"conversation_id": "default", "turn_id": ""}
+        return self.episodes.mark_final(conversation_id or request.get("conversation_id", "default"))
+
+    def current_episode(self) -> ReadingEpisode | None:
+        request = self._request_context.get() or {"conversation_id": "default", "turn_id": ""}
+        return self.episodes.current(request.get("conversation_id", "default"))
+
+    def end_conversation(self, conversation_id: str) -> ReadingEpisode | None:
+        """Discard all per-conversation state after a host session reset/end."""
+        owner = conversation_id or "default"
+        owned_artifacts = {
+            artifact_id
+            for artifact_id, artifact_owner in self._artifact_conversations.items()
+            if artifact_owner == owner
+        }
+        owned_path_keys = {
+            key
+            for key, artifact_id in self._path_to_artifact.items()
+            if artifact_id in owned_artifacts
+        }
+        for key in owned_path_keys:
+            self._path_to_artifact.pop(key, None)
+            self._native_collection_roots.discard(key)
+        for mapping in (self._collection_child_guards, self._ready_collection_child_guards):
+            for key, artifact_id in list(mapping.items()):
+                if artifact_id in owned_artifacts:
+                    mapping.pop(key, None)
+                    self._native_collection_roots.discard(key)
+        for artifact_id in owned_artifacts:
+            self._artifacts.pop(artifact_id, None)
+            self._artifact_conversations.pop(artifact_id, None)
+            self._slot_digests.pop(artifact_id, None)
+            self._collection_artifact_children.pop(artifact_id, None)
+            self._ready_collection_artifacts.pop(artifact_id, None)
+            self._ready_collection_evidence.pop(artifact_id, None)
+            self._ready_collection_guard_counts.pop(artifact_id, None)
+            self._native_escape_collection_artifacts.discard(artifact_id)
+            self._required_outputs_by_artifact.pop(artifact_id, None)
+            self._written_outputs_by_artifact.pop(artifact_id, None)
+            self._diagnostic_sections.pop(artifact_id, None)
+        for raw_ref in list(self._raw_refs):
+            if self._raw_ref_artifact_id(raw_ref) in owned_artifacts:
+                self._raw_refs.pop(raw_ref, None)
+        prefix = f"{owner}\0"
+        if owner != "default":
+            self._native_collection_roots = {
+                key for key in self._native_collection_roots if not key.startswith(prefix)
+            }
+        for key in list(self._episode_hint_probes):
+            if key.startswith(prefix):
+                self._episode_hint_probes.pop(key, None)
+        self._written_paths_by_conversation.pop(owner, None)
+        return self.episodes.end(owner)
+
+    def _conversation_id(self) -> str:
+        request = self._request_context.get() or {"conversation_id": "default"}
+        return request.get("conversation_id", "default")
+
+    def _state_path_key(self, path: str | Path) -> str:
+        try:
+            normalized = str(Path(path).resolve(strict=False))
+        except Exception:
+            normalized = str(path)
+        conversation_id = self._conversation_id()
+        return normalized if conversation_id == "default" else f"{conversation_id}\0{normalized}"
+
+    def reopen_artifact(self, artifact_id: str) -> None:
+        """Allow a model-confirmed follow-up to gather genuinely new evidence."""
+        self._slot_digests.pop(artifact_id, None)
+        self._ready_collection_artifacts.pop(artifact_id, None)
+        self._ready_collection_evidence.pop(artifact_id, None)
+        self._ready_collection_guard_counts.pop(artifact_id, None)
+        self._native_escape_collection_artifacts.discard(artifact_id)
+        self._required_outputs_by_artifact.pop(artifact_id, None)
+        self._written_outputs_by_artifact.pop(artifact_id, None)
+        self._diagnostic_sections.pop(artifact_id, None)
+        for mapping in (self._collection_child_guards, self._ready_collection_child_guards):
+            for key, owner in list(mapping.items()):
+                if owner == artifact_id:
+                    mapping.pop(key, None)
+        info = self._artifacts.get(artifact_id)
+        if info is not None:
+            self._forget_native_roots_related_to(info.path)
+
+    def reopen_path(self, path: str | Path) -> None:
+        artifact_id = self._path_to_artifact.get(self._state_path_key(path))
+        if artifact_id:
+            self.reopen_artifact(artifact_id)
 
     def request_macro_activation(self) -> None:
         self._macro_requested = True
@@ -113,33 +356,14 @@ class SparseReadingOrchestrator:
         parts = resolved.parts
         return "sro-calc" in parts and bool({".sparseread", ".nanobot"} & set(parts))
 
-    @staticmethod
-    def is_output_artifact(path: str | Path) -> bool:
+    def is_output_artifact(self, path: str | Path) -> bool:
+        """Return whether the active conversation actually wrote this path."""
         try:
             resolved = Path(path).resolve(strict=False)
         except Exception:
             resolved = Path(path)
-        generated_names = {
-            "answer.txt",
-            "command_classifications.json",
-            "fetch-audit.md",
-            "final_answer.md",
-            "diagnosis_report.md",
-            "did_results_summary.md",
-            "metrics_summary.json",
-            "monitoring-status.md",
-            "analysis_results.json",
-            "security_analysis_report.md",
-            "solution_report.md",
-            "eviction_analysis.json",
-            "bug_fixes.json",
-            "query_output.sparql",
-            "filtered_query.sparql",
-        }
-        if resolved.name.lower() in generated_names:
-            return True
-        output_dirs = {"reports", "outputs", "results"}
-        return any(part.lower() in output_dirs for part in resolved.parts)
+        written = self._written_paths_by_conversation.get(self._conversation_id(), set())
+        return str(resolved) in written
 
     @staticmethod
     def is_skill_artifact(path: str | Path) -> bool:
@@ -150,14 +374,14 @@ class SparseReadingOrchestrator:
         parts = [part.lower() for part in resolved.parts]
         return "nanobot" in parts and "skills" in parts
 
-    @staticmethod
-    def is_runtime_artifact(path: str | Path) -> bool:
+    @classmethod
+    def is_runtime_artifact(cls, path: str | Path) -> bool:
         try:
             resolved = Path(path).resolve(strict=False)
         except Exception:
             resolved = Path(path)
         parts = {part.lower() for part in resolved.parts}
-        return bool(parts & {".sparseread", ".nanobot", ".opencode", ".openclaw", "sessions", "bootstrap", "__pycache__"})
+        return bool(parts & cls._HIDDEN_RUNTIME_ROOTS)
 
     def should_handoff_read(self, path: str | Path, *, offset: int = 1, limit: int | None = None, pages: str | None = None) -> bool:
         if not self.enabled():
@@ -173,8 +397,9 @@ class SparseReadingOrchestrator:
         if self.is_runtime_artifact(path):
             return False
         info = self.inspect(path)
-        decision = self.benefit_gate.decide(info)
-        if self._is_native_collection_child(path) and decision.action != "intercept":
+        episode_decision = self._active_episode_decision(info)
+        decision = episode_decision or self.benefit_gate.decide(info)
+        if self._is_native_collection_child(path) and episode_decision is None:
             return False
         ready_child_artifact = self._ready_collection_child_artifact(path)
         if ready_child_artifact:
@@ -185,7 +410,7 @@ class SparseReadingOrchestrator:
             return True
         if self._nearest_force_collection_root(path) is not None:
             return True
-        if not self._macro_available and self._is_weak_lazy_child(path, info, decision):
+        if episode_decision is None and not self._macro_available and self._is_weak_lazy_child(path, info, decision):
             return False
         if self._is_child_of_nonforce_benefit_bundle(path, child_decision=decision):
             return False
@@ -204,24 +429,70 @@ class SparseReadingOrchestrator:
             return False
         if self._outside_workspace(path):
             return False
+        info = self.inspect(path)
+        episode_decision = self._active_episode_decision(info)
         try:
-            if str(Path(path).resolve(strict=False)) in self._native_collection_roots:
+            if episode_decision is None and self._state_path_key(path) in self._native_collection_roots:
                 return False
         except Exception:
             pass
-        info = self.inspect(path)
-        artifact_id = self._path_to_artifact.get(str(info.path))
+        artifact_id = self._path_to_artifact.get(self._state_path_key(info.path))
         if artifact_id and self._is_native_escape_collection(artifact_id):
             return False
-        decision = self.benefit_gate.decide(info)
+        decision = episode_decision or self.benefit_gate.decide(info)
         if decision.mode == "native":
             self._remember_native_collection_root(info)
+        elif episode_decision is not None:
+            self._forget_native_roots_related_to(info.path)
         return info.type == "collection" and decision.action == "intercept"
 
-    def card(self, path: str | Path) -> FileCard:
+    def _active_episode_decision(self, info: FileInfo) -> BenefitDecision | None:
+        episode = self.current_episode()
+        if episode is None or episode.status == "resolved":
+            return None
+        try:
+            scope = episode.scope.resolve(strict=False)
+            path = info.path.resolve(strict=False)
+        except Exception:
+            scope = episode.scope
+            path = info.path
+        if scope == path or scope in path.parents or path in scope.parents:
+            return episode.decision
+        return None
+
+    def _forget_native_roots_related_to(self, path: str | Path) -> None:
+        try:
+            target = Path(path).resolve(strict=False)
+        except Exception:
+            target = Path(path)
+        prefix = f"{self._conversation_id()}\0"
+        for key in list(self._native_collection_roots):
+            if self._conversation_id() != "default":
+                if not key.startswith(prefix):
+                    continue
+                raw_path = key[len(prefix) :]
+            else:
+                if "\0" in key:
+                    continue
+                raw_path = key
+            try:
+                candidate = Path(raw_path).resolve(strict=False)
+            except Exception:
+                candidate = Path(raw_path)
+            if candidate == target or candidate in target.parents or target in candidate.parents:
+                self._native_collection_roots.discard(key)
+
+    def card(
+        self,
+        path: str | Path,
+        gate_context: GateContext | dict[str, Any] | None = None,
+    ) -> FileCard:
         info = self.inspect(path)
         artifact_id = self._artifact_for(info)
-        decision = self.benefit_gate.decide(info)
+        if gate_context is None:
+            decision = self._active_episode_decision(info) or self.benefit_gate.decide(info)
+        else:
+            decision, _ = self.bind_episode(info.path, gate_context)
         reason = decision.reason
         recommended_mode = decision.recommended_mode
         details: dict[str, Any] = {}
@@ -249,7 +520,11 @@ class SparseReadingOrchestrator:
             details=details,
         )
 
-    def preview(self, target: Any) -> PreviewPack:
+    def preview(
+        self,
+        target: Any,
+        gate_context: GateContext | dict[str, Any] | None = None,
+    ) -> PreviewPack:
         artifact_id, info, err = self._resolve_preview_target(target)
         if err:
             return PreviewPack(
@@ -267,7 +542,7 @@ class SparseReadingOrchestrator:
                 raw_ref="",
                 error="preview target could not be resolved",
             )
-        card = self.card(info.path)
+        card = self.card(info.path, gate_context)
         raw_ref = self._raw_ref_for(card.artifact_id, info.path)
         return self.preview_builder.build(info, card, raw_ref)
 
@@ -380,6 +655,7 @@ class SparseReadingOrchestrator:
         child_guard = self._collection_child_guard(path)
         if child_guard:
             return child_guard
+        episode = self.current_episode()
         parent_artifact = self._parent_collection_artifact(path)
         if parent_artifact:
             parent_info = self._artifacts[parent_artifact]
@@ -408,7 +684,17 @@ class SparseReadingOrchestrator:
                 },
             }
             return json.dumps(payload, ensure_ascii=False, indent=2)
-        parent_root = self._nearest_force_collection_root(path)
+        parent_root: Path | None = None
+        if episode is not None and episode.status != "resolved" and episode.decision.action == "intercept":
+            try:
+                child = Path(path).resolve(strict=False)
+                scope = episode.scope.resolve(strict=False)
+                if scope in child.parents and self.inspect(scope).type == "collection":
+                    parent_root = scope
+            except Exception:
+                parent_root = None
+        if parent_root is None:
+            parent_root = self._nearest_force_collection_root(path)
         if parent_root is not None:
             parent_card = self.card(parent_root)
             payload = {
@@ -450,18 +736,39 @@ class SparseReadingOrchestrator:
                 },
             }
             return json.dumps(payload, ensure_ascii=False, indent=2)
+        structured_prelude = (
+            card.type == "collection"
+            and episode is not None
+            and episode.status != "resolved"
+            and episode.decision.code == "structured_analysis_plan"
+        )
+        hint_goal = (
+            episode.summary
+            if episode is not None and episode.summary
+            else "state what evidence is needed from this object"
+        )
         payload = {
             "sro_handoff": True,
-            "message": "Large supported object detected. Do not full-read it first, and do not keep calling read_file on the same object. Bind to the returned artifact_id and continue with sro_read using a HintSpec. For multi-question PDF/report QA, use mode='collect' with hint.slots as the first read. For collections, use mode='collect' to get source-keyed excerpts for the task; use mode='focus' only when you only need candidate filenames.",
+            "message": (
+                "This structured collection requires one bounded SRO collect before native compute or editing. "
+                "Call the supplied sro_read next action once; after it reports ready_for_compute, write or run "
+                "the native script and do not reread the collection."
+                if structured_prelude
+                else "Large supported object detected. Do not full-read it first, and do not keep calling read_file on the same object. Bind to the returned artifact_id and continue with sro_read using a HintSpec. For multi-question PDF/report QA, use mode='collect' with hint.slots as the first read. For collections, use mode='collect' to get source-keyed excerpts for the task; use mode='focus' only when you only need candidate filenames."
+            ),
             "file_card": card.to_dict(),
             "next_action": {
                 "tool": "sro_read",
                 "target": {"artifact_id": card.artifact_id},
                 "mode": "collect" if card.type == "collection" else "scout",
+                "instruction": (
+                    "Use this one collect as the structured planning prelude. Do not explore source tables with native reads or exec first."
+                    if structured_prelude else "Read the sparse object using the supplied artifact and task goal."
+                ),
                 "hint": {
-                    "goal": "state what evidence is needed from this object",
+                    "goal": hint_goal,
                     "needles": [],
-                    "want": "fact",
+                    "want": "schema" if structured_prelude else "fact",
                     "scope": "new",
                     "artifact": card.artifact_id,
                     "type_hint": "text" if card.type == "txt" else card.type,
@@ -471,7 +778,13 @@ class SparseReadingOrchestrator:
         }
         return json.dumps(payload, ensure_ascii=False, indent=2)
 
-    def read(self, target: Any, mode: str, hint_obj: Any) -> EvidencePack:
+    def read(
+        self,
+        target: Any,
+        mode: str,
+        hint_obj: Any,
+        gate_context: GateContext | dict[str, Any] | None = None,
+    ) -> EvidencePack:
         if mode not in VALID_MODES:
             return EvidencePack("", mode, "unknown", "protocol error", error=f"mode must be one of {sorted(VALID_MODES)}")
         hint, errors = HintSpec.from_obj(hint_obj)
@@ -497,6 +810,15 @@ class SparseReadingOrchestrator:
             return EvidencePack(artifact_id or "", mode, "unknown", "protocol error", error=err)
         if info is None:
             return EvidencePack(artifact_id or "", mode, "unknown", "protocol error", error="target could not be resolved")
+        explicit_gate = gate_context is not None
+        if explicit_gate:
+            decision, episode = self.bind_episode(info.path, gate_context)
+        else:
+            active_decision = self._active_episode_decision(info)
+            decision = active_decision or self.benefit_gate.decide(info)
+            episode = self.current_episode() if active_decision else None
+        if (explicit_gate or episode is not None) and decision.mode == "native":
+            return self._native_gate_pack(artifact_id, mode, info.type, decision)
         if info.type in self._TEXT or info.path.suffix.lower() in {".txt", ".md", ".markdown", ".rst", ".pdf"}:
             gated = self._text_readiness_gate(artifact_id, info.type, mode, hint)
             if gated:
@@ -518,7 +840,6 @@ class SparseReadingOrchestrator:
         if info.type == "collection":
             if self._is_native_escape_collection(artifact_id):
                 return self._native_escape_pack(artifact_id, mode)
-            decision = self.benefit_gate.decide(info)
             if decision.mode == "native":
                 self._remember_native_collection_root(info)
                 return self._native_collection_pack(artifact_id, mode, decision)
@@ -531,6 +852,12 @@ class SparseReadingOrchestrator:
                 self._diagnostic_sections[artifact_id] = pack.next_action.pop("_diagnostic_sections")
             if mode == "collect" and pack.evidence:
                 self._remember_collection_children(info.path, artifact_id, pack)
+            if episode is not None and self._pack_ready(pack):
+                self.episodes.mark_ready(
+                    conversation_id=episode.conversation_id,
+                    scope=info.path,
+                    closure_ref=artifact_id,
+                )
             return pack
         budget = self._budget(mode)
         if info.type in self._STRUCTURED:
@@ -539,6 +866,12 @@ class SparseReadingOrchestrator:
             pack = self.text_reader.read(info.path, artifact_id, mode, hint, budget)
             if pack.slot_digest:
                 self._slot_digests[artifact_id] = pack.slot_digest
+            if episode is not None and self._pack_ready(pack):
+                self.episodes.mark_ready(
+                    conversation_id=episode.conversation_id,
+                    scope=info.path,
+                    closure_ref=artifact_id,
+                )
             return pack
         return EvidencePack(artifact_id, mode, info.type, "unsupported type", error=f"SRO does not support {info.path}")
 
@@ -550,7 +883,7 @@ class SparseReadingOrchestrator:
         artifact_id = str(target.get("artifact_id") or "").strip()
         if artifact_id:
             info = self._artifacts.get(artifact_id)
-            if info:
+            if info and self._artifact_conversations.get(artifact_id, "default") == self._conversation_id():
                 return artifact_id, info, ""
             return artifact_id, None, f"unknown artifact_id {artifact_id!r}; call sro_preview with path first"
         path = str(target.get("path") or "").strip()
@@ -569,10 +902,12 @@ class SparseReadingOrchestrator:
         return key
 
     def _resolve_raw_ref(self, raw_ref: str) -> tuple[str, Path | None]:
+        artifact_id = self._raw_ref_artifact_id(raw_ref)
+        if artifact_id and self._artifact_conversations.get(artifact_id, "default") != self._conversation_id():
+            return raw_ref, None
         path = self._raw_refs.get(raw_ref)
         if path is not None:
             return raw_ref, path
-        artifact_id = self._raw_ref_artifact_id(raw_ref)
         if artifact_id:
             prefix = f"raw:{artifact_id}:"
             matches = [key for key in self._raw_refs if key.startswith(prefix)]
@@ -697,7 +1032,7 @@ class SparseReadingOrchestrator:
             info = self.inspect(path)
         except Exception:
             return False
-        artifact_id = self._path_to_artifact.get(str(info.path))
+        artifact_id = self._path_to_artifact.get(self._state_path_key(info.path))
         return bool(artifact_id and artifact_id in self._slot_digests)
 
     @staticmethod
@@ -788,10 +1123,19 @@ class SparseReadingOrchestrator:
 
     @staticmethod
     def _native_collection_pack(artifact_id: str, mode: str, decision: BenefitDecision) -> EvidencePack:
+        return SparseReadingOrchestrator._native_gate_pack(artifact_id, mode, "collection", decision)
+
+    @staticmethod
+    def _native_gate_pack(
+        artifact_id: str,
+        mode: str,
+        resource_type: str,
+        decision: BenefitDecision,
+    ) -> EvidencePack:
         return EvidencePack(
             artifact_id=artifact_id,
             mode=mode,
-            type="collection",
+            type=resource_type,
             summary=f"low-sparse fallback: {decision.reason}",
             evidence=[],
             next_action={
@@ -807,7 +1151,7 @@ class SparseReadingOrchestrator:
         artifact_id = str(target.get("artifact_id") or hint.artifact or "").strip()
         if artifact_id:
             info = self._artifacts.get(artifact_id)
-            if info:
+            if info and self._artifact_conversations.get(artifact_id, "default") == self._conversation_id():
                 return artifact_id, info, ""
             return artifact_id, None, f"unknown artifact_id {artifact_id!r}; call sro_card or scout with path first"
         path = str(target.get("path") or "").strip()
@@ -824,7 +1168,7 @@ class SparseReadingOrchestrator:
         return hint.artifact
 
     def _artifact_for(self, info: FileInfo) -> str:
-        key = str(info.path)
+        key = self._state_path_key(info.path)
         existing = self._path_to_artifact.get(key)
         if existing:
             return existing
@@ -832,13 +1176,19 @@ class SparseReadingOrchestrator:
         artifact_id = f"sro_{digest}"
         self._path_to_artifact[key] = artifact_id
         self._artifacts[artifact_id] = info
+        self._artifact_conversations[artifact_id] = self._conversation_id()
         return artifact_id
 
-    def _remember_collection_children(self, root: Path, artifact_id: str, pack: EvidencePack) -> None:
-        ready = (
-            bool(pack.slot_digest and pack.slot_digest.get("overall_status") == "ready")
-            or bool(pack.next_action and pack.next_action.get("overall_status") == "ready")
+    @staticmethod
+    def _pack_ready(pack: EvidencePack) -> bool:
+        ready_statuses = SparseReadingOrchestrator._READY_STATUSES
+        return bool(
+            (pack.slot_digest and pack.slot_digest.get("overall_status") in ready_statuses)
+            or (pack.next_action and pack.next_action.get("overall_status") in ready_statuses)
         )
+
+    def _remember_collection_children(self, root: Path, artifact_id: str, pack: EvidencePack) -> None:
+        ready = self._pack_ready(pack)
         if ready:
             next_action = pack.next_action or {}
             self._ready_collection_artifacts[artifact_id] = {
@@ -865,18 +1215,18 @@ class SparseReadingOrchestrator:
             child = (root / source).resolve(strict=False)
             try:
                 if child.is_file():
-                    self._collection_child_guards[str(child)] = artifact_id
+                    self._collection_child_guards[self._state_path_key(child)] = artifact_id
                     if ready:
-                        self._ready_collection_child_guards[str(child)] = artifact_id
+                        self._ready_collection_child_guards[self._state_path_key(child)] = artifact_id
             except OSError:
                 continue
         for block in pack.evidence:
             child = (root / block.anchor).resolve(strict=False)
             try:
                 if child.is_file():
-                    self._collection_child_guards[str(child)] = artifact_id
+                    self._collection_child_guards[self._state_path_key(child)] = artifact_id
                     if ready:
-                        self._ready_collection_child_guards[str(child)] = artifact_id
+                        self._ready_collection_child_guards[self._state_path_key(child)] = artifact_id
             except OSError:
                 continue
 
@@ -889,16 +1239,44 @@ class SparseReadingOrchestrator:
 
     def _collection_child_guard(self, path: str | Path) -> str:
         try:
-            key = str(Path(path).resolve(strict=False))
+            key = self._state_path_key(path)
             if key not in self._collection_child_guards and self.workspace and not Path(path).is_absolute():
-                key = str((self.workspace / path).resolve(strict=False))
+                key = self._state_path_key(self.workspace / path)
         except Exception:
-            key = str(path)
+            key = self._state_path_key(path)
         artifact_id = self._collection_child_guards.get(key)
         if not artifact_id:
             return ""
-        if key in self._ready_collection_child_guards:
-            self._record_ready_collection_guard(artifact_id)
+        if key not in self._ready_collection_child_guards:
+            return json.dumps(
+                {
+                    "sro_guard": True,
+                    "message": (
+                        "This source appeared in a partial collection digest, but the evidence "
+                        "episode is not ready. Continue with a focused SRO read on the parent "
+                        "artifact; do not treat the partial digest as complete."
+                    ),
+                    "covered_by_artifact": artifact_id,
+                    "evidence_complete_for_source": False,
+                    "allowed_next": ["sro_read"],
+                    "next_action": {
+                        "tool": "sro_read",
+                        "target": {"artifact_id": artifact_id},
+                        "mode": "focus",
+                        "hint": {
+                            "goal": f"resolve missing evidence from {Path(path).name}",
+                            "needles": [Path(path).name],
+                            "want": "fact",
+                            "scope": "verify",
+                            "artifact": artifact_id,
+                            "type_hint": "collection",
+                        },
+                    },
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        self._record_ready_collection_guard(artifact_id)
         ready = self._ready_collection_artifacts.get(artifact_id, {})
         required = self._required_outputs_by_artifact.get(artifact_id, set())
         written = self._written_outputs_by_artifact.get(artifact_id, set())
@@ -929,11 +1307,11 @@ class SparseReadingOrchestrator:
 
     def _ready_collection_child_artifact(self, path: str | Path) -> str:
         try:
-            key = str(Path(path).resolve(strict=False))
+            key = self._state_path_key(path)
             if key not in self._ready_collection_child_guards and self.workspace and not Path(path).is_absolute():
-                key = str((self.workspace / path).resolve(strict=False))
+                key = self._state_path_key(self.workspace / path)
         except Exception:
-            key = str(path)
+            key = self._state_path_key(path)
         return self._ready_collection_child_guards.get(key, "")
 
     def _record_ready_collection_guard(self, artifact_id: str) -> None:
@@ -957,13 +1335,21 @@ class SparseReadingOrchestrator:
 
     def record_output_write(self, path: str | Path) -> str:
         try:
-            name = Path(path).resolve(strict=False).name
+            resolved = Path(path).resolve(strict=False)
         except Exception:
-            name = Path(path).name
+            resolved = Path(path)
+        if not resolved.is_file():
+            return ""
+        self._written_paths_by_conversation.setdefault(self._conversation_id(), set()).add(
+            str(resolved)
+        )
+        name = resolved.name
         if not name:
             return ""
         reminders: list[str] = []
         for artifact_id, required in self._required_outputs_by_artifact.items():
+            if self._artifact_conversations.get(artifact_id, "default") != self._conversation_id():
+                continue
             if name not in required:
                 continue
             written = self._written_outputs_by_artifact.setdefault(artifact_id, set())
@@ -985,6 +1371,8 @@ class SparseReadingOrchestrator:
         except Exception:
             resolved = Path(path)
         for artifact_id, info in self._artifacts.items():
+            if self._artifact_conversations.get(artifact_id, "default") != self._conversation_id():
+                continue
             if info.type != "collection":
                 continue
             if self._is_native_escape_collection(artifact_id):
@@ -997,6 +1385,8 @@ class SparseReadingOrchestrator:
                 children = self._collection_artifact_children.get(artifact_id)
                 if children is not None and str(resolved) not in children:
                     continue
+                if artifact_id in self._ready_collection_artifacts:
+                    return artifact_id
                 if self.benefit_gate.decide(info).action != "intercept":
                     continue
                 return artifact_id
@@ -1018,15 +1408,17 @@ class SparseReadingOrchestrator:
             resolved = Path(path).resolve(strict=False)
         except Exception:
             return False
-        return any(root == str(resolved) or Path(root) in resolved.parents for root in self._native_collection_roots)
+        candidates = {self._state_path_key(resolved)}
+        candidates.update(self._state_path_key(parent) for parent in resolved.parents)
+        return bool(candidates & self._native_collection_roots)
 
     def _remember_native_collection_root(self, info: FileInfo) -> None:
         if info.type != "collection":
             return
         try:
-            self._native_collection_roots.add(str(info.path.resolve(strict=False)))
+            self._native_collection_roots.add(self._state_path_key(info.path))
         except Exception:
-            self._native_collection_roots.add(str(info.path))
+            self._native_collection_roots.add(self._state_path_key(info.path))
 
     def _outside_workspace(self, path: str | Path) -> bool:
         if self.workspace is None:
@@ -1065,7 +1457,7 @@ class SparseReadingOrchestrator:
                     continue
                 decision = self.benefit_gate.decide(self.inspect(parent))
                 if decision.mode == "native":
-                    self._native_collection_roots.add(str(parent.resolve(strict=False)))
+                    self._native_collection_roots.add(self._state_path_key(parent))
                     return True
             except Exception:
                 continue
@@ -1128,7 +1520,7 @@ class SparseReadingOrchestrator:
                 info = self.inspect(parent)
                 if info.type != "collection" or not self.collection_reader._items(parent):
                     continue
-                artifact_id = self._path_to_artifact.get(str(info.path))
+                artifact_id = self._path_to_artifact.get(self._state_path_key(info.path))
                 if artifact_id and self._is_native_escape_collection(artifact_id):
                     continue
                 if self.benefit_gate.decide(info).action == "intercept":

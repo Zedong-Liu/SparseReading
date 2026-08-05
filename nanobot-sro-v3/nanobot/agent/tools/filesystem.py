@@ -1,6 +1,7 @@
 """File system tools: read, write, edit, list."""
 
 import difflib
+import json
 import mimetypes
 import os
 from dataclasses import dataclass
@@ -13,10 +14,36 @@ from nanobot.agent.tools.path_utils import resolve_workspace_path
 from nanobot.agent.tools.schema import (
     BooleanSchema,
     IntegerSchema,
+    ObjectSchema,
     StringSchema,
     tool_parameters_schema,
 )
 from nanobot.utils.helpers import build_image_content_blocks, detect_image_mime
+
+_EPISODE_HINT_PARAMETER = ObjectSchema(
+    {
+        "relation": StringSchema(enum=["new", "continue", "switch", "unknown"]),
+        "goal": StringSchema(
+            enum=[
+                "selective_read",
+                "cross_file_evidence",
+                "structured_compute",
+                "edit_or_execute",
+                "full_fidelity",
+                "unknown",
+            ]
+        ),
+        "coverage": StringSchema(enum=["selective", "exhaustive", "unknown"]),
+        "summary": StringSchema(max_length=500),
+    },
+    description=(
+        "On the first read/list of an episode, label its semantic route. Use edit_or_execute "
+        "when the primary deliverable is code/query/config or a single-table exact calculation; "
+        "use structured_compute for analysis over at least three structured datasets, and "
+        "cross_file_evidence for audit/diagnosis across several sources."
+    ),
+    additional_properties=False,
+)
 
 
 class _FsTool(Tool):
@@ -39,6 +66,10 @@ class _FsTool(Tool):
         # current async task, which keeps shared tool instances session-safe.
         self._explicit_file_states = file_states
         self._fallback_file_states = FileStates()
+
+    def set_context(self, ctx: Any) -> None:
+        if self._sro is not None:
+            self._sro.set_context(ctx)
 
     @classmethod
     def create(cls, ctx: Any) -> Tool:
@@ -65,12 +96,50 @@ class _FsTool(Tool):
         return current_file_states(self._fallback_file_states)
 
     def _resolve(self, path: str) -> Path:
+        alias = self._workspace_alias(path)
+        if alias is not None:
+            relative = alias.relative_to(self._workspace.resolve(strict=False))
+            suggestion = str(relative) if relative.parts else "."
+            raise ValueError(
+                "The absolute path appears to use a stale workspace root. "
+                f"The active workspace is {self._workspace.resolve(strict=False)}; "
+                f"retry with relative path {suggestion!r} or {str(alias)!r}."
+            )
         return resolve_workspace_path(
             path,
             self._workspace,
             self._allowed_dir,
             self._extra_allowed_dirs,
         )
+
+    def _workspace_alias(self, path: str) -> Path | None:
+        """Recognize a stale absolute workspace prefix without writing through it.
+
+        Agent runtimes often use unique temporary parents.  A model may retain
+        a nearly identical parent from an earlier observation while preserving
+        the exact workspace marker and relative suffix.  Returning a suggestion
+        lets the model recover explicitly instead of silently redirecting an
+        intended external write.
+        """
+        requested = Path(path).expanduser()
+        if self._workspace is None or not requested.is_absolute():
+            return None
+        workspace = self._workspace.resolve(strict=False)
+        requested_resolved = requested.resolve(strict=False)
+        try:
+            requested_resolved.relative_to(workspace)
+            return None
+        except ValueError:
+            pass
+        matches = [index for index, part in enumerate(requested.parts) if part == workspace.name]
+        if not matches:
+            return None
+        marker_index = matches[-1]
+        stale_root = Path(*requested.parts[: marker_index + 1])
+        suffix = requested.parts[marker_index + 1 :]
+        if stale_root.exists() or any(part == ".." for part in suffix):
+            return None
+        return workspace.joinpath(*suffix)
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +204,7 @@ def _parse_page_range(pages: str, total: int) -> tuple[int, int]:
             minimum=1,
         ),
         pages=StringSchema("Page range for PDF files, e.g. '1-5' (default: all, max 20 pages)"),
+        episode_hint=_EPISODE_HINT_PARAMETER,
         required=["path"],
     )
 )
@@ -190,6 +260,13 @@ class ReadFileTool(_FsTool):
 
             entry = self._file_states.get(fp)
             written_by_agent = bool(entry and not entry.can_dedup)
+            episode_hint = kwargs.get("episode_hint")
+            if self._sro and isinstance(episode_hint, dict):
+                self._sro.bind_episode(fp, episode_hint)
+            elif self._sro:
+                probe = self._sro.episode_hint_probe(fp, tool_name="read_file")
+                if probe:
+                    return json.dumps(probe, ensure_ascii=False, indent=2)
             if self._sro and not written_by_agent and self._sro.should_handoff_read(
                 fp,
                 offset=offset,
@@ -865,6 +942,7 @@ class EditFileTool(_FsTool):
             description="Maximum entries to return (default 200)",
             minimum=1,
         ),
+        episode_hint=_EPISODE_HINT_PARAMETER,
         required=["path"],
     )
 )
@@ -914,6 +992,13 @@ class ListDirTool(_FsTool):
                 return f"Error: Directory not found: {path}"
             if not dp.is_dir():
                 return f"Error: Not a directory: {path}"
+            episode_hint = kwargs.get("episode_hint")
+            if self._sro and isinstance(episode_hint, dict):
+                self._sro.bind_episode(dp, episode_hint)
+            elif self._sro:
+                probe = self._sro.episode_hint_probe(dp, tool_name="list_dir")
+                if probe:
+                    return json.dumps(probe, ensure_ascii=False, indent=2)
             if self._sro and self._sro.should_handoff_list(dp):
                 return self._sro.handoff_message(dp)
 
