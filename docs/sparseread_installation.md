@@ -1,13 +1,18 @@
 # SparseRead 安装指南
 
-这份文档描述当前 single-repo 分支的默认源码安装形态。默认场景是：
+这份文档描述当前 single-repo 分支的默认源码安装形态。SparseRead 现在是
+四框架共享一个 core（`packages/sparseread-core`），每个框架的桥接面不同：
 
-- 用户本机已经安装 OpenCode 或 OpenClaw CLI；
-- SparseRead 从本仓库源码 checkout 后加装到框架；
-- OpenCode/OpenClaw 通过本地插件启动 Python bridge；
-- Python bridge 复用 `nanobot-sro-v3/` 里的 SparseRead core。
+- NanoBot：作为普通 Python 依赖安装（`sparseread-core` + `sparseread-nanobot`），
+  由 NanoBot 框架内部加载 adapter；
+- OpenCode：通过 TS 插件 + Python bridge 安装到 workspace；
+- OpenClaw：通过 npm 插件包 + Python bridge 安装到 OpenClaw profile；
+- Claude Code：通过 MCP stdio server + PreToolUse/PostToolUse session hook
+  安装（Claude Code 没有 npm 插件系统，`.mcp.json` 和
+  `.claude/settings.local.json` 就是它的“插件形态”）。
 
-这还不是 PyPI/npm/官方插件市场的一键发行版。当前目标是让开源用户能从源码稳定安装、验证、使用，并且三个平台使用同一套 core 能力。
+这还不是 PyPI/npm/官方插件市场的一键发行版。当前目标是让开源用户能从源码
+稳定安装、验证、使用，并且四个框架使用同一套 core 能力。
 
 当前源码安装目标支持 macOS、Linux、Windows。Windows 默认推荐路径是 **PowerShell 原生安装**，不推荐把日常产品安装建立在 WSL shell wrapper 之上。仓库里的 PinchBench/QwenClawBench benchmark runtime 仍包含 POSIX `/tmp`、shell wrapper 等假设，不作为 Windows 日常安装验证的一部分；Windows 用户优先使用本指南中的 release fixture、doctor 和快速体验测试。
 
@@ -25,11 +30,13 @@ sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 
 ## 模型可见的 SparseRead 指南在哪里
 
-当前三平台不是完全相同的 skill 文件形态：
+当前四框架不是完全相同的 skill 文件形态：
 
 - nanobot 内置 skill：`nanobot-sro-v3/nanobot/skills/sparse-reading/SKILL.md`。
 - OpenClaw 插件随带 skill：`integrations/openclaw/plugin/skills/sparse-reading/SKILL.md`。
 - OpenCode 当前没有独立 `SKILL.md`。它通过插件注册 `sro_preview`、`sro_read` 等工具，并在大文件/截断输出场景给模型 nudge。日常使用时，用户应该在任务里要求 agent 自动使用 SparseRead。
+- Claude Code 使用安装器写入 workspace 的 `CLAUDE.md`（模板位于
+  `integrations/claude/CLAUDE.md`），配合 MCP 工具描述一起给模型提供使用协议。
 
 所以，用户文档不应该写成工具调用教程；工具调用顺序是给模型和插件看的。
 
@@ -40,7 +47,7 @@ sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 - Node.js 22.22.2+，或 Node.js 24.15.0+
 - `npm`
 - Git
-- 已安装的 OpenCode CLI 或 OpenClaw CLI
+- 已安装的 OpenCode CLI、OpenClaw CLI 或 Claude Code CLI（按目标框架选择）
 
 Windows 上如果 `npm`、`openclaw` 等入口实际是 `.cmd/.exe/.bat`，安装脚本会自动解析到对应入口，不需要手动修改命令名。
 
@@ -48,6 +55,7 @@ Windows 上如果 `npm`、`openclaw` 等入口实际是 `.cmd/.exe/.bat`，安�
 
 - OpenCode `1.17.14`
 - OpenClaw `2026.6.11`
+- Claude Code `2.1.221`
 
 OpenClaw 插件声明的 host 版本要求是 `openclaw >= 2026.5.17`。更旧版本只有在保留相同 plugin/tool API 时才可能可用。
 
@@ -64,6 +72,8 @@ OpenClaw 插件声明的 host 版本要求是 `openclaw >= 2026.5.17`。更旧�
 |---|---|---|
 | OpenCode 源码安装 | ✅ 支持 | ✅ 支持 |
 | OpenClaw 源码安装 | ✅ 支持 | ✅ 支持 |
+| Claude Code 源码安装 | ✅ 支持 | ⚠️ MCP 连接需单独验证（见下文） |
+| NanoBot 源码/依赖安装 | ✅ 支持 | ✅ 支持 |
 | quick test / doctor | ✅ 支持 | ✅ 支持 |
 | benchmark shell runtime | ✅ 可用 | ⚠️ 不作为默认安装路径 |
 
@@ -198,7 +208,70 @@ Windows PowerShell：
 py scripts/install_sparseread.py --platform openclaw --doctor
 ```
 
-## 同时安装两个框架
+## 安装到 NanoBot
+
+NanoBot 不需要 installer。`sparseread-core` 与 `sparseread-nanobot` 是普通
+Python 依赖，`nanobot-sro-v3/` 里的 `nanobot/sparse_reading` 是向下兼容的
+转发层，实际实现来自共享 core。
+
+源码形态（monorepo 内开发/测试）：
+
+```bash
+uv pip install --python nanobot-sro-v3/.venv/bin/python \
+  -e packages/sparseread-core \
+  -e integrations/nanobot/python
+```
+
+发布形态（PyPI 就绪后）：
+
+```bash
+pip install "sparseread-core>=0.1,<0.2" "sparseread-nanobot>=0.1,<0.2"
+```
+
+NanoBot 的 agent loop 会在文件访问路径上自动接入 SRO handoff；用户不需要
+手动配置 hook 或 MCP。模型可见指南是内置 skill：
+`nanobot-sro-v3/nanobot/skills/sparse-reading/SKILL.md`。
+
+## 安装到 Claude Code
+
+假设你已经能运行 `claude`：
+
+```bash
+python3 scripts/install_sparseread.py \
+  --platform claude \
+  --claude-workspace /path/to/your/project \
+  --doctor
+```
+
+安装脚本会：
+
+- 构建 `sparseread-core` + `sparseread-claude` wheel，创建受管 Python runtime
+  `~/.sparseread/claude/`；
+- 合并写入 `/path/to/your/project/.mcp.json`（MCP stdio server，
+  暴露 `sro_preview/sro_read/sro_card/sro_raw/sro_decide/sro_trace/
+  sro_preflight/sro_usage` 8 个工具）；
+- 合并写入 `/path/to/your/project/.claude/settings.local.json`
+  （PreToolUse/PostToolUse session hook，拦截大文件 Read/Bash 并注入 SRO
+  上下文，大输出后追加 nudge）；
+- 如果 workspace 还没有 `CLAUDE.md`，写入 SRO 使用协议模板。
+
+安装后重启 Claude Code（或新开会话）。验证：
+
+```bash
+cd /path/to/your/project
+claude "请自动使用 SparseRead 阅读长报告并回答问题"
+```
+
+模型路由：正常使用自己的 Anthropic 账号即可。若要通过第三方 Anthropic
+兼容端点（如 Paratera 的 DeepSeek 模型）跑基准，可设置
+`ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`；仓库提供
+`local_agent_comp/sro_anthropic_proxy.py` 解决第三方网关缺少
+`GET /v1/models/{id}` 校验端点的问题，但这不是日常安装的一部分。
+
+Windows 注意：同事在 Windows 11 上曾遇到 MCP stdio/SSE 连接问题；本仓库
+未在 Windows 上复验，发布前需要在目标机器上单独验证 `.mcp.json` 连接。
+
+## 同时安装多个框架
 
 如果两个 CLI 都已经安装：
 
@@ -219,6 +292,9 @@ python3 scripts/install_sparseread.py \
   --doctor
 ```
 
+`--platform both` 目前等价于 OpenCode + OpenClaw。Claude Code 需要单独再执行
+一次 `--platform claude`；NanoBot 走 Python 依赖安装，与 CLI 安装互不影响。
+
 ## Doctor 检查
 
 只检查本机命令和 bridge，不改框架配置：
@@ -226,6 +302,7 @@ python3 scripts/install_sparseread.py \
 ```bash
 python3 scripts/install_sparseread.py --platform opencode --doctor-only
 python3 scripts/install_sparseread.py --platform openclaw --doctor-only
+python3 scripts/install_sparseread.py --platform claude --doctor-only
 ```
 
 doctor 会做两层检查：
@@ -234,6 +311,8 @@ doctor 会做两层检查：
 - 已安装集成检查：
   - OpenCode 验证 `.opencode/plugins/sparseread.js`、`.opencode/sparseread.json` 和受管 Python runtime；
   - OpenClaw 验证 `plugins inspect --runtime --json` 中的 SparseRead 工具面；默认 `auto` 下还会检查拦截 hook 已注册，`advisory` 下会检查没有 native tool 拦截 hook。
+  - Claude Code 验证 `sparseread_claude.bridge` 的 protocol smoke（与
+    OpenCode/OpenClaw 同一套 bridge 校验），并检查受管 Python runtime 存在。
 
 ## 日常使用建议
 
@@ -274,7 +353,14 @@ cd /absolute/path/to/SparseReading
 opencode run "请自动使用 SparseRead 阅读 examples/sparseread_quick_test/incident-report.md，只提取必要证据，并回答 ROOT_CAUSE、MITIGATION_OWNER、FINAL_DEADLINE 分别是什么。不要让我手动调用工具。"
 ```
 
-如果你已经在别的 workspace 里工作，先把 `examples/sparseread_quick_test/incident-report.md` 复制进去再测。OpenClaw 或 nanobot 会话中发送同类自然语言请求即可。预期答案应包含：
+如果你已经在别的 workspace 里工作，先把 `examples/sparseread_quick_test/incident-report.md` 复制进去再测。OpenClaw、Claude Code 或 nanobot 会话中发送同类自然语言请求即可。Claude Code 的快速体验：
+
+```bash
+cd /path/to/your/project
+claude "请自动使用 SparseRead 阅读 examples/sparseread_quick_test/incident-report.md，只提取必要证据，并回答 ROOT_CAUSE、MITIGATION_OWNER、FINAL_DEADLINE 分别是什么。"
+```
+
+预期答案应包含：
 
 ```text
 ROOT_CAUSE: cache invalidation used customer_id instead of tenant_id.
@@ -300,7 +386,10 @@ uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
 5. YAML schema/sample/signals；
 6. XML root/schema/sample preview。
 
-每个 fixture 都会同时经过 `OpenCodeBridge` 和 `OpenClawBridge`，所以它检查的不只是 reader，也包括两个框架 bridge 的 core 功能一致性。
+每个 fixture 都会同时经过 `OpenCodeBridge` 和 `OpenClawBridge`，所以它检查的
+不只是 reader，也包括两个框架 bridge 的 core 功能一致性。四个框架的
+发行边界由 `test_release_package_boundaries.py` 覆盖：core 无框架导入，
+每个 adapter 独立发行且只依赖 core。
 
 ## Benchmark 兼容
 

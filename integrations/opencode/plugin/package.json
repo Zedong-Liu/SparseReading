@@ -1,6 +1,7 @@
 {
   "name": "@sparseread/opencode",
   "version": "0.1.0",
+  "license": "MIT",
   "type": "module",
   "private": false,
   "main": "./dist/sparseread.js",
