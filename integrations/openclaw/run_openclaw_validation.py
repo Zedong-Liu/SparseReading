@@ -22,7 +22,7 @@ from typing import Any
 
 
 REPO = Path(__file__).resolve().parents[2]
-BASELINE = REPO / "SRO_test" / "qwenclawbench" / "baseline"
+BASELINE = REPO / "benchmarks" / "qwenclawbench" / "baseline"
 PLUGIN_DIR = REPO / "integrations" / "openclaw" / "plugin"
 CORE_DIR = REPO / "nanobot-sro-v3"
 DEFAULT_PROFILE = "srotest"
@@ -895,7 +895,7 @@ def main() -> int:
     parser.add_argument("--recompute", action="store_true", help="Recompute metrics/report from an existing run root without model calls.")
     args = parser.parse_args()
 
-    run_root = args.run_root or (REPO / "SRO_test" / "qwenclawbench" / f"openclaw_sr_validation_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+    run_root = args.run_root or (REPO / "benchmarks" / "qwenclawbench" / f"openclaw_sr_validation_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
     run_root.mkdir(parents=True, exist_ok=True)
 
     modes = ["native", "sr"] if args.modes == "both" else [args.modes]

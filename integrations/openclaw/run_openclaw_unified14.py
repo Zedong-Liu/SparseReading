@@ -44,7 +44,7 @@ from run_openclaw_validation import (
 )
 
 
-BASELINE = REPO / "SRO_test" / "qwenclawbench" / "baseline"
+BASELINE = REPO / "benchmarks" / "qwenclawbench" / "baseline"
 REFERENCE_CSV = REPO / "figures" / "sro_experiment_data.csv"
 
 UNIFIED14_TASK_IDS = [
@@ -717,7 +717,7 @@ def main() -> int:
         task_ids = task_ids[: args.task_limit]
     modes = parse_modes(args.modes)
     tasks = [load_task(task_id) for task_id in task_ids]
-    run_root = args.run_root or (REPO / "SRO_test" / "qwenclawbench" / f"openclaw_unified14_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+    run_root = args.run_root or (REPO / "benchmarks" / "qwenclawbench" / f"openclaw_unified14_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
     run_root = run_root.resolve()
     run_root.mkdir(parents=True, exist_ok=True)
 

@@ -29,7 +29,7 @@ from sparseread_claude.claude_mcp import SparseReadClaudeMCP  # noqa: E402
 from sparseread_claude.token_tracker import estimate_file_tokens, estimate_response_tokens  # noqa: E402
 
 
-BASELINE_DIR = ROOT / "SRO_test" / "qwenclawbench" / "baseline"
+BASELINE_DIR = ROOT / "benchmarks" / "qwenclawbench" / "baseline"
 SUPPORTED_SUFFIXES = {
     ".pdf",
     ".txt",

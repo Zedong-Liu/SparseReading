@@ -12,8 +12,8 @@ ROOT="/Users/captainliu/sparse-reading"
 BENCH_MODEL="${BENCH_MODEL:-DeepSeek-V4-Flash}"
 RESULT_MODEL_DIR="${RESULT_MODEL_DIR:-deepseek_v4_flash}"
 TIMEOUT_MULTIPLIER="${TIMEOUT_MULTIPLIER:-1}"
-SRC="$ROOT/SRO_test/qwenclawbench/$MODE/$TASK/runtime"
-DST="$ROOT/SRO_test/qwenclawbench/$RESULT_MODEL_DIR/$MODE/$TASK"
+SRC="$ROOT/benchmarks/qwenclawbench/$MODE/$TASK/runtime"
+DST="$ROOT/benchmarks/qwenclawbench/$RESULT_MODEL_DIR/$MODE/$TASK"
 
 if [[ ! -d "$SRC" ]]; then
   echo "missing source runtime: $SRC" >&2

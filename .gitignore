@@ -65,26 +65,26 @@ nanobot-sro-v3/images/
 nanobot-sro-v3/webui/
 
 # Historical benchmark outputs; keep curated fixtures and compact CSV/docs
-SRO_test/qwenclawbench/*/
-!SRO_test/qwenclawbench/baseline/
-!SRO_test/qwenclawbench/sro_v3/
-SRO_test/qwenclawbench/baseline/*/
-SRO_test/qwenclawbench/sro_v3/*/
-!SRO_test/qwenclawbench/baseline/task_21_openclaw_comprehension/
-!SRO_test/qwenclawbench/sro_v3/task_21_openclaw_comprehension/
-!SRO_test/qwenclawbench/baseline/task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check/
-!SRO_test/qwenclawbench/sro_v3/task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check/
-!SRO_test/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_5q/
-!SRO_test/qwenclawbench/sro_v3/task_loogle_shortdep_fall_of_outremer_5q/
-!SRO_test/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_3q_followup/
-!SRO_test/qwenclawbench/sro_v3/task_loogle_shortdep_fall_of_outremer_3q_followup/
-SRO_test/qwenclawbench/**/results/
-SRO_test/qwenclawbench/**/runtime/scripts/results/
-SRO_test/qwenclawbench/**/transcripts/
-SRO_test/qwenclawbench/**/result.json
-SRO_test/qwenclawbench/**/task_transcript.jsonl
-SRO_test/qwenclawbench/**/judge_transcript.jsonl
-SRO_test/qwenclawbench/**/benchmark.log
+benchmarks/qwenclawbench/*/
+!benchmarks/qwenclawbench/baseline/
+!benchmarks/qwenclawbench/sro_v3/
+benchmarks/qwenclawbench/baseline/*/
+benchmarks/qwenclawbench/sro_v3/*/
+!benchmarks/qwenclawbench/baseline/task_21_openclaw_comprehension/
+!benchmarks/qwenclawbench/sro_v3/task_21_openclaw_comprehension/
+!benchmarks/qwenclawbench/baseline/task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check/
+!benchmarks/qwenclawbench/sro_v3/task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check/
+!benchmarks/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_5q/
+!benchmarks/qwenclawbench/sro_v3/task_loogle_shortdep_fall_of_outremer_5q/
+!benchmarks/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_3q_followup/
+!benchmarks/qwenclawbench/sro_v3/task_loogle_shortdep_fall_of_outremer_3q_followup/
+benchmarks/qwenclawbench/**/results/
+benchmarks/qwenclawbench/**/runtime/scripts/results/
+benchmarks/qwenclawbench/**/transcripts/
+benchmarks/qwenclawbench/**/result.json
+benchmarks/qwenclawbench/**/task_transcript.jsonl
+benchmarks/qwenclawbench/**/judge_transcript.jsonl
+benchmarks/qwenclawbench/**/benchmark.log
 
 # External benchmark clones/caches
 qwenclawbench_full/

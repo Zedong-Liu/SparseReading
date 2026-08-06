@@ -30,7 +30,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
-QCB_ROOT = ROOT / "SRO_test" / "qwenclawbench"
+QCB_ROOT = ROOT / "benchmarks" / "qwenclawbench"
 PLUGIN_SOURCE = ROOT / "integrations" / "opencode" / "plugin" / "sparseread.ts"
 SR_PROJECT = ROOT / "nanobot-sro-v3"
 DEFAULT_OPENCODE_CMD = os.environ.get("OPENCODE_PATH") or shutil.which("opencode") or ""

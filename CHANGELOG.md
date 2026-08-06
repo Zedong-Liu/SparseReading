@@ -15,5 +15,5 @@
 
 说明：release 提交中包含 benchmark 工具与聚合结果（
 `benchmarks/run_claude_sro_bench.py`、`sro_anthropic_proxy.py`、
-`scripts/benchmark_claude_bridge.py`、`SRO_test/.../claude_final_aggregate_*.md|json`），
+`scripts/benchmark_claude_bridge.py`、`benchmarks/qwenclawbench/claude_final_aggregate_*.md|json`），
 这些是仓库内开发/验证工具，不进入任何发布包。

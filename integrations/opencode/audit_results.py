@@ -17,7 +17,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-QCB_ROOT = ROOT / "SRO_test" / "qwenclawbench"
+QCB_ROOT = ROOT / "benchmarks" / "qwenclawbench"
 OPENCLAW_RUNNER_DIR = ROOT / "integrations" / "openclaw"
 if str(OPENCLAW_RUNNER_DIR) not in sys.path:
     sys.path.insert(0, str(OPENCLAW_RUNNER_DIR))

@@ -45,7 +45,7 @@ sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 框架无关的 SR core 位于 `packages/sparseread-core/`；NanoBot、OpenCode、OpenClaw、
 Claude Code 的兼容层分别位于 `integrations/<framework>/`。`nanobot-sro-v3/` 只保留
 NanoBot 框架及其兼容转发层。推荐以外层仓库根目录作为 benchmark workspace，因为
-测试脚本也依赖 `benchmarks/` 和 `SRO_test/qwenclawbench/`
+测试脚本也依赖 `benchmarks/` 和 `benchmarks/qwenclawbench/`
 中的 runtime 夹具。
 
 ## 快速开始（源码安装）
@@ -156,12 +156,12 @@ git clone https://github.com/QwenLM/QwenClawBench.git qwenclawbench_repo
 
 **构造 runtime：**
 
-每个任务需要 `runtime/{scripts/, tasks/, assets/}`。本仓库 `SRO_test/qwenclawbench/baseline/` 和 `SRO_test/qwenclawbench/sro_v3/` 下已备好一批精选 runtime。新增任务时：
+每个任务需要 `runtime/{scripts/, tasks/, assets/}`。本仓库 `benchmarks/qwenclawbench/baseline/` 和 `benchmarks/qwenclawbench/sro_v3/` 下已备好一批精选 runtime。新增任务时：
 
 ```bash
 TASK="task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check"
 SRC="qwenclawbench_repo/data/qwenclawbench-v1.1-100"
-RUNTIME_ROOT="SRO_test/qwenclawbench/baseline/$TASK/runtime"
+RUNTIME_ROOT="benchmarks/qwenclawbench/baseline/$TASK/runtime"
 
 mkdir -p "$RUNTIME_ROOT"/{scripts,tasks,assets}
 cp qwenclawbench_repo/scripts/*.py "$RUNTIME_ROOT/scripts/"
@@ -194,7 +194,7 @@ benchmarks/run_qcb_trusted_batch.sh \
   --dry-run
 ```
 
-结果写入 `SRO_test/qwenclawbench/<runset>/<mode>/<task>/result.json`。
+结果写入 `benchmarks/qwenclawbench/<runset>/<mode>/<task>/result.json`。
 
 ### 2. PinchBench（task_21 PDF 阅读理解）
 
@@ -204,8 +204,8 @@ task_21 要求 agent 从一份 OpenClaw 技能生态分析 PDF 中提取 8 个�
 
 不需要单独下载。task_21 的 PDF 和 task 定义已打包在本仓库：
 
-- `SRO_test/qwenclawbench/baseline/task_21_openclaw_comprehension/runtime/assets/OpenClaw Agent Use Cases and Gap Analysis for PinchBench.pdf`
-- `SRO_test/qwenclawbench/baseline/task_21_openclaw_comprehension/runtime/tasks/task_21_openclaw_comprehension.md`
+- `benchmarks/qwenclawbench/baseline/task_21_openclaw_comprehension/runtime/assets/OpenClaw Agent Use Cases and Gap Analysis for PinchBench.pdf`
+- `benchmarks/qwenclawbench/baseline/task_21_openclaw_comprehension/runtime/tasks/task_21_openclaw_comprehension.md`
 
 **运行测试：**
 
@@ -243,16 +243,16 @@ ds = load_dataset('bigainlco/LooGLE', trust_remote_code=True)
 
 **选取任务文档和问题：**
 
-从数据集中选一篇文档（如 `Fall of Outremer`），从 qa_pairs 中筛选 `type == 'short'` 的问题，取 3-10 个。将全文保存为 `document.txt`，编写 QwenClawBench 兼容的 task `.md`（参考 `SRO_test/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_3q_followup/runtime/tasks/` 下的范例）。
+从数据集中选一篇文档（如 `Fall of Outremer`），从 qa_pairs 中筛选 `type == 'short'` 的问题，取 3-10 个。将全文保存为 `document.txt`，编写 QwenClawBench 兼容的 task `.md`（参考 `benchmarks/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_3q_followup/runtime/tasks/` 下的范例）。
 
 **构造 runtime 并测试：**
 
 ```bash
 TASK="task_loogle_shortdep_my_doc"
-mkdir -p "SRO_test/qwenclawbench/baseline/$TASK/runtime"/{scripts,tasks,assets}
-cp qwenclawbench_repo/scripts/*.py "SRO_test/qwenclawbench/baseline/$TASK/runtime/scripts/"
-cp document.txt "SRO_test/qwenclawbench/baseline/$TASK/runtime/assets/"
-cp my_loogle_task.md "SRO_test/qwenclawbench/baseline/$TASK/runtime/tasks/$TASK.md"
+mkdir -p "benchmarks/qwenclawbench/baseline/$TASK/runtime"/{scripts,tasks,assets}
+cp qwenclawbench_repo/scripts/*.py "benchmarks/qwenclawbench/baseline/$TASK/runtime/scripts/"
+cp document.txt "benchmarks/qwenclawbench/baseline/$TASK/runtime/assets/"
+cp my_loogle_task.md "benchmarks/qwenclawbench/baseline/$TASK/runtime/tasks/$TASK.md"
 # sro_v3 runtime 同理，目录名换为 sro_v3
 
 benchmarks/run_qcb_trusted_batch.sh \
@@ -263,8 +263,8 @@ benchmarks/run_qcb_trusted_batch.sh \
 
 本仓库已备好的 LooGLE runtime（可直接用）：
 
-- `SRO_test/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_5q/` — 5 问题，满分
-- `SRO_test/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_3q_followup/` — 3 问题，需 readerfix 满分
+- `benchmarks/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_5q/` — 5 问题，满分
+- `benchmarks/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_3q_followup/` — 3 问题，需 readerfix 满分
 
 ## 并行批处理
 
@@ -303,7 +303,7 @@ PARALLEL_JOBS=3 \
 ## 统一测试集（14 task）
 
 以下 14 个任务为 SRO/gate 当前验证通过的统一测试集，供同事对齐。详细分数和
-token 数据见 `SRO_test/qwenclawbench/` 下的聚合文档与论文工作区。
+token 数据见 `benchmarks/qwenclawbench/` 下的聚合文档与论文工作区。
 
 | 序号 | Task ID | 简称 | 来源 | 类型 |
 |---:|---|---|---|---|
@@ -331,7 +331,7 @@ packages/sparseread-core/        框架无关 SR core（含 tests/）
 integrations/<framework>/        各框架 adapter（python/ 与 plugin/，含 tests/）
 nanobot-sro-v3/                  NanoBot 框架宿主与宿主集成测试
 benchmarks/                      本地 benchmark 运行器、shim 与代理
-SRO_test/qwenclawbench/          精选 benchmark runtime fixture（不含历史结果）
+benchmarks/qwenclawbench/          精选 benchmark runtime fixture（不含历史结果）
 tests/                           仓库级集成/发布测试（bridge/gate/fixtures/installer）
 docs/                            安装与设计文档
 ```

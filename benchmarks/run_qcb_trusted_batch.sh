@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${SRO_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-QCB_ROOT="$ROOT/SRO_test/qwenclawbench"
+QCB_ROOT="$ROOT/benchmarks/qwenclawbench"
 QCB_FIXTURE_ROOT="${QCB_FIXTURE_ROOT:-$QCB_ROOT}"
 BENCH_MODEL="${BENCH_MODEL:-DeepSeek-V4-Flash}"
 TIMEOUT_MULTIPLIER="${TIMEOUT_MULTIPLIER:-1}"

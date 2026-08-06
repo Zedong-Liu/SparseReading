@@ -35,8 +35,8 @@ if sys.platform == "win32":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 REPO = Path(__file__).resolve().parents[1]
-BASELINE_DIR = REPO / "SRO_test" / "qwenclawbench" / "baseline"
-RESULTS_ROOT = REPO / "SRO_test" / "qwenclawbench"
+BASELINE_DIR = REPO / "benchmarks" / "qwenclawbench" / "baseline"
+RESULTS_ROOT = REPO / "benchmarks" / "qwenclawbench"
 DEV_VENV_PYTHON = REPO / "nanobot-sro-v3" / ".venv" / "bin" / "python"
 
 LONG_CONTEXT = [
