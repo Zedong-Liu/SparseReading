@@ -222,6 +222,14 @@ uv pip install --python nanobot-sro-v3/.venv/bin/python \
   -e integrations/nanobot/python
 ```
 
+Windows PowerShell：
+
+```powershell
+uv pip install --python nanobot-sro-v3\.venv\Scripts\python.exe `
+  -e packages\sparseread-core `
+  -e integrations\nanobot\python
+```
+
 发布形态（PyPI 就绪后）：
 
 ```bash
@@ -241,6 +249,12 @@ python3 scripts/install_sparseread.py \
   --platform claude \
   --claude-workspace /path/to/your/project \
   --doctor
+```
+
+Windows PowerShell：
+
+```powershell
+py scripts/install_sparseread.py --platform claude --claude-workspace D:\path\to\project --doctor
 ```
 
 安装脚本会：
@@ -320,6 +334,14 @@ OpenCode 允许有界的 ready 后 verify。发布文档以此矩阵为准，避
 python3 scripts/install_sparseread.py --platform opencode --doctor-only
 python3 scripts/install_sparseread.py --platform openclaw --doctor-only
 python3 scripts/install_sparseread.py --platform claude --doctor-only
+```
+
+Windows PowerShell：
+
+```powershell
+py scripts/install_sparseread.py --platform opencode --doctor-only
+py scripts/install_sparseread.py --platform openclaw --doctor-only
+py scripts/install_sparseread.py --platform claude --doctor-only
 ```
 
 doctor 会做两层检查：

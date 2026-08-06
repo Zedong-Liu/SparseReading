@@ -15,20 +15,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Create test environment
-        run: |
-          uv venv .venv
-          uv pip install --python .venv/bin/python \
-            "pyyaml>=6.0,<7.0" \
-            "mcp>=1.26,<2.0" \
-            "pymupdf>=1.25.0" \
-            "openpyxl>=3.1.0,<4.0.0" \
-            "pytest>=9.0,<10.0" \
-            "pytest-asyncio"
-      - name: Run SparseRead suite
-        env:
-          PYTHONPATH: ${{ github.workspace }}/nanobot-sro-v3:${{ github.workspace }}/packages/sparseread-core/src:${{ github.workspace }}/integrations/nanobot/python/src:${{ github.workspace }}/integrations/opencode/python/src:${{ github.workspace }}/integrations/openclaw/python/src:${{ github.workspace }}/integrations/claude/python/src
-        run: .venv/bin/python -m pytest nanobot-sro-v3/tests/sparse_reading -q
+      - name: Run SparseRead suite (documented command)
+        run: >-
+          uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio
+          pytest nanobot-sro-v3/tests/sparse_reading -q
 
   build:
     name: Build plugins and packages
