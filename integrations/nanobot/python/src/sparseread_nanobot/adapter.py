@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from sparseread.config import SparseReadConfig, SparseReadMode
-from sparseread.core.policy import SparseCommandPolicy
 from sparseread.wrapper import SparseRead
 
 
@@ -19,6 +18,8 @@ class NanobotAdapter:
         return all(hasattr(tools, attr) for attr in ("register", "get", "has"))
 
     def install(self, agent: Any, sparseread: SparseRead) -> list[str]:
+        from sparseread_nanobot.hook import SparseReadHook, SroGuardTool
+
         tools = getattr(agent, "tools", None)
         if tools is None:
             raise TypeError("NanobotAdapter requires an agent with a .tools registry.")
@@ -30,18 +31,16 @@ class NanobotAdapter:
             if not tools.has(tool.name):
                 tools.register(tool)
                 installed.append(tool.name)
+        guard_tool = SroGuardTool()
+        if not tools.has(guard_tool.name):
+            tools.register(guard_tool)
+            installed.append("sro_guard")
         orchestrator.mark_macro_available()
 
-        for name in ("read_file", "list_dir", "grep"):
-            tool = tools.get(name)
-            if tool is not None and hasattr(tool, "_sro"):
-                tool._sro = orchestrator
-                installed.append(f"{name}:guard")
-
-        exec_tool = tools.get("exec")
-        if exec_tool is not None and hasattr(exec_tool, "sro_policy"):
-            exec_tool.sro_policy = SparseCommandPolicy(orchestrator)
-            installed.append("exec:policy")
+        hooks = getattr(agent, "_extra_hooks", None)
+        if isinstance(hooks, list):
+            hooks.append(SparseReadHook(sparseread))
+            installed.append("hook:sparse_read")
 
         agent.sparseread = sparseread
         return installed

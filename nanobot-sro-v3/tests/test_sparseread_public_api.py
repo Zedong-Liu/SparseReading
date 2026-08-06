@@ -16,6 +16,7 @@ from sparseread_nanobot import install
 class FakeNanobotAgent:
     def __init__(self, workspace: Path) -> None:
         self.tools = ToolRegistry()
+        self._extra_hooks: list = []
         self.tools.register(ReadFileTool(workspace=workspace))
         self.tools.register(ListDirTool(workspace=workspace))
         self.tools.register(GrepTool(workspace=workspace))
@@ -74,10 +75,8 @@ def test_nanobot_adapter_installs_tools_and_guards(tmp_path: Path) -> None:
     assert agent.tools.has("sro_preview")
     assert agent.tools.has("sro_raw")
     assert agent.tools.has("sro_read")
-    assert agent.tools.get("read_file")._sro is runtime.orchestrator  # type: ignore[union-attr]
-    assert agent.tools.get("list_dir")._sro is runtime.orchestrator  # type: ignore[union-attr]
-    assert agent.tools.get("grep")._sro is runtime.orchestrator  # type: ignore[union-attr]
-    assert agent.tools.get("exec").sro_policy is not None  # type: ignore[union-attr]
+    assert agent.tools.has("sro_guard")
+    assert len(agent._extra_hooks) == 1
     assert agent.sparseread is runtime
 
 
@@ -105,5 +104,6 @@ def test_wrapper_autodetects_nanobot_registry(tmp_path: Path) -> None:
     assert "sro_raw" in wrapped.installed
     assert "sro_card" in wrapped.installed
     assert "sro_read" in wrapped.installed
-    assert "read_file:guard" in wrapped.installed
+    assert "sro_guard" in wrapped.installed
+    assert "hook:sparse_read" in wrapped.installed
     assert wrapped.run("hello", value=1) == ("hello", {"value": 1})
