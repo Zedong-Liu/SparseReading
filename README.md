@@ -45,7 +45,7 @@ sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 框架无关的 SR core 位于 `packages/sparseread-core/`；NanoBot、OpenCode、OpenClaw、
 Claude Code 的兼容层分别位于 `integrations/<framework>/`。`nanobot-sro-v3/` 只保留
 NanoBot 框架及其兼容转发层。推荐以外层仓库根目录作为 benchmark workspace，因为
-测试脚本也依赖 `local_agent_comp/`、`local_bin/` 和 `SRO_test/qwenclawbench/`
+测试脚本也依赖 `benchmarks/` 和 `SRO_test/qwenclawbench/`
 中的 runtime 夹具。
 
 ## 快速开始（源码安装）
@@ -62,7 +62,14 @@ git clone https://github.com/Zedong-Liu/SparseReading.git
 cd SparseReading
 
 uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio \
-  pytest nanobot-sro-v3/tests/sparse_reading/test_release_fixtures.py -q
+  pytest tests/test_release_fixtures.py -q
+```
+
+单独验证 core（不安装任何框架宿主）：
+
+```bash
+uv run --project packages/sparseread-core --with pytest --with pytest-asyncio \
+  pytest packages/sparseread-core/tests -q
 ```
 
 支持矩阵：
@@ -105,14 +112,14 @@ python3 scripts/install_sparseread.py \
 本仓库提供了一个长 markdown fixture：
 
 ```text
-examples/sparseread_quick_test/incident-report.md
+tests/fixtures/quick_test/incident-report.md
 ```
 
 推荐把当前仓库根目录本身作为 OpenCode workspace，或者先把这个 fixture 复制进你的目标 workspace，再运行：
 
 ```bash
 cd /absolute/path/to/SparseReading
-opencode run "请自动使用 SparseRead 阅读 examples/sparseread_quick_test/incident-report.md，只提取必要证据，并回答 ROOT_CAUSE、MITIGATION_OWNER、FINAL_DEADLINE 分别是什么。不要让我手动调用工具。"
+opencode run "请自动使用 SparseRead 阅读 tests/fixtures/quick_test/incident-report.md，只提取必要证据，并回答 ROOT_CAUSE、MITIGATION_OWNER、FINAL_DEADLINE 分别是什么。不要让我手动调用工具。"
 ```
 
 OpenClaw 或 nanobot 会话中发送同一类自然语言请求即可。预期答案应包含：
@@ -123,7 +130,7 @@ MITIGATION_OWNER: Mira Chen, Data Platform on-call.
 FINAL_DEADLINE: 2026-07-18 09:30 UTC.
 ```
 
-需要跑 benchmark 时，继续看下面的 benchmark 章节；同事测试包说明见 `handoff/sro_v3_test_20260522/README.md`。
+需要跑 benchmark 时，继续看下面的 benchmark 章节；历史同事测试包说明不随发布仓库维护。
 
 ## 三个 Benchmark 的测试方法
 
@@ -174,13 +181,13 @@ export PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000
 export TIMEOUT_MULTIPLIER=1
 
 # baseline + gate 对比
-local_agent_comp/run_qcb_trusted_batch.sh \
+benchmarks/run_qcb_trusted_batch.sh \
   --runset my_test_$(date +%Y%m%dT%H%M%S) \
   --modes baseline,gate \
   --tasks task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check
 
 # 先 dry-run 确认路径
-local_agent_comp/run_qcb_trusted_batch.sh \
+benchmarks/run_qcb_trusted_batch.sh \
   --runset my_dry \
   --modes baseline,gate \
   --tasks task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check \
@@ -209,7 +216,7 @@ export BENCH_MODEL="deepseek-v4-flash"
 export PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000
 export TIMEOUT_MULTIPLIER=1
 
-local_agent_comp/run_qcb_trusted_batch.sh \
+benchmarks/run_qcb_trusted_batch.sh \
   --runset my_task21_$(date +%Y%m%dT%H%M%S) \
   --modes baseline,gate \
   --tasks task_21_openclaw_comprehension
@@ -248,7 +255,7 @@ cp document.txt "SRO_test/qwenclawbench/baseline/$TASK/runtime/assets/"
 cp my_loogle_task.md "SRO_test/qwenclawbench/baseline/$TASK/runtime/tasks/$TASK.md"
 # sro_v3 runtime 同理，目录名换为 sro_v3
 
-local_agent_comp/run_qcb_trusted_batch.sh \
+benchmarks/run_qcb_trusted_batch.sh \
   --runset my_loogle_$(date +%Y%m%dT%H%M%S) \
   --modes baseline,gate \
   --tasks "$TASK"
@@ -268,7 +275,7 @@ local_agent_comp/run_qcb_trusted_batch.sh \
 ```bash
 # 3 个 task 并发执行 baseline + gate 对比
 PARALLEL_JOBS=3 \
-  local_agent_comp/run_qcb_trusted_batch.sh \
+  benchmarks/run_qcb_trusted_batch.sh \
   --runset my_parallel_test_$(date +%Y%m%dT%H%M%S) \
   --modes baseline,gate \
   --tasks task_00036_find_largest_file_in_downloads_directory \
@@ -295,7 +302,8 @@ PARALLEL_JOBS=3 \
 
 ## 统一测试集（14 task）
 
-以下 14 个任务为 SRO/gate 当前验证通过的统一测试集，供同事对齐。详细分数和 token 数据见 `figures/sro_experiment_data.csv`。
+以下 14 个任务为 SRO/gate 当前验证通过的统一测试集，供同事对齐。详细分数和
+token 数据见 `SRO_test/qwenclawbench/` 下的聚合文档与论文工作区。
 
 | 序号 | Task ID | 简称 | 来源 | 类型 |
 |---:|---|---|---|---|
@@ -319,12 +327,13 @@ PARALLEL_JOBS=3 \
 ## 仓库目录
 
 ```text
-nanobot-sro-v3/                  SRO 源码项目
-local_agent_comp/                OpenClaw shim 与本地 benchmark 运行脚本
-local_bin/                       本地命令 wrapper
+packages/sparseread-core/        框架无关 SR core（含 tests/）
+integrations/<framework>/        各框架 adapter（python/ 与 plugin/，含 tests/）
+nanobot-sro-v3/                  NanoBot 框架宿主与宿主集成测试
+benchmarks/                      本地 benchmark 运行器、shim 与代理
 SRO_test/qwenclawbench/          精选 benchmark runtime fixture（不含历史结果）
-figures/sro_experiment_data.csv  正式结果表
-handoff/sro_v3_test_20260522/    同事测试 handoff 包
+tests/                           仓库级集成/发布测试（bridge/gate/fixtures/installer）
+docs/                            安装与设计文档
 ```
 
 不要提交 API key、生成的 transcript、历史 runset、本地 Qwen/vLLM 资产、缓存及 virtual environment。

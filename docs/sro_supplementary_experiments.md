@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document proposes the minimum supplementary experiments needed to make the SRO paper claims defensible. It is based on `v3_plan.md`, `v3_dev.md`, `SRO_report.md`, and the current canonical result table in `figures/sro_experiment_data.csv`.
+This document proposes the minimum supplementary experiments needed to make the SRO paper claims defensible. It is based on `v3_plan.md`, `v3_dev.md`, `SRO_report.md`, and the current canonical result table maintained in the paper workspace.
 
 The current evidence supports a narrow claim:
 
@@ -69,7 +69,7 @@ SRO_DISABLED_CLOSURE_FAMILIES=command_security
 SRO_DISABLED_CLOSURE_FAMILIES=diagnosis,panel_did,rule_table_script
 ```
 
-`local_agent_comp/run_qcb_trusted_batch.sh` also supports these modes:
+`benchmarks/run_qcb_trusted_batch.sh` also supports these modes:
 
 ```bash
 --modes baseline,gate,force_sro_without_gate,no_collection_closures,no_audit_closure,no_command_security_closure
@@ -423,7 +423,7 @@ Success bar:
 
 - Report per-taxonomy results, not only averages.
 - Keep catastrophic failures in an appendix table even if excluded from main plots.
-- Use `figures/sro_experiment_data.csv` as the canonical data source after runs are validated.
+- Use the canonical result table in the paper workspace after runs are validated.
 
 ## Reporting Template
 

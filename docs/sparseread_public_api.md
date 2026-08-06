@@ -202,7 +202,7 @@ Validation:
 
 ```bash
 uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
-  pytest nanobot-sro-v3/tests/sparse_reading/ -q
+  pytest -q
 ```
 
 ## First Release Scope

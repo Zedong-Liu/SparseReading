@@ -15,10 +15,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Run SparseRead suite (documented command)
+      - name: Run core tests independently
+        run: >-
+          uv run --project packages/sparseread-core --with pytest --with pytest-asyncio
+          pytest packages/sparseread-core/tests -q
+      - name: Run full SparseRead suite (documented command)
         run: >-
           uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio
-          pytest nanobot-sro-v3/tests/sparse_reading -q
+          pytest -q
 
   build:
     name: Build plugins and packages

@@ -90,20 +90,20 @@ cd SparseReading
 
 ```bash
 uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio \
-  pytest nanobot-sro-v3/tests/sparse_reading/test_release_fixtures.py -q
+  pytest tests/test_release_fixtures.py -q
 ```
 
 完整本地回归：
 
 ```bash
 uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio \
-  pytest nanobot-sro-v3/tests/sparse_reading -q
+  pytest -q
 ```
 
 Windows PowerShell 可直接使用：
 
 ```powershell
-uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio pytest nanobot-sro-v3/tests/sparse_reading/test_release_fixtures.py -q
+uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio pytest tests/test_release_fixtures.py -q
 ```
 
 ## 安装到 OpenCode
@@ -279,7 +279,7 @@ claude "请自动使用 SparseRead 阅读长报告并回答问题"
 模型路由：正常使用自己的 Anthropic 账号即可。若要通过第三方 Anthropic
 兼容端点（如 Paratera 的 DeepSeek 模型）跑基准，可设置
 `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`；仓库提供
-`local_agent_comp/sro_anthropic_proxy.py` 解决第三方网关缺少
+`benchmarks/sro_anthropic_proxy.py` 解决第三方网关缺少
 `GET /v1/models/{id}` 校验端点的问题，但这不是日常安装的一部分。
 
 Windows 注意：同事在 Windows 11 上曾遇到 MCP stdio/SSE 连接问题；本仓库
@@ -382,21 +382,21 @@ agent 内部会按生产协议工作：先做 L0 preview；如果 preview 不够
 本仓库提供了一个长 markdown fixture：
 
 ```text
-examples/sparseread_quick_test/incident-report.md
+tests/fixtures/quick_test/incident-report.md
 ```
 
 OpenCode 安装后，推荐直接在本仓库根目录运行：
 
 ```bash
 cd /absolute/path/to/SparseReading
-opencode run "请自动使用 SparseRead 阅读 examples/sparseread_quick_test/incident-report.md，只提取必要证据，并回答 ROOT_CAUSE、MITIGATION_OWNER、FINAL_DEADLINE 分别是什么。不要让我手动调用工具。"
+opencode run "请自动使用 SparseRead 阅读 tests/fixtures/quick_test/incident-report.md，只提取必要证据，并回答 ROOT_CAUSE、MITIGATION_OWNER、FINAL_DEADLINE 分别是什么。不要让我手动调用工具。"
 ```
 
-如果你已经在别的 workspace 里工作，先把 `examples/sparseread_quick_test/incident-report.md` 复制进去再测。OpenClaw、Claude Code 或 nanobot 会话中发送同类自然语言请求即可。Claude Code 的快速体验：
+如果你已经在别的 workspace 里工作，先把 `tests/fixtures/quick_test/incident-report.md` 复制进去再测。OpenClaw、Claude Code 或 nanobot 会话中发送同类自然语言请求即可。Claude Code 的快速体验：
 
 ```bash
 cd /path/to/your/project
-claude "请自动使用 SparseRead 阅读 examples/sparseread_quick_test/incident-report.md，只提取必要证据，并回答 ROOT_CAUSE、MITIGATION_OWNER、FINAL_DEADLINE 分别是什么。"
+claude "请自动使用 SparseRead 阅读 tests/fixtures/quick_test/incident-report.md，只提取必要证据，并回答 ROOT_CAUSE、MITIGATION_OWNER、FINAL_DEADLINE 分别是什么。"
 ```
 
 预期答案应包含：
@@ -413,7 +413,7 @@ FINAL_DEADLINE: 2026-07-18 09:30 UTC.
 
 ```bash
 uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio \
-  pytest nanobot-sro-v3/tests/sparse_reading/test_release_fixtures.py -q
+  pytest tests/test_release_fixtures.py -q
 ```
 
 这 6 个 fixture 覆盖：

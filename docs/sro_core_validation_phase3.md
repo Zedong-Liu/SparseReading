@@ -111,7 +111,7 @@ API_BASE_URL="https://api.deepseek.com/v1" \
 BENCH_MODEL=deepseek-v4-pro \
 TIMEOUT_MULTIPLIER=2 \
 PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000 \
-local_agent_comp/run_qcb_trusted_batch.sh \
+benchmarks/run_qcb_trusted_batch.sh \
   --runset deepseek_v4_pro_sro_phase3_$(date +%Y%m%dT%H%M%S) \
   --modes gate \
   --tasks \

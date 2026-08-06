@@ -31,7 +31,7 @@ separate `codex/sr-nanobot-v020-adapter` branch.
 
 ```bash
 uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
-  pytest nanobot-sro-v3/tests/sparse_reading -q
+  pytest -q
 ```
 
 The SparseRead suite passes with 170 tests.
