@@ -52,6 +52,16 @@ class SroGuardTool:
             "required": ["message"],
         }
 
+    def to_schema(self) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.parameters,
+            },
+        }
+
     async def execute(self, message: str, **kwargs: Any) -> str:
         return str(message)
 
