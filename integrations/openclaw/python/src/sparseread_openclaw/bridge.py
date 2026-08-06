@@ -61,6 +61,7 @@ class OpenClawBridge(SparseReadBridgeServer):
                 ready_guard="openclaw_adapter_closure_once",
                 allow_bounded_text_verify=False,
                 guard_cards_after_ready=True,
+                native_passthrough_include_search=True,
             ),
         )
 

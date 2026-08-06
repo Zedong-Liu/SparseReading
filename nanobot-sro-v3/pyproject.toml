@@ -108,6 +108,7 @@ dev = [
     "pymupdf>=1.25.0",
     "sparseread-opencode>=0.1,<0.2",
     "sparseread-openclaw>=0.1,<0.2",
+    "sparseread-claude>=0.1,<0.2",
 ]
 
 [project.scripts]
@@ -169,6 +170,7 @@ sparseread-core = { path = "../packages/sparseread-core", editable = true }
 sparseread-nanobot = { path = "../integrations/nanobot/python", editable = true }
 sparseread-opencode = { path = "../integrations/opencode/python", editable = true }
 sparseread-openclaw = { path = "../integrations/openclaw/python", editable = true }
+sparseread-claude = { path = "../integrations/claude/python", editable = true }
 
 [tool.ruff]
 line-length = 100

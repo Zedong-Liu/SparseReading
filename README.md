@@ -39,14 +39,20 @@ sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 ```
 
 `sro_card(path)` 仍保留给 benchmark 和旧脚本使用；新框架集成和内部协议应从
-`sro_preview` 开始。OpenCode/OpenClaw/nanobot 的源码安装步骤见
+`sro_preview` 开始。OpenCode/OpenClaw/Claude Code/nanobot 的源码安装步骤见
 [`docs/sparseread_installation.md`](docs/sparseread_installation.md)。
 
-框架无关的 SR core 位于 `packages/sparseread-core/`；NanoBot、OpenCode、OpenClaw 的兼容层分别位于 `integrations/<framework>/`。`nanobot-sro-v3/` 只保留 NanoBot 框架及其兼容转发层。推荐以外层仓库根目录作为 benchmark workspace，因为测试脚本也依赖 `local_agent_comp/`、`local_bin/` 和 `SRO_test/qwenclawbench/` 中的 runtime 夹具。
+框架无关的 SR core 位于 `packages/sparseread-core/`；NanoBot、OpenCode、OpenClaw、
+Claude Code 的兼容层分别位于 `integrations/<framework>/`。`nanobot-sro-v3/` 只保留
+NanoBot 框架及其兼容转发层。推荐以外层仓库根目录作为 benchmark workspace，因为
+测试脚本也依赖 `local_agent_comp/`、`local_bin/` 和 `SRO_test/qwenclawbench/`
+中的 runtime 夹具。
 
 ## 快速开始（源码安装）
 
-当前默认安装形态是：用户本机已有 OpenCode 或 OpenClaw CLI，安装器构建发布包并创建独立的受管 Python runtime。运行时不再链接或导入源码 checkout。完整 fresh-machine 指南见
+当前默认安装形态是：用户本机已有 OpenCode、OpenClaw 或 Claude Code CLI，安装器
+构建发布包并创建独立的受管 Python runtime。运行时不再链接或导入源码 checkout。
+完整 fresh-machine 指南见
 [`docs/sparseread_installation.md`](docs/sparseread_installation.md)。
 
 Windows 默认推荐路径是 **PowerShell 原生安装**。用户只需要选择一个 SparseRead 模式：默认 `auto` 会在高收益任务上自动接管大文件/证据包读取；`advisory` 只注册工具和提示，不拦截原生读取。OpenCode 生产安装不再依赖 `.env + source`。
@@ -55,7 +61,7 @@ Windows 默认推荐路径是 **PowerShell 原生安装**。用户只需要选�
 git clone https://github.com/Zedong-Liu/SparseReading.git
 cd SparseReading
 
-uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
+uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio \
   pytest nanobot-sro-v3/tests/sparse_reading/test_release_fixtures.py -q
 ```
 
@@ -64,6 +70,8 @@ uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
 | 场景 | macOS / Linux | Windows PowerShell |
 |---|---|---|
 | OpenCode / OpenClaw 源码安装 | ✅ | ✅ |
+| Claude Code 源码安装 | ✅ | ⚠️ MCP 连接需单独验证 |
+| NanoBot Python 依赖安装 | ✅ | ✅ |
 | doctor / quick test | ✅ | ✅ |
 | benchmark shell runtime | ✅ | ⚠️ 不作为默认安装路径 |
 

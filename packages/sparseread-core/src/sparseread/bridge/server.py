@@ -32,6 +32,7 @@ class BridgePolicy:
     ready_guard: str
     allow_bounded_text_verify: bool = False
     guard_cards_after_ready: bool = True
+    native_passthrough_include_search: bool = False
 
 
 def native_passthrough_gate(reason: str, *, include_search: bool = False) -> dict[str, Any]:
@@ -163,7 +164,7 @@ class SparseReadBridgeServer:
         if native_passthrough:
             gate = native_passthrough_gate(
                 f"{self.policy.platform} native pass-through: generated/runtime artifacts should not re-enter SparseRead",
-                include_search=self.policy.gate_key == "openclaw_gate",
+                include_search=self.policy.native_passthrough_include_search,
             )
             card.sparse_recommended = False
             card.recommended_mode = "native"
@@ -923,7 +924,7 @@ class SparseReadBridgeServer:
         if native_passthrough:
             gate = native_passthrough_gate(
                 f"{self.policy.platform} native pass-through: generated/runtime artifacts should not re-enter SparseRead",
-                include_search=self.policy.gate_key == "openclaw_gate",
+                include_search=self.policy.native_passthrough_include_search,
             )
         else:
             parent_gate = self._force_collection_parent_gate(path, params)

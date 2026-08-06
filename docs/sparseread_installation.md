@@ -89,21 +89,21 @@ cd SparseReading
 先跑 release fixture，确认 core 和两个 bridge 都能启动：
 
 ```bash
-uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
+uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio \
   pytest nanobot-sro-v3/tests/sparse_reading/test_release_fixtures.py -q
 ```
 
 完整本地回归：
 
 ```bash
-uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
+uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio \
   pytest nanobot-sro-v3/tests/sparse_reading -q
 ```
 
 Windows PowerShell 可直接使用：
 
 ```powershell
-uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio pytest nanobot-sro-v3/tests/sparse_reading/test_release_fixtures.py -q
+uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio pytest nanobot-sro-v3/tests/sparse_reading/test_release_fixtures.py -q
 ```
 
 ## 安装到 OpenCode
@@ -295,6 +295,23 @@ python3 scripts/install_sparseread.py \
 `--platform both` 目前等价于 OpenCode + OpenClaw。Claude Code 需要单独再执行
 一次 `--platform claude`；NanoBot 走 Python 依赖安装，与 CLI 安装互不影响。
 
+## 框架行为差异（有意设计）
+
+四个框架共享同一个 core gate（`force_sro/native/advisory` + episode hint），
+但桥接面能力不同，因此存在以下有意差异，不是缺陷：
+
+| 框架 | enforce 下限 | 决策码白名单 | allow_bounded_text_verify | guard_cards_after_ready | native passthrough 搜索放行 |
+| --- | --- | --- | --- | --- | --- |
+| NanoBot | core 默认（4KB 文档） | 无 adapter 白名单 | 不适用（直接工具注册） | 不适用 | 不适用 |
+| OpenCode | core 默认 | 无 adapter 白名单 | ✅ True | ❌ False | ❌ |
+| OpenClaw | core 默认 | 无 adapter 白名单 | ❌ False | ✅ True | ✅ True |
+| Claude Code | 文本 12KB（`CLAUDE_TEXT_ENFORCE_BYTES`） | `long_document`/`long_document_selective`/`collection_long_document`/`multi_file_evidence`/`structured_analysis_plan`；白名单外 force_sro 降级 advisory | ❌ False | ✅ True | ❌ |
+
+含义：同一 core 的 `force_sro` 决策在 Claude 上可能因 12KB 下限或决策码不在
+白名单而变成 advisory；OpenClaw 的 native passthrough 会额外放行搜索类字段；
+OpenCode 允许有界的 ready 后 verify。发布文档以此矩阵为准，避免用户在不同
+框架上观察到不一致行为时误判为 bug。
+
 ## Doctor 检查
 
 只检查本机命令和 bridge，不改框架配置：
@@ -373,7 +390,7 @@ FINAL_DEADLINE: 2026-07-18 09:30 UTC.
 每次版本更新都至少跑：
 
 ```bash
-uv run --project nanobot-sro-v3 --with pytest --with pytest-asyncio \
+uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio \
   pytest nanobot-sro-v3/tests/sparse_reading/test_release_fixtures.py -q
 ```
 
