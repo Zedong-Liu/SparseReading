@@ -44,7 +44,8 @@ def _write(workspace: Path, name: str, size: int) -> Path:
     return path
 
 
-def test_large_read_is_rewritten_to_sro_preview(tmp_path: Path) -> None:
+def test_large_read_is_rewritten_to_sro_preview(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SRO_ENABLED", "1")
     target = _write(tmp_path, "large.txt", 6000)
     hook = _hook(tmp_path)
     call = _call("read_file", {"file_path": str(target)})
@@ -65,6 +66,17 @@ def test_small_read_stays_native(tmp_path: Path) -> None:
     assert call.name == "read_file"
 
 
+def test_bounded_read_stays_native(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    target = _write(tmp_path, "large.txt", 6000)
+    hook = _hook(tmp_path)
+    call = _call("read_file", {"file_path": str(target), "offset": 2, "limit": 50})
+
+    asyncio.run(hook.before_execute_tools(_context(_response(call))))
+
+    assert call.name == "read_file"
+
+
 def test_exec_large_dump_is_rewritten_to_guard(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SRO_ENABLED", "1")
     target = _write(tmp_path, "large.txt", 6000)
@@ -75,6 +87,19 @@ def test_exec_large_dump_is_rewritten_to_guard(tmp_path: Path, monkeypatch) -> N
 
     assert call.name == "sro_guard"
     assert "blocked" in call.arguments["message"]
+
+
+def test_sro_guard_executes_through_registry() -> None:
+    from nanobot.agent.tools.registry import ToolRegistry
+
+    from sparseread_nanobot.hook import SroGuardTool
+
+    registry = ToolRegistry()
+    registry.register(SroGuardTool())
+
+    result = asyncio.run(registry.execute("sro_guard", {"message": "blocked: use sro_read"}))
+
+    assert result == "blocked: use sro_read"
 
 
 def test_write_provenance_is_recorded_after_iteration(tmp_path: Path) -> None:

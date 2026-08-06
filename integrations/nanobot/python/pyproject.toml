@@ -7,6 +7,9 @@ requires-python = ">=3.11"
 license = "MIT"
 dependencies = ["sparseread-core>=0.1,<0.2"]
 
+[project.optional-dependencies]
+nanobot = ["nanobot-ai>=0.2.0,<0.3"]
+
 [project.entry-points."sparseread.adapters"]
 nanobot = "sparseread_nanobot.adapter:NanobotAdapter"
 

@@ -17,7 +17,13 @@ class NanobotAdapter:
         tools = getattr(agent, "tools", None)
         return all(hasattr(tools, attr) for attr in ("register", "get", "has"))
 
-    def install(self, agent: Any, sparseread: SparseRead) -> list[str]:
+    def install(
+        self,
+        agent: Any,
+        sparseread: SparseRead,
+        *,
+        conversation_id: str = "default",
+    ) -> list[str]:
         from sparseread_nanobot.hook import SparseReadHook, SroGuardTool
 
         tools = getattr(agent, "tools", None)
@@ -39,7 +45,7 @@ class NanobotAdapter:
 
         hooks = getattr(agent, "_extra_hooks", None)
         if isinstance(hooks, list):
-            hooks.append(SparseReadHook(sparseread))
+            hooks.append(SparseReadHook(sparseread, conversation_id=conversation_id))
             installed.append("hook:sparse_read")
 
         agent.sparseread = sparseread
@@ -52,9 +58,10 @@ def install(
     mode: SparseReadMode = "auto",
     workspace: str | Path | None = None,
     config: SparseReadConfig | None = None,
+    conversation_id: str = "default",
 ) -> SparseRead:
     """Install SparseRead into a nanobot-style agent and return the runtime."""
 
     runtime = SparseRead(config or SparseReadConfig(mode=mode, workspace=workspace))
-    NanobotAdapter().install(agent, runtime)
+    NanobotAdapter().install(agent, runtime, conversation_id=conversation_id)
     return runtime

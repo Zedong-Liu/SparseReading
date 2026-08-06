@@ -1,0 +1,100 @@
+{
+  "model": "qwen35-local",
+  "benchmark_version": "",
+  "run_id": "1777018763115",
+  "timestamp": 1777018958.5102804,
+  "suite": "task_18_spreadsheet_summary",
+  "runs_per_task": 1,
+  "tasks": [
+    {
+      "task_id": "task_18_spreadsheet_summary",
+      "status": "success",
+      "timed_out": false,
+      "execution_time": 175.66629481315613,
+      "transcript_length": 3,
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "total_tokens": 0,
+        "cost_usd": 0.0,
+        "request_count": 1
+      },
+      "workspace": "/tmp/pinchbench/1777018763115/agent_workspace",
+      "grading": {
+        "runs": [
+          {
+            "task_id": "task_18_spreadsheet_summary",
+            "score": 0.05,
+            "max_score": 1.0,
+            "grading_type": "hybrid",
+            "breakdown": {
+              "automated.report_created": 0.0,
+              "automated.total_revenue": 0.0,
+              "automated.total_profit": 0.0,
+              "automated.top_region": 0.0,
+              "automated.top_product": 0.0,
+              "automated.total_expenses": 0.0,
+              "automated.top_department": 0.0,
+              "automated.top_employee": 0.0,
+              "automated.budget_comparison": 0.0,
+              "llm_judge.Data Reading and Parsing": 0.5,
+              "llm_judge.Analytical Accuracy": 0.0,
+              "llm_judge.Report Quality and Structure": 0.0,
+              "llm_judge.Insights and Synthesis": 0.0
+            },
+            "notes": "The agent transcript shows the agent only attempted to read the Excel file using a low-level XML extraction method (unzip) and failed to read the CSV file or the Q1_Expenses sheet. No analysis was performed, no calculations were made, and no report was generated. The agent did not complete the task."
+          }
+        ],
+        "mean": 0.05,
+        "std": 0.0,
+        "min": 0.05,
+        "max": 0.05
+      },
+      "frontmatter": {
+        "id": "task_18_spreadsheet_summary",
+        "name": "CSV and Excel Data Summarization",
+        "category": "data_analysis",
+        "grading_type": "hybrid",
+        "timeout_seconds": 180,
+        "grading_weights": {
+          "automated": 0.6,
+          "llm_judge": 0.4
+        },
+        "workspace_files": [
+          {
+            "source": "quarterly_sales.csv",
+            "dest": "quarterly_sales.csv"
+          },
+          {
+            "source": "company_expenses.xlsx",
+            "dest": "company_expenses.xlsx"
+          }
+        ]
+      }
+    }
+  ],
+  "efficiency": {
+    "total_tokens": 0,
+    "total_input_tokens": 0,
+    "total_output_tokens": 0,
+    "total_cost_usd": 0.0,
+    "total_requests": 1,
+    "total_execution_time_seconds": 175.67,
+    "tasks_with_usage_data": 0,
+    "tokens_per_task": 0.0,
+    "cost_per_task_usd": 0.0,
+    "score_per_1k_tokens": null,
+    "score_per_dollar": null,
+    "per_task": [
+      {
+        "task_id": "task_18_spreadsheet_summary",
+        "score": 0.05,
+        "total_tokens": 0,
+        "cost_usd": 0.0,
+        "tokens_per_score_point": 0.0
+      }
+    ]
+  }
+}

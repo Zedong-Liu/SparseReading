@@ -29,7 +29,7 @@ from typing import Any
 REPO = Path(__file__).resolve().parents[1]
 BASELINE_DIR = REPO / "benchmarks" / "qwenclawbench" / "baseline"
 RESULTS_ROOT = REPO / "benchmarks" / "qwenclawbench"
-RUNSET = "nanobot_hook_flash_unified14_20260806"
+RUNSET = f"nanobot_hook_flash_unified14_{time.strftime('%Y%m%d_%H%M%S')}"
 
 UNIFIED14 = [
     "task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check",
@@ -104,16 +104,16 @@ def build_workspace(info: dict[str, Any]) -> Path:
     return ws
 
 
-def build_runtime(ws: Path, *, gate: bool) -> tuple[Any, Any, Any]:
+def build_runtime(
+    ws: Path,
+    *,
+    gate: bool,
+    conversation_id: str = "default",
+) -> tuple[Any, Any, Any]:
     from nanobot.agent.tools.filesystem import ListDirTool, ReadFileTool, WriteFileTool
     from nanobot.agent.tools.registry import ToolRegistry
     from nanobot.agent.tools.search import GrepTool
     from nanobot.agent.tools.shell import ExecTool
-
-    from sparseread.config import SparseReadConfig
-    from sparseread.wrapper import SparseRead
-
-    from sparseread_nanobot.adapter import NanobotAdapter
 
     registry = ToolRegistry()
     registry.register(ReadFileTool(workspace=ws))
@@ -122,13 +122,18 @@ def build_runtime(ws: Path, *, gate: bool) -> tuple[Any, Any, Any]:
     registry.register(ExecTool(working_dir=str(ws)))
     registry.register(WriteFileTool(workspace=ws))
 
+    if not gate:
+        return registry, None, None
+
+    from sparseread.config import SparseReadConfig
+    from sparseread.wrapper import SparseRead
+
+    from sparseread_nanobot.adapter import NanobotAdapter
+
     runtime = SparseRead(SparseReadConfig(mode="auto", workspace=str(ws)))
     agent = SimpleNamespace(tools=registry, _extra_hooks=[])
-    installed = NanobotAdapter().install(agent, runtime)
-    hook = agent._extra_hooks[0] if gate else None
-    if not gate:
-        # Keep the registry identical, but drop the hook so baseline is plain.
-        agent._extra_hooks.clear()
+    NanobotAdapter().install(agent, runtime, conversation_id=conversation_id)
+    hook = agent._extra_hooks[0]
     return registry, runtime, hook
 
 
@@ -154,7 +159,14 @@ def _transcript_for_grade(messages: list[dict[str, Any]]) -> list[dict[str, Any]
     return out
 
 
-def grade(info: dict[str, Any], messages: list[dict[str, Any]], ws: Path, *, success: bool) -> tuple[float, dict[str, float], str]:
+def grade(
+    info: dict[str, Any],
+    messages: list[dict[str, Any]],
+    ws: Path,
+    *,
+    success: bool,
+    final_content: str | None,
+) -> tuple[float, dict[str, float], str]:
     if not info["grading_code"]:
         return 0.0, {}, "no grading code"
     namespace: dict[str, Any] = {}
@@ -170,7 +182,12 @@ def grade(info: dict[str, Any], messages: list[dict[str, Any]], ws: Path, *, suc
         score = sum(breakdown.values()) / len(breakdown) if breakdown else 0.0
     except Exception as exc:
         return 0.0, {}, f"grading error: {exc}"
-    if info["grading_type"] in ("llm_judge", "hybrid") and success:
+    if (
+        info["grading_type"] in ("llm_judge", "hybrid")
+        and success
+        and final_content
+        and len(final_content) > 200
+    ):
         score = max(score, 0.3)
     return score, breakdown, ""
 
@@ -185,7 +202,7 @@ async def run_task(task_id: str, *, gate: bool, model: str, timeout_s: int) -> d
         return {"task_id": task_id, "mode": mode, "error": info["error"]}
     ws = build_workspace(info)
     os.environ["SRO_ENABLED"] = "1" if gate else "0"
-    registry, _runtime, hook = build_runtime(ws, gate=gate)
+    registry, _runtime, hook = build_runtime(ws, gate=gate, conversation_id=task_id)
     provider = OpenAICompatProvider(
         api_key=os.environ["DEEPSEEK_API_KEY"],
         api_base=os.environ.get("API_BASE_URL", "https://llmapi.paratera.com/v1"),
@@ -223,6 +240,7 @@ async def run_task(task_id: str, *, gate: bool, model: str, timeout_s: int) -> d
         list(result.messages),
         ws,
         success=success,
+        final_content=result.final_content,
     )
     usage = getattr(result, "usage", None) or {}
     tokens = int(
