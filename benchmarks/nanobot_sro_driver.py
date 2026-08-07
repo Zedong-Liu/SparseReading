@@ -30,6 +30,7 @@ REPO = Path(__file__).resolve().parents[1]
 BASELINE_DIR = REPO / "benchmarks" / "qwenclawbench" / "baseline"
 RESULTS_ROOT = REPO / "benchmarks" / "qwenclawbench"
 RUNSET = f"nanobot_hook_flash_unified14_{time.strftime('%Y%m%d_%H%M%S')}"
+OUT_DIR = RESULTS_ROOT / RUNSET
 
 UNIFIED14 = [
     "task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check",
@@ -248,6 +249,12 @@ async def run_task(task_id: str, *, gate: bool, model: str, timeout_s: int) -> d
         or usage.get("totalTokens")
         or (int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0) + int(usage.get("completion_tokens") or usage.get("output_tokens") or 0))
     )
+    transcript_dir = OUT_DIR / "transcripts"
+    transcript_dir.mkdir(parents=True, exist_ok=True)
+    (transcript_dir / f"{mode}_{task_id}.jsonl").write_text(
+        "\n".join(json.dumps(msg, ensure_ascii=False, default=str) for msg in result.messages),
+        encoding="utf-8",
+    )
     return {
         "task_id": task_id,
         "mode": mode,
@@ -265,13 +272,32 @@ async def run_task(task_id: str, *, gate: bool, model: str, timeout_s: int) -> d
 async def main_async(args: argparse.Namespace) -> list[dict[str, Any]]:
     tasks = args.task or UNIFIED14
     modes = [m.strip() for m in args.modes.split(",") if m.strip()]
+    result_dir = OUT_DIR / "results"
+    result_dir.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, Any]] = []
     for mode in modes:
         gate = mode != "baseline"
         for task_id in tasks:
+            result_path = result_dir / f"{mode}_{task_id}.json"
+            if args.resume and result_path.exists():
+                try:
+                    saved = json.loads(result_path.read_text(encoding="utf-8"))
+                    results.append(saved)
+                    print(f"[resume] skip {mode} {task_id}", flush=True)
+                    continue
+                except json.JSONDecodeError:
+                    pass
             print(f"[{mode}] {task_id} ...", flush=True)
             result = await run_task(task_id, gate=gate, model=args.model, timeout_s=args.timeout)
             results.append(result)
+            (result_dir / f"{mode}_{task_id}.json").write_text(
+                json.dumps(result, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            (OUT_DIR / "progress.log").write_text(
+                f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} {mode} {task_id} done\n",
+                encoding="utf-8",
+            )
             status = "OK" if result.get("success") else ("TIMEOUT" if result.get("timed_out") else "FAIL")
             print(
                 f"  {task_id} {mode} score={result.get('score', 0):.3f} "
@@ -288,6 +314,7 @@ def main() -> int:
     parser.add_argument("--model", default=os.environ.get("BENCH_MODEL", "DeepSeek-V4-Flash"))
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--resume", action="store_true", help="Skip cases with saved result files")
     args = parser.parse_args()
     tasks = args.task or UNIFIED14
     if args.dry_run:
@@ -299,9 +326,8 @@ def main() -> int:
         print("missing DEEPSEEK_API_KEY", file=sys.stderr)
         return 2
     results = asyncio.run(main_async(args))
-    out_dir = RESULTS_ROOT / RUNSET
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "aggregate.json").write_text(
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    (OUT_DIR / "aggregate.json").write_text(
         json.dumps(results, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
@@ -311,7 +337,7 @@ def main() -> int:
             avg = sum(r["score"] for r in rows) / len(rows)
             tokens = sum(r.get("tokens", 0) for r in rows)
             print(f"{mode}: n={len(rows)} avg_score={avg:.4f} tokens={tokens}")
-    print(f"results: {out_dir / 'aggregate.json'}")
+    print(f"results: {OUT_DIR / 'aggregate.json'}")
     return 0
 
 

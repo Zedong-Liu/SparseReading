@@ -44,7 +44,7 @@ def _write(workspace: Path, name: str, size: int) -> Path:
     return path
 
 
-def test_large_read_is_rewritten_to_sro_preview(tmp_path: Path, monkeypatch) -> None:
+def test_large_read_is_rewritten_to_sro_handoff(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SRO_ENABLED", "1")
     target = _write(tmp_path, "large.txt", 6000)
     hook = _hook(tmp_path)
@@ -52,7 +52,7 @@ def test_large_read_is_rewritten_to_sro_preview(tmp_path: Path, monkeypatch) -> 
 
     asyncio.run(hook.before_execute_tools(_context(_response(call))))
 
-    assert call.name == "sro_preview"
+    assert call.name == "sro_handoff"
     assert call.arguments["path"] == str(target)
 
 
@@ -100,6 +100,22 @@ def test_sro_guard_executes_through_registry() -> None:
     result = asyncio.run(registry.execute("sro_guard", {"message": "blocked: use sro_read"}))
 
     assert result == "blocked: use sro_read"
+
+
+def test_sro_handoff_executes_through_registry(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    from nanobot.agent.tools.registry import ToolRegistry
+
+    from sparseread_nanobot.hook import SroHandoffTool
+
+    hook = _hook(tmp_path)
+    target = _write(tmp_path, "large.txt", 6000)
+    registry = ToolRegistry()
+    registry.register(SroHandoffTool(hook.orchestrator))
+
+    result = asyncio.run(registry.execute("sro_handoff", {"path": str(target)}))
+
+    assert "sro_handoff" in str(result) or "file_card" in str(result)
 
 
 def test_write_provenance_is_recorded_after_iteration(tmp_path: Path) -> None:

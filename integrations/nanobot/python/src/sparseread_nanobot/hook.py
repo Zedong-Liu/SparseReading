@@ -55,6 +55,50 @@ class SroGuardTool(Tool):
         return str(message)
 
 
+class SroHandoffTool(Tool):
+    """Return the old-host-style SRO handoff guidance for a large object."""
+
+    def __init__(self, orchestrator: Any) -> None:
+        self.orchestrator = orchestrator
+
+    @property
+    def name(self) -> str:
+        return "sro_handoff"
+
+    @property
+    def description(self) -> str:
+        return "SparseRead internal handoff guidance. Do not call directly."
+
+    @property
+    def read_only(self) -> bool:
+        return True
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "episode_hint": {
+                    "type": "object",
+                    "description": "Optional episode boundary hint.",
+                },
+            },
+            "required": ["path"],
+        }
+
+    async def execute(self, path: str, episode_hint: dict[str, Any] | None = None, **kwargs: Any) -> str:
+        if isinstance(episode_hint, dict):
+            try:
+                self.orchestrator.bind_episode(path, episode_hint)
+            except Exception:
+                pass
+        try:
+            return self.orchestrator.handoff_message(path)
+        except Exception as exc:
+            return f"Error: SRO handoff failed: {exc}"
+
+
 def _candidate_paths(args: dict[str, Any]) -> list[str]:
     values: list[str] = []
     for key in ("file_path", "path", "filename", "target"):
@@ -143,11 +187,11 @@ class SparseReadHook(AgentHook):
             return
         if not should_handoff:
             return
-        arguments: dict[str, Any] = {"path": str(path)}
         parsed_hint = self._parse_hint(hint)
+        arguments: dict[str, Any] = {"path": str(path)}
         if parsed_hint:
             arguments["episode_hint"] = parsed_hint
-        call.name = "sro_preview"
+        call.name = "sro_handoff"
         call.arguments = arguments
 
     async def before_iteration(self, context: AgentHookContext) -> None:

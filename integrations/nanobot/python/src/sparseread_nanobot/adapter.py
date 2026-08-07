@@ -24,7 +24,7 @@ class NanobotAdapter:
         *,
         conversation_id: str = "default",
     ) -> list[str]:
-        from sparseread_nanobot.hook import SparseReadHook, SroGuardTool
+        from sparseread_nanobot.hook import SparseReadHook, SroGuardTool, SroHandoffTool
 
         tools = getattr(agent, "tools", None)
         if tools is None:
@@ -41,6 +41,10 @@ class NanobotAdapter:
         if not tools.has(guard_tool.name):
             tools.register(guard_tool)
             installed.append("sro_guard")
+        handoff_tool = SroHandoffTool(orchestrator)
+        if not tools.has(handoff_tool.name):
+            tools.register(handoff_tool)
+            installed.append("sro_handoff")
         orchestrator.mark_macro_available()
 
         hooks = getattr(agent, "_extra_hooks", None)
