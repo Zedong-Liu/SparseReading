@@ -155,8 +155,9 @@ def test_guidance_is_injected_once(tmp_path: Path) -> None:
     asyncio.run(hook.before_iteration(context))
     asyncio.run(hook.before_iteration(context))
 
-    assert "SparseRead protocol" in messages[0]["content"]
-    assert messages[0]["content"].count("SparseRead protocol") == 1
+    assert messages[0]["role"] == "system"
+    assert "# Sparse Reading" in messages[0]["content"]
+    assert sum(1 for m in messages if m.get("role") == "system") == 1
 
 
 def test_adapter_installs_without_host_sro_fields(tmp_path: Path) -> None:

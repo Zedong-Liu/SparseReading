@@ -202,11 +202,15 @@ class SparseReadHook(AgentHook):
         if self.inject_guidance and not self._guidance_injected:
             self._guidance_injected = True
             messages = context.messages
-            if isinstance(messages, list) and messages and isinstance(messages[0], dict):
-                first = messages[0]
-                content = str(first.get("content", ""))
-                if "SparseRead protocol" not in content:
-                    messages[0] = {**first, "content": SRO_GUIDANCE + "\n\n" + content}
+            if isinstance(messages, list):
+                already = any(
+                    isinstance(m, dict)
+                    and m.get("role") == "system"
+                    and "# Sparse Reading" in str(m.get("content", ""))
+                    for m in messages
+                )
+                if not already:
+                    messages.insert(0, {"role": "system", "content": SRO_GUIDANCE})
 
     async def before_execute_tools(self, context: AgentHookContext) -> None:
         response = context.response

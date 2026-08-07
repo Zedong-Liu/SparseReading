@@ -269,6 +269,21 @@ async def run_task(task_id: str, *, gate: bool, model: str, timeout_s: int) -> d
     }
 
 
+def _needs_retry(result: dict[str, Any], attempt: int, max_retries: int) -> bool:
+    if attempt >= max_retries:
+        return False
+    reason = str(result.get("stop_reason", ""))
+    if result.get("timed_out"):
+        return True
+    if reason in {"error", "empty_final_response", "timeout"}:
+        return True
+    # Empty final content with no tools and a zero score is usually a provider
+    # empty-response failure rather than a genuine zero.
+    if result.get("success") and result.get("score", 0) == 0 and not result.get("breakdown"):
+        return True
+    return False
+
+
 async def main_async(args: argparse.Namespace) -> list[dict[str, Any]]:
     tasks = args.task or UNIFIED14
     modes = [m.strip() for m in args.modes.split(",") if m.strip()]
@@ -289,6 +304,11 @@ async def main_async(args: argparse.Namespace) -> list[dict[str, Any]]:
                     pass
             print(f"[{mode}] {task_id} ...", flush=True)
             result = await run_task(task_id, gate=gate, model=args.model, timeout_s=args.timeout)
+            for attempt in range(1, args.retries + 1):
+                if not _needs_retry(result, attempt - 1, args.retries):
+                    break
+                print(f"  retry {mode} {task_id} (attempt {attempt + 1}): {result.get('stop_reason')}", flush=True)
+                result = await run_task(task_id, gate=gate, model=args.model, timeout_s=args.timeout)
             results.append(result)
             (result_dir / f"{mode}_{task_id}.json").write_text(
                 json.dumps(result, ensure_ascii=False, indent=2),
@@ -315,6 +335,7 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--resume", action="store_true", help="Skip cases with saved result files")
+    parser.add_argument("--retries", type=int, default=2, help="Extra attempts for infra failures")
     args = parser.parse_args()
     tasks = args.task or UNIFIED14
     if args.dry_run:
