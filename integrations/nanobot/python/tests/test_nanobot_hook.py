@@ -5,9 +5,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from nanobot.agent.hook import AgentHookContext
-from nanobot.providers.base import LLMResponse, ToolCallRequest
-
 from sparseread.config import SparseReadConfig
 from sparseread.wrapper import SparseRead
 
@@ -15,21 +12,38 @@ from sparseread_nanobot.adapter import NanobotAdapter
 from sparseread_nanobot.hook import SparseReadHook
 
 
-def _call(name: str, arguments: dict[str, Any]) -> ToolCallRequest:
-    return ToolCallRequest(id="1", name=name, arguments=arguments)
+class FakeCall:
+    def __init__(self, name: str, arguments: dict[str, Any]) -> None:
+        self.id = "1"
+        self.name = name
+        self.arguments = arguments
 
 
-def _response(*calls: ToolCallRequest) -> LLMResponse:
-    return LLMResponse(content=None, tool_calls=list(calls))
+class FakeResponse:
+    def __init__(self, *calls: FakeCall) -> None:
+        self.content = None
+        self.tool_calls = list(calls)
 
 
-def _context(response: LLMResponse | None = None, messages: list | None = None) -> AgentHookContext:
-    return AgentHookContext(
-        iteration=0,
-        messages=messages or [],
-        response=response,
-        tool_results=[],
-    )
+class FakeContext:
+    def __init__(self, response: FakeResponse | None = None, messages: list | None = None) -> None:
+        self.iteration = 0
+        self.messages = messages or []
+        self.response = response
+        self.tool_results: list[Any] = []
+        self.stop_reason: str | None = None
+
+
+def _call(name: str, arguments: dict[str, Any]) -> FakeCall:
+    return FakeCall(name, arguments)
+
+
+def _response(*calls: FakeCall) -> FakeResponse:
+    return FakeResponse(*calls)
+
+
+def _context(response: FakeResponse | None = None, messages: list | None = None) -> FakeContext:
+    return FakeContext(response=response, messages=messages)
 
 
 def _hook(tmp_path: Path, *, mode: str = "auto") -> SparseReadHook:
@@ -103,30 +117,27 @@ def test_exec_large_dump_is_rewritten_to_guard(tmp_path: Path, monkeypatch) -> N
 
 
 def test_sro_guard_executes_through_registry() -> None:
-    from nanobot.agent.tools.registry import ToolRegistry
-
     from sparseread_nanobot.hook import SroGuardTool
 
-    registry = ToolRegistry()
-    registry.register(SroGuardTool())
-
-    result = asyncio.run(registry.execute("sro_guard", {"message": "blocked: use sro_read"}))
+    tool = SroGuardTool()
+    params = tool.cast_params({"message": "blocked: use sro_read"})
+    assert tool.validate_params(params) == []
+    result = asyncio.run(tool.execute(**params))
 
     assert result == "blocked: use sro_read"
 
 
 def test_sro_handoff_executes_through_registry(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SRO_ENABLED", "1")
-    from nanobot.agent.tools.registry import ToolRegistry
-
     from sparseread_nanobot.hook import SroHandoffTool
 
     hook = _hook(tmp_path)
     target = _write(tmp_path, "large.txt", 6000)
-    registry = ToolRegistry()
-    registry.register(SroHandoffTool(hook.orchestrator))
+    tool = SroHandoffTool(hook.orchestrator)
 
-    result = asyncio.run(registry.execute("sro_handoff", {"path": str(target)}))
+    params = tool.cast_params({"path": str(target)})
+    assert tool.validate_params(params) == []
+    result = asyncio.run(tool.execute(**params))
 
     assert "sro_handoff" in str(result) or "file_card" in str(result)
 

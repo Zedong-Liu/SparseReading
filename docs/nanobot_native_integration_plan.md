@@ -135,12 +135,13 @@ NanoBot 其实有同样的官方扩展面，我们没用：
 
 ## 7. AgentLoop 双路径互斥（H4 处理说明）
 
-当前 vendored 宿主在 `SRO_ENABLED=1` 时仍会内建 `_sro`（`AgentLoop.__init__`
-注册同名 SRO 宏工具、turn 尾 `finish_episode`），与 adapter hook 并存会形成
-两个 orchestrator 状态分叉。因此：
+仓库已不再随带 `nanobot-sro-v3` 宿主（本地保留作验证 checkout，并加入
+`.gitignore`）。用户安装的 `nanobot-ai` 若在 `SRO_ENABLED=1` 时内建 `_sro`
+（注册同名 SRO 宏工具、turn 尾 `finish_episode`），与 adapter hook 并存会
+形成两个 orchestrator 状态分叉。因此：
 
 - 验证形态（当前唯一被测试的形态）：`AgentRunner + ToolRegistry + hook`
   直跑（`benchmarks/nanobot_sro_driver.py`），不使用 `AgentLoop` 内建路径；
 - 生产 `AgentLoop` 用户二选一：要么 `SRO_ENABLED=0` + `install()` 挂
   `SparseReadHook`，要么直接用宿主内建 SRO（不再挂 adapter hook）；
-- v0.2 计划清理 vendored host 的内建 `_sro` 路径，使官方 hook 成为唯一入口。
+- 若上游 `nanobot-ai` 后续移除内建 `_sro` 路径，官方 hook 即成为唯一入口。

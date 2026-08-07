@@ -1,9 +1,8 @@
 """NanoBot native integration through the official AgentHook extension point.
 
-This module is the NanoBot counterpart of the OpenCode/OpenClaw/Claude
-PreToolUse adapters: it observes the model's tool calls before execution and
-rewrites high-benefit reads to SRO tools.  It does not require any SRO fields
-in the NanoBot host source.
+This module is host-free: it never imports ``nanobot``.  The hook and tools are
+duck-typed against the official ``AgentHook`` / ``Tool`` surfaces so the adapter
+works with any installed ``nanobot-ai`` (>=0.2) without vendoring the framework.
 """
 
 from __future__ import annotations
@@ -12,10 +11,6 @@ import json
 import os
 from pathlib import Path
 from typing import Any
-
-from nanobot.agent.hook import AgentHook, AgentHookContext
-from nanobot.agent.tools.base import Tool
-from nanobot.providers.base import ToolCallRequest
 
 from sparseread.core.policy import SparseCommandPolicy
 from sparseread.wrapper import SparseRead
@@ -28,7 +23,52 @@ EXEC_TOOLS = {"exec", "bash", "shell"}
 WRITE_TOOLS = {"write_file", "edit_file", "apply_patch", "write"}
 
 
-class SroGuardTool(Tool):
+class _SroTool:
+    """Minimal Tool-compatible surface (duck-typed for nanobot ToolRegistry)."""
+
+    @property
+    def name(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def description(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def read_only(self) -> bool:
+        return True
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def to_schema(self) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.parameters,
+            },
+        }
+
+    def cast_params(self, params: dict[str, Any]) -> dict[str, Any]:
+        return params if isinstance(params, dict) else {}
+
+    def validate_params(self, params: dict[str, Any]) -> list[str]:
+        if not isinstance(params, dict):
+            return ["parameters must be an object"]
+        errors: list[str] = []
+        for required in (self.parameters or {}).get("required", []):
+            if required not in params:
+                errors.append(f"missing required {required}")
+        return errors
+
+    async def execute(self, **kwargs: Any) -> Any:
+        raise NotImplementedError
+
+
+class SroGuardTool(_SroTool):
     """Internal tool that returns a SparseRead guard message to the model."""
 
     @property
@@ -38,10 +78,6 @@ class SroGuardTool(Tool):
     @property
     def description(self) -> str:
         return "SparseRead internal guard result. Do not call directly."
-
-    @property
-    def read_only(self) -> bool:
-        return True
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -55,7 +91,7 @@ class SroGuardTool(Tool):
         return str(message)
 
 
-class SroHandoffTool(Tool):
+class SroHandoffTool(_SroTool):
     """Return the old-host-style SRO handoff guidance for a large object."""
 
     def __init__(self, orchestrator: Any) -> None:
@@ -68,10 +104,6 @@ class SroHandoffTool(Tool):
     @property
     def description(self) -> str:
         return "SparseRead internal handoff guidance. Do not call directly."
-
-    @property
-    def read_only(self) -> bool:
-        return True
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -117,8 +149,13 @@ def _candidate_paths(args: dict[str, Any]) -> list[str]:
     return values
 
 
-class SparseReadHook(AgentHook):
-    """PreToolUse-style SRO gate for NanoBot's official AgentHook surface."""
+class SparseReadHook:
+    """PreToolUse-style SRO gate for NanoBot's official AgentHook surface.
+
+    Duck-typed against ``nanobot.agent.hook.AgentHook``: implements
+    ``before_iteration`` / ``before_execute_tools`` / ``after_iteration`` /
+    ``finalize_content`` without importing the framework.
+    """
 
     def __init__(
         self,
@@ -128,7 +165,6 @@ class SparseReadHook(AgentHook):
         inject_guidance: bool = True,
         workspace: str | Path | None = None,
     ) -> None:
-        super().__init__()
         self.sparseread = sparseread
         self.orchestrator = sparseread.orchestrator
         self.conversation_id = conversation_id
@@ -166,7 +202,7 @@ class SparseReadHook(AgentHook):
 
     def _route_read(
         self,
-        call: ToolCallRequest,
+        call: Any,
         path: str,
         hint: Any,
         *,
@@ -194,7 +230,7 @@ class SparseReadHook(AgentHook):
         call.name = "sro_handoff"
         call.arguments = arguments
 
-    async def before_iteration(self, context: AgentHookContext) -> None:
+    async def before_iteration(self, context: Any) -> None:
         self.orchestrator.set_context(
             {"conversation_id": self.conversation_id, "turn_id": str(getattr(self, "_iteration", 0))}
         )
@@ -212,7 +248,7 @@ class SparseReadHook(AgentHook):
                 if not already:
                     messages.insert(0, {"role": "system", "content": SRO_GUIDANCE})
 
-    async def before_execute_tools(self, context: AgentHookContext) -> None:
+    async def before_execute_tools(self, context: Any) -> None:
         response = context.response
         if response is None:
             return
@@ -255,7 +291,7 @@ class SparseReadHook(AgentHook):
             elif name in WRITE_TOOLS:
                 self._pending_writes.extend(_candidate_paths(args))
 
-    async def after_iteration(self, context: AgentHookContext) -> None:
+    async def after_iteration(self, context: Any) -> None:
         for raw_path in self._pending_writes:
             try:
                 path = Path(raw_path)
@@ -288,7 +324,7 @@ class SparseReadHook(AgentHook):
             except Exception:
                 pass
 
-    def finalize_content(self, context: AgentHookContext, content: str | None) -> str | None:
+    def finalize_content(self, context: Any, content: str | None) -> str | None:
         if content:
             try:
                 self.orchestrator.finish_episode(self.conversation_id)

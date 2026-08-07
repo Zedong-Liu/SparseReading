@@ -33,6 +33,8 @@ sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 当前四框架不是完全相同的 skill 文件形态：
 
 - nanobot 内置 skill：`nanobot-sro-v3/nanobot/skills/sparse-reading/SKILL.md`。
+- nanobot adapter 内置 guidance（与旧宿主 SKILL.md 正文一致，以 system 消息
+  注入），不再依赖宿主 skill 文件。
 - OpenClaw 插件随带 skill：`integrations/openclaw/plugin/skills/sparse-reading/SKILL.md`。
 - OpenCode 当前没有独立 `SKILL.md`。它通过插件注册 `sro_preview`、`sro_read` 等工具，并在大文件/截断输出场景给模型 nudge。日常使用时，用户应该在任务里要求 agent 自动使用 SparseRead。
 - Claude Code 使用安装器写入 workspace 的 `CLAUDE.md`（模板位于
@@ -89,21 +91,22 @@ cd SparseReading
 先跑 release fixture，确认 core 和两个 bridge 都能启动：
 
 ```bash
-uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio \
-  pytest tests/test_release_fixtures.py -q
+PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integrations/opencode/python/src:integrations/openclaw/python/src:integrations/claude/python/src" \
+  uv run --with pytest --with pytest-asyncio pytest tests/test_release_fixtures.py -q
 ```
 
 完整本地回归：
 
 ```bash
-uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio \
-  pytest -q
+PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integrations/opencode/python/src:integrations/openclaw/python/src:integrations/claude/python/src" \
+  uv run --with pytest --with pytest-asyncio pytest -q
 ```
 
 Windows PowerShell 可直接使用：
 
 ```powershell
-uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio pytest tests/test_release_fixtures.py -q
+PYTHONPATH="packages/sparseread-core/src;integrations\nanobot\python\src;integrations\opencode\python\src;integrations\openclaw\python\src;integrations\claude\python\src" `
+  uv run --with pytest --with pytest-asyncio pytest tests/test_release_fixtures.py -q
 ```
 
 ## 安装到 OpenCode
@@ -211,15 +214,15 @@ py scripts/install_sparseread.py --platform openclaw --doctor
 ## 安装到 NanoBot
 
 NanoBot 不需要 installer。`sparseread-core` 与 `sparseread-nanobot` 是普通
-Python 依赖；`nanobot-sro-v3/` 里的 `nanobot/sparse_reading` 是向下兼容的
-转发层，实际实现来自共享 core。`sparseread-nanobot` 通过官方
-`AgentHook` + `ToolRegistry` 接入：`install(agent, ...)` 会注册 SRO 工具并自动
-挂载 `SparseReadHook`，不再依赖宿主源码里的任何 SRO 字段。
+Python 依赖，宿主 `nanobot-ai` 由用户自行安装（本仓库不随带框架源码）。
+`sparseread-nanobot` 通过官方 `AgentHook` + `ToolRegistry` 接入：
+`install(agent, ...)` 会注册 SRO 工具并自动挂载 `SparseReadHook`；hook 是
+鸭子类型实现，不 import 宿主模块，只在运行时依赖 nanobot 已安装。
 
 源码形态（monorepo 内开发/测试）：
 
 ```bash
-uv pip install --python nanobot-sro-v3/.venv/bin/python \
+uv pip install --python <你的 nanobot venv>/bin/python \
   -e packages/sparseread-core \
   -e integrations/nanobot/python
 ```
@@ -227,7 +230,7 @@ uv pip install --python nanobot-sro-v3/.venv/bin/python \
 Windows PowerShell：
 
 ```powershell
-uv pip install --python nanobot-sro-v3\.venv\Scripts\python.exe `
+uv pip install --python <你的 nanobot venv>\Scripts\python.exe `
   -e packages\sparseread-core `
   -e integrations\nanobot\python
 ```
@@ -253,8 +256,8 @@ runtime = install(agent)   # 自动注册 sro_preview/sro_read/... 并挂 Sparse
 时结束 episode。模型可见引导由 adapter 内置（与旧宿主 SKILL.md 正文一致，以
 system 消息注入），不再依赖宿主 skill 文件。
 
-注意（双路径互斥）：vendored 宿主在 `SRO_ENABLED=1` 时仍会自建 `_sro` 并注册
-同名 SRO 工具。生产 `AgentLoop` 用户二选一：
+注意（双路径互斥）：若你安装的 `nanobot-ai` 版本在 `SRO_ENABLED=1` 时仍会
+自建 `_sro` 并注册同名 SRO 工具，生产 `AgentLoop` 用户二选一：
 
 - 用本 adapter：`SRO_ENABLED=0` + `install(agent)`（hook 路径）；
 - 用宿主内建 SRO：`SRO_ENABLED=1`，不再挂 adapter hook。
@@ -434,8 +437,8 @@ FINAL_DEADLINE: 2026-07-18 09:30 UTC.
 每次版本更新都至少跑：
 
 ```bash
-uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio \
-  pytest tests/test_release_fixtures.py -q
+PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integrations/opencode/python/src:integrations/openclaw/python/src:integrations/claude/python/src" \
+  uv run --with pytest --with pytest-asyncio pytest tests/test_release_fixtures.py -q
 ```
 
 这 6 个 fixture 覆盖：

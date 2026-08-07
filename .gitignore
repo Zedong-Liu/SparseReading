@@ -53,6 +53,10 @@ runbook.md
 v3_plan.md
 v3_dev.md
 
+# Vendored NanoBot host kept only as a local validation checkout; users
+# install nanobot-ai themselves.  Not part of this repository.
+nanobot-sro-v3/
+
 # Large/generated archives
 *.zip
 *.tar

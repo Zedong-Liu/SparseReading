@@ -43,9 +43,9 @@ sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 [`docs/sparseread_installation.md`](docs/sparseread_installation.md)。
 
 框架无关的 SR core 位于 `packages/sparseread-core/`；NanoBot、OpenCode、OpenClaw、
-Claude Code 的兼容层分别位于 `integrations/<framework>/`。`nanobot-sro-v3/` 只保留
-NanoBot 框架及其兼容转发层。推荐以外层仓库根目录作为 benchmark workspace，因为
-测试脚本也依赖 `benchmarks/` 和 `benchmarks/qwenclawbench/`
+Claude Code 的兼容层分别位于 `integrations/<framework>/`。NanoBot 宿主
+（`nanobot-ai`）由用户自行安装，本仓库不随带框架源码。推荐以外层仓库根目录作为
+benchmark workspace，因为测试脚本也依赖 `benchmarks/` 和 `benchmarks/qwenclawbench/`
 中的 runtime 夹具。
 
 ## 快速开始（源码安装）
@@ -61,8 +61,8 @@ Windows 默认推荐路径是 **PowerShell 原生安装**。用户只需要选�
 git clone https://github.com/Zedong-Liu/SparseReading.git
 cd SparseReading
 
-uv run --project nanobot-sro-v3 --extra dev --with pytest --with pytest-asyncio \
-  pytest tests/test_release_fixtures.py -q
+PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integrations/opencode/python/src:integrations/openclaw/python/src:integrations/claude/python/src" \
+  uv run --with pytest --with pytest-asyncio pytest tests/test_release_fixtures.py -q
 ```
 
 单独验证 core（不安装任何框架宿主）：
@@ -329,7 +329,7 @@ token 数据见 `benchmarks/qwenclawbench/` 下的聚合文档与论文工作区
 ```text
 packages/sparseread-core/        框架无关 SR core（含 tests/）
 integrations/<framework>/        各框架 adapter（python/ 与 plugin/，含 tests/）
-nanobot-sro-v3/                  NanoBot 框架宿主与宿主集成测试
+NanoBot 宿主（nanobot-ai）        由用户自行安装，仓库不随带框架源码
 benchmarks/                      本地 benchmark 运行器、shim 与代理
 benchmarks/qwenclawbench/          精选 benchmark runtime fixture（不含历史结果）
 tests/                           仓库级集成/发布测试（bridge/gate/fixtures/installer）
