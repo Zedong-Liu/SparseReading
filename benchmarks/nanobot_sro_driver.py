@@ -18,6 +18,8 @@ import argparse
 import asyncio
 import json
 import os
+import re
+import subprocess
 import shutil
 import sys
 import tempfile
@@ -72,11 +74,7 @@ def load_task_info(task_id: str) -> dict[str, Any]:
         prompt = content.split("## Prompt", 1)[1]
         if "## Expected" in prompt:
             prompt = prompt.split("## Expected", 1)[0]
-    grading_code = ""
-    if "```python" in content:
-        parts = content.split("```python")
-        if len(parts) > 1:
-            grading_code = parts[1].split("```", 1)[0]
+    grading_code = extract_grade_code(content)
     return {
         "task_id": task_id,
         "frontmatter": frontmatter,
@@ -85,6 +83,15 @@ def load_task_info(task_id: str) -> dict[str, Any]:
         "grading_code": grading_code,
         "source_dir": str(src_dir),
     }
+
+
+def extract_grade_code(content: str) -> str:
+    """Return the first python block containing ``def grade`` (grading code)."""
+    for block in re.split(r"```python\s*", content)[1:]:
+        code = block.split("```", 1)[0]
+        if "def grade" in code:
+            return code
+    return ""
 
 
 def build_workspace(info: dict[str, Any]) -> Path:
@@ -277,10 +284,6 @@ def _needs_retry(result: dict[str, Any], attempt: int, max_retries: int) -> bool
         return True
     if reason in {"error", "empty_final_response", "timeout"}:
         return True
-    # Empty final content with no tools and a zero score is usually a provider
-    # empty-response failure rather than a genuine zero.
-    if result.get("success") and result.get("score", 0) == 0 and not result.get("breakdown"):
-        return True
     return False
 
 
@@ -289,6 +292,31 @@ async def main_async(args: argparse.Namespace) -> list[dict[str, Any]]:
     modes = [m.strip() for m in args.modes.split(",") if m.strip()]
     result_dir = OUT_DIR / "results"
     result_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        revision = subprocess.run(
+            ["git", "-C", str(REPO), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+    except Exception:
+        revision = ""
+    (OUT_DIR / "meta.json").write_text(
+        json.dumps(
+            {
+                "runset": RUNSET,
+                "source_revision": revision,
+                "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "model": args.model,
+                "modes": [m.strip() for m in args.modes.split(",") if m.strip()],
+                "timeout_s": args.timeout,
+                "retries": args.retries,
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
     results: list[dict[str, Any]] = []
     for mode in modes:
         gate = mode != "baseline"

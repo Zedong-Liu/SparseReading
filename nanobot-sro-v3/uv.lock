@@ -3331,7 +3331,11 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "sparseread-core", editable = "../packages/sparseread-core" }]
+requires-dist = [
+    { name = "nanobot-ai", marker = "extra == 'nanobot'", specifier = ">=0.2.0,<0.3" },
+    { name = "sparseread-core", editable = "../packages/sparseread-core" },
+]
+provides-extras = ["nanobot"]
 
 [[package]]
 name = "sparseread-openclaw"

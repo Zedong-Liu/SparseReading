@@ -235,7 +235,7 @@ class SparseReadHook(AgentHook):
                             limit=limit,
                             pages=pages,
                         )
-                        if call.name == "sro_preview":
+                        if call.name == "sro_handoff":
                             break
             elif name in EXEC_TOOLS:
                 command = str(args.get("command") or args.get("cmd") or "")

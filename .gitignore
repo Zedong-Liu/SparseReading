@@ -70,13 +70,10 @@ benchmarks/qwenclawbench/*/
 !benchmarks/qwenclawbench/sro_v3/
 benchmarks/qwenclawbench/baseline/*/
 benchmarks/qwenclawbench/sro_v3/*/
-!benchmarks/qwenclawbench/baseline/task_21_openclaw_comprehension/
+!benchmarks/qwenclawbench/baseline/*/
 !benchmarks/qwenclawbench/sro_v3/task_21_openclaw_comprehension/
-!benchmarks/qwenclawbench/baseline/task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check/
 !benchmarks/qwenclawbench/sro_v3/task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check/
-!benchmarks/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_5q/
 !benchmarks/qwenclawbench/sro_v3/task_loogle_shortdep_fall_of_outremer_5q/
-!benchmarks/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_3q_followup/
 !benchmarks/qwenclawbench/sro_v3/task_loogle_shortdep_fall_of_outremer_3q_followup/
 benchmarks/qwenclawbench/**/results/
 benchmarks/qwenclawbench/**/runtime/scripts/results/

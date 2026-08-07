@@ -77,6 +77,19 @@ def test_bounded_read_stays_native(tmp_path: Path, monkeypatch) -> None:
     assert call.name == "read_file"
 
 
+def test_multi_path_breaks_after_first_handoff(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SRO_ENABLED", "1")
+    large = _write(tmp_path, "large.txt", 6000)
+    small = _write(tmp_path, "small.txt", 100)
+    hook = _hook(tmp_path)
+    call = _call("read_file", {"paths": [str(large), str(small)]})
+
+    asyncio.run(hook.before_execute_tools(_context(_response(call))))
+
+    assert call.name == "sro_handoff"
+    assert call.arguments["path"] == str(large)
+
+
 def test_exec_large_dump_is_rewritten_to_guard(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SRO_ENABLED", "1")
     target = _write(tmp_path, "large.txt", 6000)
@@ -143,6 +156,24 @@ def test_finish_episode_on_final_content(tmp_path: Path, monkeypatch) -> None:
     result = hook.finalize_content(_context(), "done")
 
     assert result == "done"
+    assert calls["finish"] == 1
+
+
+def test_stop_reason_triggers_finish_once(tmp_path: Path, monkeypatch) -> None:
+    hook = _hook(tmp_path)
+    calls = {"finish": 0}
+
+    def fake_finish(conversation_id: str | None = None):
+        calls["finish"] += 1
+        return None
+
+    monkeypatch.setattr(hook.orchestrator, "finish_episode", fake_finish)
+    context = _context()
+    context.stop_reason = "completed"
+
+    asyncio.run(hook.after_iteration(context))
+    asyncio.run(hook.after_iteration(context))
+
     assert calls["finish"] == 1
 
 
