@@ -211,8 +211,10 @@ py scripts/install_sparseread.py --platform openclaw --doctor
 ## 安装到 NanoBot
 
 NanoBot 不需要 installer。`sparseread-core` 与 `sparseread-nanobot` 是普通
-Python 依赖，`nanobot-sro-v3/` 里的 `nanobot/sparse_reading` 是向下兼容的
-转发层，实际实现来自共享 core。
+Python 依赖；`nanobot-sro-v3/` 里的 `nanobot/sparse_reading` 是向下兼容的
+转发层，实际实现来自共享 core。`sparseread-nanobot` 通过官方
+`AgentHook` + `ToolRegistry` 接入：`install(agent, ...)` 会注册 SRO 工具并自动
+挂载 `SparseReadHook`，不再依赖宿主源码里的任何 SRO 字段。
 
 源码形态（monorepo 内开发/测试）：
 
@@ -234,11 +236,31 @@ uv pip install --python nanobot-sro-v3\.venv\Scripts\python.exe `
 
 ```bash
 pip install "sparseread-core>=0.1,<0.2" "sparseread-nanobot>=0.1,<0.2"
+pip install "sparseread-nanobot[nanobot]"   # 可选：一并安装 nanobot-ai 宿主
 ```
 
-NanoBot 的 agent loop 会在文件访问路径上自动接入 SRO handoff；用户不需要
-手动配置 hook 或 MCP。模型可见指南是内置 skill：
-`nanobot-sro-v3/nanobot/skills/sparse-reading/SKILL.md`。
+接入方式：
+
+```python
+from sparseread_nanobot import install
+
+runtime = install(agent)   # 自动注册 sro_preview/sro_read/... 并挂 SparseReadHook
+```
+
+`SparseReadHook` 在 `before_execute_tools` 里对命中 gate 的原生
+`read_file/list_dir/grep` 改写为 `sro_handoff`（返回与旧宿主一致的引导消息），
+对 `exec` 大文件 dump 改写为 `sro_guard`，并记录 write provenance、在 turn 结束
+时结束 episode。模型可见引导由 adapter 内置（与旧宿主 SKILL.md 正文一致，以
+system 消息注入），不再依赖宿主 skill 文件。
+
+注意（双路径互斥）：vendored 宿主在 `SRO_ENABLED=1` 时仍会自建 `_sro` 并注册
+同名 SRO 工具。生产 `AgentLoop` 用户二选一：
+
+- 用本 adapter：`SRO_ENABLED=0` + `install(agent)`（hook 路径）；
+- 用宿主内建 SRO：`SRO_ENABLED=1`，不再挂 adapter hook。
+
+基准验证形态是 `AgentRunner + ToolRegistry + hook` 直跑
+（`benchmarks/nanobot_sro_driver.py`），不经过 `AgentLoop` 内建路径。
 
 ## 安装到 Claude Code
 

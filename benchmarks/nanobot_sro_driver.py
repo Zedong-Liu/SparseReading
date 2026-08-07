@@ -364,7 +364,15 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--resume", action="store_true", help="Skip cases with saved result files")
     parser.add_argument("--retries", type=int, default=2, help="Extra attempts for infra failures")
+    parser.add_argument(
+        "--runset",
+        default=None,
+        help="Reuse an existing runset directory (with --resume) instead of creating a new one",
+    )
     args = parser.parse_args()
+    if args.runset:
+        global OUT_DIR
+        OUT_DIR = RESULTS_ROOT / args.runset
     tasks = args.task or UNIFIED14
     if args.dry_run:
         for task_id in tasks:
