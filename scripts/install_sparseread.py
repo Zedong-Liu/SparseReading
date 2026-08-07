@@ -464,6 +464,7 @@ def install_opencode(args: argparse.Namespace) -> None:
     install_opencode_plugin_file(plugin_target, dry_run=args.dry_run)
     print(f"[opencode] install workspace: {workspace}")
     if not args.dry_run:
+        config_target.parent.mkdir(parents=True, exist_ok=True)
         write_json(config_target, opencode_workspace_config(workspace, managed_python, profile.policy, profile.mode))
     print(f"[opencode] plugin: {plugin_target}")
     print(f"[opencode] config: {config_target}")
