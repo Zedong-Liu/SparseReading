@@ -30,7 +30,9 @@ def test_require_command_falls_back_to_windows_cmd_suffix(monkeypatch, tmp_path:
     monkeypatch.setenv("PATH", str(tmp_path))
     monkeypatch.setattr(installer.os, "name", "nt")
 
-    assert Path(installer.require_command("npm")).name == "npm.cmd"
+    # Windows PATHEXT lookup may return the canonical extension case (npm.CMD);
+    # the extension is case-insensitive on Windows, so compare normalized names.
+    assert Path(installer.require_command("npm")).name.lower() == "npm.cmd"
 
 
 def test_npm_install_and_build_uses_resolved_command(monkeypatch, tmp_path: Path) -> None:
