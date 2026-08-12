@@ -48,9 +48,11 @@ def test_npm_install_and_build_uses_resolved_command(monkeypatch, tmp_path: Path
 
     installer.npm_install_and_build(tmp_path, dry_run=False)
 
+    # .cmd files are invoked directly (not wrapped in cmd.exe /c) because
+    # Windows CreateProcess can launch .cmd files natively by full path.
     assert calls == [
-        ["cmd.exe", "/d", "/s", "/c", "C:/node/npm.cmd ci --ignore-scripts"],
-        ["cmd.exe", "/d", "/s", "/c", "C:/node/npm.cmd run build"],
+        ["C:/node/npm.cmd", "ci", "--ignore-scripts"],
+        ["C:/node/npm.cmd", "run", "build"],
     ]
 
 
@@ -115,7 +117,11 @@ def test_install_opencode_writes_persistent_workspace_config(monkeypatch, tmp_pa
     monkeypatch.setattr(installer, "npm_install_and_build", lambda *_args, **_kwargs: None)
     managed_python = tmp_path / "managed" / "bin" / "python"
     monkeypatch.setattr(installer, "install_python_runtime", lambda *_args, **_kwargs: managed_python)
-    monkeypatch.setattr(installer, "install_opencode_plugin_package", lambda *_args, **_kwargs: None)
+    def fake_install_plugin(plugin_target, *, dry_run):  # noqa: ARG001
+        plugin_target.parent.mkdir(parents=True, exist_ok=True)
+        plugin_target.write_text("// mock plugin\n", encoding="utf-8")
+
+    monkeypatch.setattr(installer, "install_opencode_plugin_file", fake_install_plugin)
 
     installer.install_opencode(
         SimpleNamespace(
