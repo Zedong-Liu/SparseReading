@@ -197,7 +197,7 @@ def claude_settings_config(workspace: Path, python: Path) -> dict[str, object]:
     hook_entry = {
         "type": "command",
         "command": str(python),
-        "args": ["-m", "sparseread_claude.hook", "--workspace", str(workspace)],
+        "args": ["-m", "sparseread_claude.hook", "--single", "--workspace", str(workspace)],
     }
     return {
         "enabledMcpjsonServers": ["sparseread"],

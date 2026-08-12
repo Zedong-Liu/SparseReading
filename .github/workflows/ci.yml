@@ -61,3 +61,24 @@ jobs:
             uv build --project "integrations/$adapter/python" --out-dir dist
           done
           ls -la dist
+
+  windows-install-tests:
+    name: Windows install tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+      - name: Install test dependencies
+        run: |
+          uv venv .venv
+          uv pip install --python .venv\Scripts\python.exe `
+            "pyyaml>=6.0,<7.0" `
+            "pytest>=9.0,<10.0" `
+            "pytest-asyncio"
+      - name: Run installer tests (Windows command semantics)
+        env:
+          PYTHONPATH: ${{ github.workspace }}/packages/sparseread-core/src;${{ github.workspace }}/integrations/nanobot/python/src;${{ github.workspace }}/integrations/opencode/python/src;${{ github.workspace }}/integrations/openclaw/python/src;${{ github.workspace }}/integrations/claude/python/src
+        run: .venv\Scripts\python.exe -m pytest tests\test_install_sparseread.py tests\test_nanobot_driver.py -q
