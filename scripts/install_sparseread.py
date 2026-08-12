@@ -22,7 +22,10 @@ OPENCODE_PLUGIN = ROOT / "integrations" / "opencode" / "plugin"
 OPENCLAW_PLUGIN = ROOT / "integrations" / "openclaw" / "plugin"
 BRIDGE_PROTOCOL_VERSION = "1.0"
 WINDOWS_COMMAND_SUFFIXES = (".cmd", ".exe", ".bat")
-WINDOWS_SHELL_EXTS = {".cmd", ".bat"}
+# .cmd files (e.g. npm.CMD) are batch scripts but subprocess.run() on Windows
+# can launch them via the full path returned by shutil.which().  Only .bat
+# files need explicit COMSPEC wrapping to avoid quoting conflicts.
+WINDOWS_SHELL_EXTS: set[str] = set()
 OPENCODE_RUNTIME_TOOLS = ("sro_preview", "sro_raw", "sro_card", "sro_read", "sro_trace")
 OPENCLAW_RUNTIME_TOOLS = ("sro_preview", "sro_raw", "sro_card", "sro_read", "sro_decide", "sro_trace")
 CLAUDE_RUNTIME_TOOLS = (
@@ -94,6 +97,8 @@ def run(
         cwd=cwd,
         input=input_text,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
@@ -190,7 +195,7 @@ def claude_mcp_config(workspace: Path, python: Path, mode: str) -> dict[str, obj
 
 def claude_settings_config(workspace: Path, python: Path) -> dict[str, object]:
     hook_entry = {
-        "type": "session",
+        "type": "command",
         "command": str(python),
         "args": ["-m", "sparseread_claude.hook", "--workspace", str(workspace)],
     }
@@ -237,6 +242,12 @@ def merge_json(path: Path, patch: dict[str, object], *, dry_run: bool) -> None:
             servers = dict(payload["mcpServers"])
             servers.update(value)
             payload["mcpServers"] = servers
+        elif key == "enabledMcpjsonServers" and isinstance(value, list) and isinstance(payload.get("enabledMcpjsonServers"), list):
+            merged = list(payload["enabledMcpjsonServers"])
+            for item in value:
+                if item not in merged:
+                    merged.append(item)
+            payload["enabledMcpjsonServers"] = merged
         else:
             payload[key] = value
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -422,14 +433,19 @@ def install_python_runtime(
     return managed_python
 
 
-def install_opencode_plugin_package(workspace: Path, *, dry_run: bool) -> None:
-    with tempfile.TemporaryDirectory(prefix="sparseread-opencode-pack-") as tmp:
-        tarball = npm_pack(OPENCODE_PLUGIN, Path(tmp), dry_run=dry_run)
-        npm_cmd = command_spec("npm")
-        run(
-            npm_cmd.argv("install", "--prefix", str(workspace / ".opencode"), "--no-save", str(tarball)),
-            dry_run=dry_run,
-        )
+def install_opencode_plugin_file(plugin_target: Path, *, dry_run: bool) -> None:
+    """Copy the pre-built plugin dist file directly into the OpenCode plugins dir.
+
+    We intentionally avoid npm install / node_modules resolution because
+    OpenCode manages .opencode/package.json itself and may prune packages
+    installed outside its dependency tree.  The plugin only imports from
+    @opencode-ai/plugin (bundled with OpenCode) and Node.js built-ins, so
+    a direct file copy is sufficient.
+    """
+    dist_file = OPENCODE_PLUGIN / "dist" / "sparseread.js"
+    if not dry_run:
+        plugin_target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(dist_file, plugin_target)
 
 
 def install_opencode(args: argparse.Namespace) -> None:
@@ -445,11 +461,10 @@ def install_opencode(args: argparse.Namespace) -> None:
         python=getattr(args, "python", sys.executable),
         dry_run=args.dry_run,
     )
-    install_opencode_plugin_package(workspace, dry_run=args.dry_run)
+    install_opencode_plugin_file(plugin_target, dry_run=args.dry_run)
     print(f"[opencode] install workspace: {workspace}")
     if not args.dry_run:
-        plugin_target.parent.mkdir(parents=True, exist_ok=True)
-        plugin_target.write_text('export { default } from "@sparseread/opencode"\n', encoding="utf-8")
+        config_target.parent.mkdir(parents=True, exist_ok=True)
         write_json(config_target, opencode_workspace_config(workspace, managed_python, profile.policy, profile.mode))
     print(f"[opencode] plugin: {plugin_target}")
     print(f"[opencode] config: {config_target}")
@@ -515,13 +530,16 @@ def install_openclaw(args: argparse.Namespace) -> None:
         check=False,
         dry_run=args.dry_run,
     )
-    with tempfile.TemporaryDirectory(prefix="sparseread-openclaw-pack-") as tmp:
-        tarball = npm_pack(OPENCLAW_PLUGIN, Path(tmp), dry_run=args.dry_run)
-        run(
-            openclaw_cmd.argv(*profile_args, "plugins", "install", str(tarball)),
-            check=False,
-            dry_run=args.dry_run,
-        )
+    pack_dir = openclaw_runtime_dir(args.openclaw_profile).parent / "pack"
+    pack_dir.mkdir(parents=True, exist_ok=True)
+    tarball = npm_pack(OPENCLAW_PLUGIN, pack_dir, dry_run=args.dry_run)
+    run(
+        openclaw_cmd.argv(*profile_args, "plugins", "install", str(tarball)),
+        check=False,
+        dry_run=args.dry_run,
+    )
+    if not args.dry_run:
+        tarball.unlink(missing_ok=True)
     run(
         openclaw_cmd.argv(*profile_args, "plugins", "enable", "sparseread-openclaw"),
         check=False,
