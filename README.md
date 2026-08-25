@@ -72,9 +72,34 @@ it is not part of the three-framework table in the paper.
 
 ## Install
 
-The current release baseline is a source-install release. It builds a managed
-runtime for the selected framework, so the installed integration does not
-import from this checkout at runtime.
+SparseRead v0.1.1 is packaged as five Python distributions and two JavaScript
+host plugins. Install the framework-neutral Python runtime with:
+
+```bash
+pip install "sparseread[all]"
+```
+
+Install the integration components for your host:
+
+```bash
+# NanoBot (adapter plus the optional NanoBot host dependency)
+pip install "sparseread-nanobot[nanobot]"
+
+# OpenCode
+pip install sparseread-opencode
+npm install @sparseread/opencode
+
+# OpenClaw
+pip install sparseread-openclaw
+npm install @sparseread/openclaw
+
+# Claude Code
+pip install sparseread-claude
+```
+
+OpenCode and OpenClaw each have two registry components: PyPI provides the
+Python bridge and npm provides the host plugin. The source installer below
+automates host registration and creates an isolated managed runtime.
 
 Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), Node.js 22+
 for OpenCode/OpenClaw, and the target agent CLI.
@@ -109,7 +134,7 @@ python3 scripts/install_sparseread.py \
   --doctor
 ```
 
-For NanoBot, install `sparseread-core` and `sparseread-nanobot` as Python
+For NanoBot, install `sparseread` and `sparseread-nanobot` as Python
 dependencies; see the [NanoBot adapter guide](integrations/nanobot/python/README.md).
 The full installation and platform matrix is in
 [`docs/sparseread_installation.md`](docs/sparseread_installation.md) (Chinese)
@@ -201,11 +226,15 @@ they are not imported by any release package. See the
 [release architecture](docs/release_architecture.md) before adding a new
 integration.
 
+Maintainers can reproduce every registry artifact locally using the
+[release runbook](docs/releasing.md).
+
 ## Release scope and limitations
 
-- The current baseline is `v0.1.0` and is installable from source.
-- PyPI, npm, and official framework-marketplace publishing are not wired yet;
-  the source installer is the supported distribution path today.
+- The registry release baseline is `v0.1.1`; source installation remains
+  available for managed, end-to-end framework configuration.
+- PyPI and npm artifacts are built from one version-checked release workflow.
+  Official framework marketplaces are a separate future distribution surface.
 - Claude Code is supported through MCP and session hooks. Its Windows MCP path
   still needs separate verification in environments where the host CLI or
   permissions differ.

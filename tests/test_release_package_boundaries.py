@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import ast
 import json
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 CORE_SOURCE = ROOT / "packages" / "sparseread-core" / "src" / "sparseread"
@@ -36,6 +37,11 @@ def test_core_has_no_framework_imports() -> None:
 
 
 def test_each_framework_adapter_is_an_independent_distribution() -> None:
+    core = tomllib.loads(
+        (ROOT / "packages" / "sparseread-core" / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    version = core["project"]["version"]
+    assert core["project"]["name"] == "sparseread"
     expected = {
         "nanobot": "sparseread-nanobot",
         "opencode": "sparseread-opencode",
@@ -47,22 +53,31 @@ def test_each_framework_adapter_is_an_independent_distribution() -> None:
         payload = tomllib.loads(pyproject.read_text(encoding="utf-8"))
         assert payload["project"]["name"] == distribution
         expected_deps = (
-            ["sparseread-core>=0.1,<0.2", "mcp>=1.26,<2.0"]
+            [f"sparseread>={version},<0.2", "mcp>=1.26,<2.0"]
             if framework == "claude"
-            else ["sparseread-core>=0.1,<0.2"]
+            else [f"sparseread>={version},<0.2"]
         )
         assert payload["project"]["dependencies"] == expected_deps
+        assert payload["project"]["version"] == version
 
 
 def test_javascript_plugins_are_publishable_and_versioned() -> None:
+    core = tomllib.loads(
+        (ROOT / "packages" / "sparseread-core" / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    version = core["project"]["version"]
     for framework in ("opencode", "openclaw"):
         package = json.loads(
             (ROOT / "integrations" / framework / "plugin" / "package.json").read_text(encoding="utf-8")
         )
         assert package["name"] == f"@sparseread/{framework}"
         assert package["private"] is False
-        assert package["version"] == "0.1.0"
+        assert package["version"] == version
         assert package["scripts"]["prepack"] == "npm run build"
+        assert package["publishConfig"]["access"] == "public"
+        assert package["repository"]["url"] == (
+            "git+https://github.com/Zedong-Liu/SparseReading.git"
+        )
 
 
 def test_release_has_one_canonical_framework_source() -> None:

@@ -4,7 +4,7 @@ SparseRead ships as one framework-neutral core plus independently versioned
 framework adapters. No release package imports source from another framework.
 
 ```text
-packages/sparseread-core/             Python: sparseread-core
+packages/sparseread-core/             Python: sparseread
   src/sparseread/                     readers, gate, orchestrator, public API,
                                       generic JSONL bridge protocol
 
@@ -43,10 +43,10 @@ protocol remains compatible.
 ## Installation shape
 
 The source installer builds package artifacts, creates a managed Python
-environment, installs `sparseread-core` plus exactly one Python adapter, and
+environment, installs `sparseread` plus exactly one Python adapter, and
 installs the packed JavaScript plugin. Installed runtimes do not use editable
 packages, `uv --project`, plugin links, or paths back into the checkout.
 
-NanoBot consumes `sparseread-core` and `sparseread-nanobot` as ordinary Python
+NanoBot consumes `sparseread` and `sparseread-nanobot` as ordinary Python
 dependencies. Claude Code consumes the same core through its MCP and session
 hook adapter. No host framework source checkout is part of the release tree.

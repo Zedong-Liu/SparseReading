@@ -64,8 +64,33 @@ Claude Code 使用 MCP 加 `PreToolUse`/`PostToolUse` session hooks，不使用 
 
 ## 安装
 
-当前发布基线是源码安装版。安装器会为所选框架构建受管 runtime，安装后的集成不会在
-运行时导入本 checkout 的源码。
+SparseRead v0.1.1 会发布为五个 Python 发行包和两个 JavaScript 宿主插件。
+框架无关运行时可直接安装：
+
+```bash
+pip install "sparseread[all]"
+```
+
+按宿主安装集成组件：
+
+```bash
+# NanoBot
+pip install "sparseread-nanobot[nanobot]"
+
+# OpenCode
+pip install sparseread-opencode
+npm install @sparseread/opencode
+
+# OpenClaw
+pip install sparseread-openclaw
+npm install @sparseread/openclaw
+
+# Claude Code
+pip install sparseread-claude
+```
+
+OpenCode 和 OpenClaw 各自包含两个 registry 组件：PyPI 包提供 Python bridge，
+npm 包提供宿主插件。下面的源码安装器仍用于自动完成宿主注册，并创建隔离的受管环境。
 
 环境要求：Python 3.11+、[uv](https://docs.astral.sh/uv/)、OpenCode/OpenClaw 所需的
 Node.js 22+，以及目标 Agent CLI。
@@ -100,7 +125,7 @@ python3 scripts/install_sparseread.py \
   --doctor
 ```
 
-NanoBot 作为 Python 依赖安装 `sparseread-core` 和 `sparseread-nanobot`，见
+NanoBot 作为 Python 依赖安装 `sparseread` 和 `sparseread-nanobot`，见
 [NanoBot adapter 说明](integrations/nanobot/python/README.md)。完整平台矩阵见
 [`docs/sparseread_installation.md`](docs/sparseread_installation.md)；英文简版见
 [`docs/installation.md`](docs/installation.md)。
@@ -173,8 +198,9 @@ PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integra
 
 ## 当前边界
 
-- 当前基线是 `v0.1.0`，支持从源码安装。
-- PyPI、npm 和各框架官方 marketplace 的一键发布尚未接通；目前支持路径是源码安装器。
+- registry 发布基线是 `v0.1.1`；源码安装仍用于端到端自动配置。
+- PyPI 与 npm 产物由同一套版本校验发布工作流构建；框架官方 marketplace
+  属于后续独立分发面。
 - Claude Code 已通过 MCP 和 session hooks 支持；Windows 上仍需按主机 CLI 和权限环境
   单独验证 MCP 通路。
 - SparseRead 是选择性基础设施：小文件、精确全表计算和其他低稀疏任务应继续使用原生访问。

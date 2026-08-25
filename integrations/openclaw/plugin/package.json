@@ -1,7 +1,24 @@
 {
   "name": "@sparseread/openclaw",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "description": "OpenClaw plugin for the SparseRead context-efficient reading layer",
   "license": "MIT",
+  "author": "SparseRead contributors",
+  "homepage": "https://github.com/Zedong-Liu/SparseReading#readme",
+  "bugs": {
+    "url": "https://github.com/Zedong-Liu/SparseReading/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zedong-Liu/SparseReading.git",
+    "directory": "integrations/openclaw/plugin"
+  },
+  "keywords": [
+    "ai-agents",
+    "context-management",
+    "openclaw",
+    "sparse-reading"
+  ],
   "type": "module",
   "private": false,
   "main": "./dist/index.js",
@@ -22,6 +39,13 @@
     "build": "tsc -p tsconfig.json",
     "prepack": "npm run build",
     "plugin:inspect": "openclaw plugins inspect sparseread-openclaw --runtime --json"
+  },
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
     "typebox": "1.3.3"

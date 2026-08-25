@@ -1,11 +1,32 @@
 [project]
-name = "sparseread-core"
-version = "0.1.0"
+name = "sparseread"
+version = "0.1.1"
 description = "Framework-neutral sparse reading protocol, readers, gate, and bridge server"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "SparseRead contributors" }]
+keywords = ["ai-agents", "context-management", "llm", "retrieval", "sparse-reading"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 dependencies = ["pyyaml>=6.0,<7.0"]
+
+[project.urls]
+Homepage = "https://github.com/Zedong-Liu/SparseReading"
+Documentation = "https://github.com/Zedong-Liu/SparseReading#readme"
+Repository = "https://github.com/Zedong-Liu/SparseReading"
+Issues = "https://github.com/Zedong-Liu/SparseReading/issues"
+Paper = "https://arxiv.org/abs/2608.22237"
 
 [project.optional-dependencies]
 pdf = ["pymupdf>=1.25.0"]

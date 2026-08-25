@@ -21,7 +21,7 @@ agent = SparseReadAgentWrapper(agent, mode="auto", workspace=".")
 agent.run("Answer questions from this 200-page PDF")
 ```
 
-The public facade is provided by the standalone `sparseread-core` distribution
+The public facade is provided by the standalone `sparseread` distribution
 under `packages/sparseread-core/src/sparseread/`.
 The important design decision is that the wrapper is not the whole product. It
 is only the shortest entry point. The stable public surface should be:
