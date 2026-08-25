@@ -32,6 +32,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 QCB_ROOT = ROOT / "benchmarks" / "qwenclawbench"
 PLUGIN_SOURCE = ROOT / "integrations" / "opencode" / "plugin" / "sparseread.ts"
+PLUGIN_PACKAGE = ROOT / "integrations" / "opencode" / "plugin" / "package.json"
+PLUGIN_VERSION = str(json.loads(PLUGIN_PACKAGE.read_text(encoding="utf-8"))["version"])
 SR_PROJECT = ROOT / "nanobot-sro-v3"
 DEFAULT_OPENCODE_CMD = os.environ.get("OPENCODE_PATH") or shutil.which("opencode") or ""
 TASKS = [
@@ -1120,7 +1122,7 @@ def main() -> int:
                 "source_runtime": str(source_runtime(task)),
                 "run_dir": str(run_dir),
                 "opencode_version": framework_version,
-                "opencode_plugin_version": "0.1.0",
+                "opencode_plugin_version": PLUGIN_VERSION,
                 "source_revision": revision,
                 "workspace_realpath": str((run_dir / "runtime").resolve()),
                 "opencode_profile_root": str(Path(args.opencode_profile_root).expanduser().resolve())

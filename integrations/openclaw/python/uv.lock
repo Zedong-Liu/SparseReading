@@ -58,8 +58,8 @@ wheels = [
 ]
 
 [[package]]
-name = "sparseread-core"
-version = "0.1.0"
+name = "sparseread"
+version = "0.1.1"
 source = { editable = "../../../packages/sparseread-core" }
 dependencies = [
     { name = "pyyaml" },
@@ -79,11 +79,11 @@ provides-extras = ["pdf", "xlsx", "all", "dev"]
 
 [[package]]
 name = "sparseread-openclaw"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
-    { name = "sparseread-core" },
+    { name = "sparseread" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "sparseread-core", editable = "../../../packages/sparseread-core" }]
+requires-dist = [{ name = "sparseread", editable = "../../../packages/sparseread-core" }]

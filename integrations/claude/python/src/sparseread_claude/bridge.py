@@ -1,7 +1,7 @@
 """Claude Code SparseRead JSONL bridge.
 
 This adapter follows the same shape as the OpenCode/OpenClaw adapters: a thin
-bridge over the framework-neutral ``sparseread-core`` runtime.  Claude Code
+bridge over the framework-neutral ``sparseread`` runtime.  Claude Code
 specifics (MCP transport, PreToolUse/PostToolUse hook capabilities) live in
 ``claude_mcp`` and ``hook``; the core gate, episode controller, readers, and
 denoise layer are shared unchanged.

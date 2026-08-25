@@ -1,17 +1,38 @@
 [project]
 name = "sparseread-claude"
-version = "0.1.0"
+version = "0.1.1"
 description = "Claude Code bridge adapter for SparseRead"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "SparseRead contributors" }]
+keywords = ["ai-agents", "claude-code", "mcp", "sparse-reading"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 dependencies = [
-    "sparseread-core>=0.1,<0.2",
+    "sparseread>=0.1.1,<0.2",
     "mcp>=1.26,<2.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Zedong-Liu/SparseReading"
+Repository = "https://github.com/Zedong-Liu/SparseReading"
+Issues = "https://github.com/Zedong-Liu/SparseReading/issues"
+Paper = "https://arxiv.org/abs/2608.22237"
+
 [project.scripts]
 sparseread-claude-bridge = "sparseread_claude.bridge:main"
+sparseread-claude-mcp = "sparseread_claude.claude_mcp:main"
+sparseread-claude-hook = "sparseread_claude.hook:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -21,4 +42,4 @@ build-backend = "hatchling.build"
 packages = ["src/sparseread_claude"]
 
 [tool.uv.sources]
-sparseread-core = { path = "../../../packages/sparseread-core", editable = true }
+sparseread = { path = "../../../packages/sparseread-core", editable = true }

@@ -2,10 +2,19 @@
 
 OpenClaw plugin for exposing SparseRead as tools plus optional runtime hooks.
 
+```bash
+npm install @sparseread/openclaw
+pip install sparseread-openclaw
+```
+
+Both components are required: npm provides the OpenClaw host plugin and PyPI
+provides its Python bridge. The repository installer can register both with an
+OpenClaw profile automatically.
+
 The plugin starts `python -m sparseread_openclaw.bridge` through stdio JSONL and
 keeps one bridge per OpenClaw session key.  The Python bridge owns artifact ids,
 ready state, and trace aggregation while delegating all reading logic to the
-framework-neutral `sparseread-core` package.
+framework-neutral `sparseread` package.
 
 The source installer exposes one public mode. Default `--sparseread-mode auto`
 uses gate-controlled interception: high-confidence long-document/PDF/log and
