@@ -17,8 +17,8 @@ integrations/opencode/plugin/         npm: @sparseread/opencode
 integrations/openclaw/python/         Python: sparseread-openclaw
 integrations/openclaw/plugin/         npm: @sparseread/openclaw
 
-nanobot-sro-v3/nanobot/sparse_reading/ compatibility imports for existing
-                                      NanoBot callers; no core implementation
+integrations/claude/python/           Python: sparseread-claude
+                                      MCP server and session-hook adapter
 ```
 
 ## Ownership rules
@@ -48,5 +48,5 @@ installs the packed JavaScript plugin. Installed runtimes do not use editable
 packages, `uv --project`, plugin links, or paths back into the checkout.
 
 NanoBot consumes `sparseread-core` and `sparseread-nanobot` as ordinary Python
-dependencies. Its old `nanobot.sparse_reading` modules are forwarding shims for
-downstream compatibility and can be deprecated separately.
+dependencies. Claude Code consumes the same core through its MCP and session
+hook adapter. No host framework source checkout is part of the release tree.

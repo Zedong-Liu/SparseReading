@@ -32,9 +32,8 @@ sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 
 当前四框架不是完全相同的 skill 文件形态：
 
-- nanobot 内置 skill：`nanobot-sro-v3/nanobot/skills/sparse-reading/SKILL.md`。
-- nanobot adapter 内置 guidance（与旧宿主 SKILL.md 正文一致，以 system 消息
-  注入），不再依赖宿主 skill 文件。
+- NanoBot adapter 内置 guidance（与旧宿主 SKILL.md 正文一致，以 system 消息
+  注入），不依赖仓库内的 NanoBot framework checkout。
 - OpenClaw 插件随带 skill：`integrations/openclaw/plugin/skills/sparse-reading/SKILL.md`。
 - OpenCode 当前没有独立 `SKILL.md`。它通过插件注册 `sro_preview`、`sro_read` 等工具，并在大文件/截断输出场景给模型 nudge。日常使用时，用户应该在任务里要求 agent 自动使用 SparseRead。
 - Claude Code 使用安装器写入 workspace 的 `CLAUDE.md`（模板位于

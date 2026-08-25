@@ -1,12 +1,12 @@
 # OpenCode SparseRead Integration
 
-This directory contains the OpenCode plugin, bridge harness, and local runner
+This directory contains the OpenCode plugin, bridge adapter, and local runner
 for comparing OpenCode native truncation against SparseRead.
 
-The plugin keeps SparseRead core behavior in `nanobot-sro-v3` unchanged. It
-calls `python -m sparseread_opencode.bridge` through a stdio JSONL bridge.
-On this workspace, launch the bridge through `uv run --project nanobot-sro-v3
-python` so Python 3.11+ and project dependencies are used.
+The plugin uses the framework-neutral core in `packages/sparseread-core` and
+calls `python -m sparseread_opencode.bridge` through a stdio JSONL bridge. The
+source installer creates the managed runtime used by production installs; the
+local runner below is benchmark-only.
 
 ## Modes
 

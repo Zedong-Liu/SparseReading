@@ -4,8 +4,8 @@ This directory contains the OpenClaw SparseRead integration.  It is based
 on OpenClaw's real extension surface: plugin-registered tools,
 plugin-provided skills, and per-session bridge state.
 
-The implementation keeps SparseRead core behavior in `nanobot-sro-v3`
-unchanged.  OpenClaw calls the existing core through:
+The implementation uses the framework-neutral core in
+`packages/sparseread-core`. OpenClaw calls the shared bridge through:
 
 ```bash
 python -m sparseread_openclaw.bridge

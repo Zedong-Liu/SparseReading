@@ -1,339 +1,233 @@
 # SparseRead
 
-**你的 Agent 正在用「读取一切」的方式燃烧 token。**
+<div align="center">
 
-现代 Agent 能浏览文件、审查仓库、分析 PDF，甚至操作整个工作区。但在需要信息时，很多 Agent 依然遵循同一种原始策略：
+**Read less. Solve more.**
 
-```text
-先全部读一遍，再慢慢想
-```
+SparseRead is a training-free reading layer for tool-using agents. It controls
+which evidence enters the model context before an agent pays the cost of a
+broad read—while keeping provenance, refinement, verification, and native
+fallbacks explicit.
 
-在 workspace 还小的时候，这能工作。
+[![CI](https://github.com/Zedong-Liu/SparseReading/actions/workflows/ci.yml/badge.svg)](https://github.com/Zedong-Liu/SparseReading/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[Paper](https://arxiv.org/abs/2608.22237) · [中文](README.zh-CN.md)
 
-但 workspace 一膨胀，问题就来了：
+</div>
 
-每个 PDF 都是一个 token 黑洞。
-每张表格都是一次膨胀观察。
-每个仓库都是反复的文件扫描。
-每次失败搜索都是另一笔昂贵的工具调用。
-
-长上下文帮 agent 塞进更多文本。
-SparseRead 帮 agent 避开那些它本不需要的文本。
-
-SparseRead 是面向工具调用型 agent 的证据引导式阅读层。它拦截昂贵的文件读取，构建轻量级的文件卡片，让 agent 按需索取任务相关证据，并返回有据可循的 EvidencePack——而不是把整份文件倒进上下文。
-
-目标很简单：
-
-**读得更少，token 更省，证据不变。**
-
----
-
-SparseRead（SRO v3）是一个面向工具调用型 agent 的 sparse-reading 协议。通过确定性的 Benefit Gate 和按类型分派的 reader，将大文件、长文本、PDF 以及审计类文件集合路由为紧凑的 evidence pack，替代反复的 broad read。
-
-框架内部生产接口（用户不需要手动调用）：
+Agents are good at reasoning, but their default reading action is often still:
 
 ```text
-sro_preview(path) -> L0 默认预览（内含 FileCard，不需要 HintSpec）
-sro_read(target, mode=scout|focus|collect|refine|verify, hint=HintSpec) -> EvidencePack
-sro_raw(raw_ref) -> 明确需要原文时的回溯入口
+read everything -> put everything in context -> start reasoning
 ```
 
-`sro_card(path)` 仍保留给 benchmark 和旧脚本使用；新框架集成和内部协议应从
-`sro_preview` 开始。OpenCode/OpenClaw/Claude Code/nanobot 的源码安装步骤见
-[`docs/sparseread_installation.md`](docs/sparseread_installation.md)。
+That is expensive for long reports, PDFs, workspaces, logs, spreadsheets, and
+multi-file audits. SparseRead adds a small control plane in front of native
+agent tools:
 
-框架无关的 SR core 位于 `packages/sparseread-core/`；NanoBot、OpenCode、OpenClaw、
-Claude Code 的兼容层分别位于 `integrations/<framework>/`。NanoBot 宿主
-（`nanobot-ai`）由用户自行安装，本仓库不随带框架源码。推荐以外层仓库根目录作为
-benchmark workspace，因为测试脚本也依赖 `benchmarks/` 和 `benchmarks/qwenclawbench/`
-中的 runtime 夹具。
+```text
+artifact -> Read Gate -> Reader Backend -> EvidencePack -> refine / verify / stop
+```
 
-## 快速开始（源码安装）
+The agent still decides what it needs. SparseRead makes the request bounded,
+source-anchored, and reversible when native access is the better path.
 
-当前默认安装形态是：用户本机已有 OpenCode、OpenClaw 或 Claude Code CLI，安装器
-构建发布包并创建独立的受管 Python runtime。运行时不再链接或导入源码 checkout。
-完整 fresh-machine 指南见
-[`docs/sparseread_installation.md`](docs/sparseread_installation.md)。
+## Results
 
-Windows 默认推荐路径是 **PowerShell 原生安装**。用户只需要选择一个 SparseRead 模式：默认 `auto` 会在高收益任务上自动接管大文件/证据包读取；`advisory` 只注册工具和提示，不拦截原生读取。OpenCode 生产安装不再依赖 `.env + source`。
+The current paper evaluation covers 125 tasks, five workload scenarios, and six
+frontier models: Claude Opus 5, Qwen3.6-Plus, DeepSeek-V4-Flash,
+DeepSeek-V4-Pro, GLM-5.1, and Kimi-K2.5.
+
+| Headline | Reported result |
+|---|---:|
+| Maximum token reduction | **92.9%** |
+| Maximum wall-time reduction | **89.0%** |
+| Model–scenario cells with lower tokens and lower time | **30 / 30** |
+| Cells preserving or improving task score | **26 / 30** |
+| Sparse-fit cells preserving or improving task score | **22 / 24** |
+
+The gain is not tied to one model: the evaluation includes strong reasoning
+models as well as general-purpose frontier models, and the paper reports
+benefits for all six models across the full matrix. See the
+[paper](https://arxiv.org/abs/2608.22237) for definitions, baselines, and the
+complete results.
+
+### Cross-framework results
+
+The paper's end-to-end portability table evaluates the same protocol and
+reader backends in three frameworks:
+
+| Framework | Adapter | Median token reduction | Median time saving | Paper status |
+|---|---|---:|---:|---|
+| [NanoBot](integrations/nanobot/) | `sparseread-nanobot` | **69.0%** | **64.4%** | Evaluated |
+| [OpenCode](integrations/opencode/) | `sparseread-opencode` | **71.8%** | **64.9%** | Evaluated |
+| [OpenClaw](integrations/openclaw/) | `sparseread-openclaw` | **28.7%** | **28.2%** | Evaluated |
+| [Claude Code](integrations/claude/) | `sparseread-claude` | — | — | Supported in this release |
+
+Claude Code is the fourth supported integration in the single-repository
+release. It uses MCP plus `PreToolUse`/`PostToolUse` session hooks rather than
+an npm plugin. The local Claude Code validation report is available at
+[`benchmarks/qwenclawbench/claude_final_aggregate_20260805.md`](benchmarks/qwenclawbench/claude_final_aggregate_20260805.md);
+it is not part of the three-framework table in the paper.
+
+## Install
+
+The current release baseline is a source-install release. It builds a managed
+runtime for the selected framework, so the installed integration does not
+import from this checkout at runtime.
+
+Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), Node.js 22+
+for OpenCode/OpenClaw, and the target agent CLI.
 
 ```bash
 git clone https://github.com/Zedong-Liu/SparseReading.git
 cd SparseReading
 
+# Verify the core, adapters, bridge protocol, and release fixture first.
 PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integrations/opencode/python/src:integrations/openclaw/python/src:integrations/claude/python/src" \
   uv run --with pytest --with pytest-asyncio pytest tests/test_release_fixtures.py -q
 ```
 
-单独验证 core（不安装任何框架宿主）：
+Choose one integration:
+
+```bash
+# OpenCode: install into an existing workspace
+python3 scripts/install_sparseread.py \
+  --platform opencode \
+  --opencode-workspace /path/to/your/project \
+  --doctor
+
+# OpenClaw: install into the current OpenClaw profile
+python3 scripts/install_sparseread.py \
+  --platform openclaw \
+  --doctor
+
+# Claude Code: install MCP and session hooks into a workspace
+python3 scripts/install_sparseread.py \
+  --platform claude \
+  --claude-workspace /path/to/your/project \
+  --doctor
+```
+
+For NanoBot, install `sparseread-core` and `sparseread-nanobot` as Python
+dependencies; see the [NanoBot adapter guide](integrations/nanobot/python/README.md).
+The full installation and platform matrix is in
+[`docs/sparseread_installation.md`](docs/sparseread_installation.md) (Chinese)
+and the shorter [English installation guide](docs/installation.md).
+
+After installation, users do not need to call `sro_preview` or write a
+`HintSpec` by hand. Ask the agent to use SparseRead for a large artifact, for
+example:
+
+```text
+Use SparseRead to inspect this large report. Extract only the evidence needed
+to answer the question, then stop reading once the evidence is sufficient.
+```
+
+### Quick test
+
+The repository includes a small long-document fixture:
+
+```bash
+opencode run "Use SparseRead to inspect tests/fixtures/quick_test/incident-report.md and report ROOT_CAUSE, MITIGATION_OWNER, and FINAL_DEADLINE."
+```
+
+The same request works in an OpenClaw, Claude Code, or NanoBot session after the
+corresponding adapter is installed.
+
+## How it works
+
+- **Read Gate** — selects `auto`, `native`, or `advisory` behavior from artifact
+  shape and task economics. Low-benefit computation and small-file work stays
+  on native tools.
+- **Reader Backends** — provide typed, bounded views for text/PDF, structured
+  data, and multi-file collections.
+- **EvidencePack** — returns compact evidence with source anchors, unresolved
+  requirements, and a suggested next action.
+- **Stateful protocol** — supports preview, targeted reading, refinement,
+  verification, explicit raw fallback, and stopping.
+
+The public production entrypoints are framework-facing tools; users normally
+do not need to invoke them directly:
+
+```text
+sro_preview(path) -> bounded preview + FileCard
+sro_read(target, mode, hint) -> EvidencePack
+sro_raw(raw_ref) -> explicit raw fallback
+```
+
+## Repository layout
+
+```text
+packages/sparseread-core/       framework-neutral core and tests
+integrations/<framework>/       NanoBot, OpenCode, OpenClaw, Claude Code adapters
+scripts/install_sparseread.py   source installer and doctor
+tests/                          release, bridge, gate, and installer tests
+benchmarks/                     reproducibility runners and selected fixtures
+docs/                           installation, architecture, and design notes
+```
+
+The core and adapters are intentionally separate. A framework adapter owns only
+the host-specific bridge, lifecycle hooks, and installation surface; it does
+not fork the reading protocol.
+
+## Development
+
+Run the core suite independently:
 
 ```bash
 uv run --project packages/sparseread-core --with pytest --with pytest-asyncio \
   pytest packages/sparseread-core/tests -q
 ```
 
-支持矩阵：
-
-| 场景 | macOS / Linux | Windows PowerShell |
-|---|---|---|
-| OpenCode / OpenClaw 源码安装 | ✅ | ✅ |
-| Claude Code 源码安装 | ✅ | ⚠️ MCP 连接需单独验证 |
-| NanoBot Python 依赖安装 | ✅ | ✅ |
-| doctor / quick test | ✅ | ✅ |
-| benchmark shell runtime | ✅ | ⚠️ 不作为默认安装路径 |
-
-OpenCode workspace 安装：
+Run the full release suite:
 
 ```bash
-python3 scripts/install_sparseread.py \
-  --platform opencode \
-  --opencode-workspace /path/to/your/project \
-  --doctor
+PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integrations/opencode/python/src:integrations/openclaw/python/src:integrations/claude/python/src" \
+  uv run --with pytest --with pytest-asyncio pytest -q
 ```
 
-Windows PowerShell 使用 `py scripts/install_sparseread.py ...` 即可。
-
-OpenClaw profile 安装：
+Build the Python distributions and JavaScript plugins through the same CI path:
 
 ```bash
-python3 scripts/install_sparseread.py \
-  --platform openclaw \
-  --doctor
+npm --prefix integrations/opencode/plugin ci
+npm --prefix integrations/opencode/plugin run build
+npm --prefix integrations/openclaw/plugin ci
+npm --prefix integrations/openclaw/plugin run build
 ```
 
-安装完成后，用户不需要手动调用 `sro_preview` 或填写 `HintSpec`。在任务里明确要求 agent 使用 SparseRead 即可，例如：
+Benchmark runners and historical result files are kept for reproducibility;
+they are not imported by any release package. See the
+[release architecture](docs/release_architecture.md) before adding a new
+integration.
 
-```text
-请自动使用 SparseRead 阅读这个大文件，只提取回答问题所需的证据；证据足够后直接回答，不要反复全文读取。
+## Release scope and limitations
+
+- The current baseline is `v0.1.0` and is installable from source.
+- PyPI, npm, and official framework-marketplace publishing are not wired yet;
+  the source installer is the supported distribution path today.
+- Claude Code is supported through MCP and session hooks. Its Windows MCP path
+  still needs separate verification in environments where the host CLI or
+  permissions differ.
+- SparseRead is selective by design. Native access remains the right choice for
+  small files, exact full-table computation, and other low-sparsity tasks.
+
+## Contributing
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+Bug reports and focused integration feedback are welcome.
+
+## Citation
+
+```bibtex
+@article{liu2026readless,
+  title   = {Read Less, Solve More: Token-Efficient Sparse Reading for AI Agents},
+  author  = {Liu, Zedong and Wu, Jiaan and Ma, Xinyang and Xu, Le and Wang, Kai and Hu, Yuanchao and Tao, Dingwen and Tan, Guangming},
+  journal = {arXiv preprint arXiv:2608.22237},
+  year    = {2026}
+}
 ```
 
-### 小测试：让 agent 自动使用 SparseRead
+## License
 
-本仓库提供了一个长 markdown fixture：
-
-```text
-tests/fixtures/quick_test/incident-report.md
-```
-
-推荐把当前仓库根目录本身作为 OpenCode workspace，或者先把这个 fixture 复制进你的目标 workspace，再运行：
-
-```bash
-cd /absolute/path/to/SparseReading
-opencode run "请自动使用 SparseRead 阅读 tests/fixtures/quick_test/incident-report.md，只提取必要证据，并回答 ROOT_CAUSE、MITIGATION_OWNER、FINAL_DEADLINE 分别是什么。不要让我手动调用工具。"
-```
-
-OpenClaw 或 nanobot 会话中发送同一类自然语言请求即可。预期答案应包含：
-
-```text
-ROOT_CAUSE: cache invalidation used customer_id instead of tenant_id.
-MITIGATION_OWNER: Mira Chen, Data Platform on-call.
-FINAL_DEADLINE: 2026-07-18 09:30 UTC.
-```
-
-需要跑 benchmark 时，继续看下面的 benchmark 章节；历史同事测试包说明不随发布仓库维护。
-
-## 三个 Benchmark 的测试方法
-
-表格中 "Benchmark" 列的命名规则：`数据集来源 / 测试框架`。
-
-- `QwenClawBench` — 数据集来源和测试框架相同。
-- `PinchBench/QwenClawBench` — task_21 数据来自 PinchBench 项目，但通过 QwenClawBench 的 benchmark.py 基础设施运行。
-- `LooGLE/QwenClawBench` — 数据来自 LooGLE（HuggingFace），重新打包为 QwenClawBench 兼容格式后运行。
-
-下面分别说明每种 benchmark 的数据准备和测试流程。均只需远端 API key，不需要本地 GPU。
-
-### 1. QwenClawBench（原生任务）
-
-QwenClawBench 是面向 agent 的工具调用 benchmark，约 100 个任务，覆盖代码审计、文件操作、配置诊断、数据完整性检查等。我们在其上验证了 SRO 的 audit closure、command-security closure、selection closure 等。
-
-**数据准备：**
-
-```bash
-git clone https://github.com/QwenLM/QwenClawBench.git qwenclawbench_repo
-# 任务定义：data/qwenclawbench-v1.1-100/tasks/*.md
-# workspace 文件：data/qwenclawbench-v1.1-100/assets/<task_id>/
-```
-
-**构造 runtime：**
-
-每个任务需要 `runtime/{scripts/, tasks/, assets/}`。本仓库 `benchmarks/qwenclawbench/baseline/` 和 `benchmarks/qwenclawbench/sro_v3/` 下已备好一批精选 runtime。新增任务时：
-
-```bash
-TASK="task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check"
-SRC="qwenclawbench_repo/data/qwenclawbench-v1.1-100"
-RUNTIME_ROOT="benchmarks/qwenclawbench/baseline/$TASK/runtime"
-
-mkdir -p "$RUNTIME_ROOT"/{scripts,tasks,assets}
-cp qwenclawbench_repo/scripts/*.py "$RUNTIME_ROOT/scripts/"
-cp "$SRC/tasks/$TASK.md" "$RUNTIME_ROOT/tasks/"
-cp -a "$SRC/assets/$TASK/." "$RUNTIME_ROOT/assets/"
-```
-
-SRO mode 将 `baseline` 替换为 `sro_v3`，runtime 内容一致，运行时通过 `SRO_ENABLED=1` 启用。
-
-**运行测试：**
-
-```bash
-export API_KEY="你的 DeepSeek API key"
-export API_BASE_URL="https://llmapi.paratera.com/v1"
-export BENCH_MODEL="deepseek-v4-flash"
-export PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000
-export TIMEOUT_MULTIPLIER=1
-
-# baseline + gate 对比
-benchmarks/run_qcb_trusted_batch.sh \
-  --runset my_test_$(date +%Y%m%dT%H%M%S) \
-  --modes baseline,gate \
-  --tasks task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check
-
-# 先 dry-run 确认路径
-benchmarks/run_qcb_trusted_batch.sh \
-  --runset my_dry \
-  --modes baseline,gate \
-  --tasks task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check \
-  --dry-run
-```
-
-结果写入 `benchmarks/qwenclawbench/<runset>/<mode>/<task>/result.json`。
-
-### 2. PinchBench（task_21 PDF 阅读理解）
-
-task_21 要求 agent 从一份 OpenClaw 技能生态分析 PDF 中提取 8 个结构化答案。它来自 PinchBench 项目，通过 QwenClawBench 的 benchmark.py 运行。
-
-**数据准备：**
-
-不需要单独下载。task_21 的 PDF 和 task 定义已打包在本仓库：
-
-- `benchmarks/qwenclawbench/baseline/task_21_openclaw_comprehension/runtime/assets/OpenClaw Agent Use Cases and Gap Analysis for PinchBench.pdf`
-- `benchmarks/qwenclawbench/baseline/task_21_openclaw_comprehension/runtime/tasks/task_21_openclaw_comprehension.md`
-
-**运行测试：**
-
-```bash
-export API_KEY="你的 DeepSeek API key"
-export API_BASE_URL="https://llmapi.paratera.com/v1"
-export BENCH_MODEL="deepseek-v4-flash"
-export PINCHBENCH_JUDGE_MAX_MSG_CHARS=200000
-export TIMEOUT_MULTIPLIER=1
-
-benchmarks/run_qcb_trusted_batch.sh \
-  --runset my_task21_$(date +%Y%m%dT%H%M%S) \
-  --modes baseline,gate \
-  --tasks task_21_openclaw_comprehension
-```
-
-当前 Phase 3 中 token 节省最显著的任务之一（DeepSeek 上 baseline 715k → gate 349k token，节省 51.1%），也暴露了 verify guard 对低质量 slot candidate 过于保守的问题。
-
-### 3. LooGLE（长文档短依赖 QA）
-
-LooGLE 是长上下文 benchmark，约 800 篇文档（单篇可达 100k+ 字符），每篇有 short dependency 和 long dependency 两类问题。我们选择了短依赖子集——agent 只需 `read_file` 一次获取全文，然后 `sro_read collect` 按 slot 提取局部证据，非常适合验证 SRO text reader 在单文件长文本上的压缩效果。
-
-**数据准备：**
-
-```bash
-pip install datasets
-python3 -c "
-from datasets import load_dataset
-ds = load_dataset('bigainlco/LooGLE', trust_remote_code=True)
-# ds 有 train/validation/test 三个 split
-# 每行：title, context（全文）, qa_pairs（list of {Q, A, type}）
-# type == 'short' 的是短依赖问题
-"
-```
-
-**选取任务文档和问题：**
-
-从数据集中选一篇文档（如 `Fall of Outremer`），从 qa_pairs 中筛选 `type == 'short'` 的问题，取 3-10 个。将全文保存为 `document.txt`，编写 QwenClawBench 兼容的 task `.md`（参考 `benchmarks/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_3q_followup/runtime/tasks/` 下的范例）。
-
-**构造 runtime 并测试：**
-
-```bash
-TASK="task_loogle_shortdep_my_doc"
-mkdir -p "benchmarks/qwenclawbench/baseline/$TASK/runtime"/{scripts,tasks,assets}
-cp qwenclawbench_repo/scripts/*.py "benchmarks/qwenclawbench/baseline/$TASK/runtime/scripts/"
-cp document.txt "benchmarks/qwenclawbench/baseline/$TASK/runtime/assets/"
-cp my_loogle_task.md "benchmarks/qwenclawbench/baseline/$TASK/runtime/tasks/$TASK.md"
-# sro_v3 runtime 同理，目录名换为 sro_v3
-
-benchmarks/run_qcb_trusted_batch.sh \
-  --runset my_loogle_$(date +%Y%m%dT%H%M%S) \
-  --modes baseline,gate \
-  --tasks "$TASK"
-```
-
-本仓库已备好的 LooGLE runtime（可直接用）：
-
-- `benchmarks/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_5q/` — 5 问题，满分
-- `benchmarks/qwenclawbench/baseline/task_loogle_shortdep_fall_of_outremer_3q_followup/` — 3 问题，需 readerfix 满分
-
-## 并行批处理
-
-`run_qcb_trusted_batch.sh` 支持并行执行多个 task，通过 `PARALLEL_JOBS` 环境变量控制并发数（默认 1，即串行）。
-
-### 用法
-
-```bash
-# 3 个 task 并发执行 baseline + gate 对比
-PARALLEL_JOBS=3 \
-  benchmarks/run_qcb_trusted_batch.sh \
-  --runset my_parallel_test_$(date +%Y%m%dT%H%M%S) \
-  --modes baseline,gate \
-  --tasks task_00036_find_largest_file_in_downloads_directory \
-          task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check \
-          task_21_openclaw_comprehension
-```
-
-### 并发安全
-
-每个 task/mode 组合自动获得独立的 agent 和 judge 目录，不会互相干扰：
-
-- **Task agent**: `~/.openclaw/agents/bench-{model}-{mode}-{task}/`
-- **Judge agent**: `~/.openclaw/agents/bench-judge-{model}-{mode}-{task}/`
-
-无需担心 session 文件冲突或 `cleanup_agent_sessions` 交叉删除。
-
-### 并行度建议
-
-- API 限流不明时从 `PARALLEL_JOBS=2` 起步
-- 纯 automated grading 任务可放心开到 4-6
-- 含 LLM judge（hybrid）的任务建议 ≤ 3，避免远端 judge API 限流
-- `--dry-run` 先确认路径无误再正式跑
-
-
-## 统一测试集（14 task）
-
-以下 14 个任务为 SRO/gate 当前验证通过的统一测试集，供同事对齐。详细分数和
-token 数据见 `benchmarks/qwenclawbench/` 下的聚合文档与论文工作区。
-
-| 序号 | Task ID | 简称 | 来源 | 类型 |
-|---:|---|---|---|---|
-| 1 | task_loogle_shortdep_fall_of_outremer | L10Q LooGLE | LooGLE | 长文本问答（10 问） |
-| 2 | task_loogle_shortdep_fall_of_outremer_5q | L5Q LooGLE | LooGLE | 长文本问答（5 问） |
-| 3 | task_loogle_shortdep_fall_of_outremer_3q_followup | L3Q LooGLE | LooGLE | 长文本问答（3 问） |
-| 4 | task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check | T12 stock audit | QwenClawBench | 代码审计 |
-| 5 | task_21_openclaw_comprehension | T21 openclaw | PinchBench | PDF 文档理解 |
-| 6 | task_00036_find_largest_file_in_downloads_directory | T36 file size | QwenClawBench | 文件系统操作 |
-| 7 | task_00055_literature_retrieval_bot_error_diagnosis_and_config_fix | T55 literature bot | QwenClawBench | 配置诊断 |
-| 8 | task_00058_did_regression_on_simulated_panel_data | T58 DiD | QwenClawBench | 计量经济分析 |
-| 9 | task_00059_user_discount_calculator | T59 discount | QwenClawBench | 规则编码 |
-| 10 | task_00067_write_sparql_query_for_product_reviews_containing_iphone | T67 SPARQL | QwenClawBench | 本体查询 |
-| 11 | task_00073_2026_new_issuance_p_l_decomposition_and_year_over_year_analysis | T73 P&L | QwenClawBench | 数据分析 |
-| 12 | task_00086_command_prefix_security_analysis | T86 cmd sec | QwenClawBench | 安全审计 |
-| 13 | task_00094_exam_monitor_system_audit_cron_sync_bug_rate_limit_gap_and_site | T94 exam | QwenClawBench | 系统审计 |
-| 14 | task_00098_diagnose_scheduled_book_recommendation_failure | T98 book rec | QwenClawBench | 故障诊断 |
-
-
-
-## 仓库目录
-
-```text
-packages/sparseread-core/        框架无关 SR core（含 tests/）
-integrations/<framework>/        各框架 adapter（python/ 与 plugin/，含 tests/）
-NanoBot 宿主（nanobot-ai）        由用户自行安装，仓库不随带框架源码
-benchmarks/                      本地 benchmark 运行器、shim 与代理
-benchmarks/qwenclawbench/          精选 benchmark runtime fixture（不含历史结果）
-tests/                           仓库级集成/发布测试（bridge/gate/fixtures/installer）
-docs/                            安装与设计文档
-```
-
-不要提交 API key、生成的 transcript、历史 runset、本地 Qwen/vLLM 资产、缓存及 virtual environment。
+SparseRead is released under the [MIT License](LICENSE).
