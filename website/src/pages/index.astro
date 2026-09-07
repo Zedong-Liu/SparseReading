@@ -29,7 +29,6 @@ const quality = claim("paper-abs-quality-preserve");
 const useful = claim("paper-intro-useful-6-15");
 const fig3 = claim("paper-fig3-17x");
 const t67 = claim("paper-fig5-t67");
-const t59 = claim("paper-fig5-t59");
 const flagship = claim("case-flagship-loogle5q-flash");
 const flagshipRed = claim("case-flagship-loogle5q-flash-reduction");
 const opus = claim("paper-s62-opus-sparsefit");
@@ -265,73 +264,73 @@ const plugins = [
       <p class="section-label">04 / How It Works</p>
       <h2>A gate in front. Snap-in backends behind.</h2>
       <p>
-        The control plane decides whether to read sparse. The data plane is a
-        socket: reader backends and a domain compressor plug in like bricks.
+        The control plane decides whether to read sparse. The data plane admits
+        only a bounded slice — backends plug in on one interface.
         Public terms first; implementation aliases in parentheses.
       </p>
       <div class="planes">
         <div class="panel">
           <h3>Control plane</h3>
-          <p>Object Preview (FileCard) → Read Intent (HintSpec) → Read Gate → macro actions → Evidence State.</p>
-          <div class="flow">
-            <span class="chip gate">Read Gate</span>
-            <span class="arrow">outputs</span>
-            <span class="chip gate">force</span>
-            <span class="chip gate">advisory</span>
-            <span class="chip gate">native</span>
-          </div>
+          <p class="control-path">
+            Object Preview (FileCard) → Read Intent (HintSpec) → Read Gate →
+            macro actions → Evidence State.
+          </p>
           <p>
+            The Read Gate switches work modes on its own:
+            <code>force</code>, <code>advisory</code>, or <code>native</code>.
             Agent-selected macro actions:
-            <code>scout</code>, <code>focus</code>, <code>collect</code>, <code>refine</code>, <code>verify</code>.
-            Evidence State / EvidencePack holds anchors, coverage, unresolved needs, and stop / refine / protocol fallback.
+            <code>scout</code>, <code>focus</code>, <code>collect</code>,
+            <code>refine</code>, <code>verify</code>.
+            Evidence State / EvidencePack holds anchors, coverage, unresolved
+            needs, and stop / refine / protocol fallback.
           </p>
         </div>
         <div class="panel">
           <h3>Data plane · compress inside the reader</h3>
           <p>
-            <span class="dot-backend">Reader Backends</span> do the compression:
-            the object stays outside context until a bounded slice is admitted.
-            Swap Text/PDF, tables, collections, or the script-library without changing the Read Gate.
-            A specialized compressor registers as a backend here — not after a full read.
+            Reader backends do the compression: the object stays outside context
+            until a bounded slice is admitted. Swap Text/PDF, tables, collections,
+            or the script library without changing the Read Gate. A specialized
+            compressor registers as a backend here — not after a full read.
           </p>
           <div class="backend-kit">
             <div class="backend-socket">
-              <span class="backend-socket-label">Unified Reader Interface · installed</span>
+              <span class="backend-socket-label">Unified reader · installed</span>
               <div class="socket-body">
-              <div class="backend-rail">
-                {[
-                  [backends[0], backends[2]],
-                  [backends[1], backends[3]],
-                ].map((stack) => (
-                  <div class="brick-stack">
-                    {stack.map((item, index) => (
-                      <div class={`brick ${index === 0 ? "brick-upper" : "brick-lower"}`}>
-                        <div class="brick-thickness" aria-hidden="true" />
-                        <div class="brick-face">
-                          <b>{item.name}</b>
-                          <span>{item.role}</span>
-                          <code>{item.types}</code>
+                <div class="backend-rail">
+                  {[
+                    [backends[0], backends[2]],
+                    [backends[1], backends[3]],
+                  ].map((stack) => (
+                    <div class="brick-stack">
+                      {stack.map((item, index) => (
+                        <div class={`brick ${index === 0 ? "brick-upper" : "brick-lower"}`}>
+                          <div class="brick-thickness" aria-hidden="true" />
+                          <div class="brick-face">
+                            <b>{item.name}</b>
+                            <span>{item.role}</span>
+                            <code>{item.types}</code>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-              <div class="reader-effect">
-                <p class="effect-from">Full object</p>
-                <svg class="compress-graphic" viewBox="0 0 100 118" aria-hidden="true">
-                  <rect x="6" y="2" width="88" height="5" fill="var(--over)" />
-                  <rect x="6" y="10" width="88" height="5" fill="var(--over)" />
-                  <rect x="6" y="18" width="88" height="5" fill="var(--over)" />
-                  <rect x="6" y="26" width="88" height="5" fill="var(--over)" />
-                  <rect x="6" y="34" width="88" height="5" fill="var(--over)" />
-                  <rect x="6" y="42" width="88" height="5" fill="var(--over)" />
-                  <polygon points="6,50 94,50 68,86 32,86" fill="color-mix(in srgb, var(--backend) 55%, var(--line))" />
-                  <rect x="32" y="90" width="36" height="6" fill="var(--gate)" />
-                  <rect x="32" y="100" width="36" height="6" fill="var(--gate)" />
-                </svg>
-                <p class="effect-to">useful evidence</p>
-              </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+                <div class="reader-effect">
+                  <p class="effect-from">Full object</p>
+                  <svg class="compress-graphic" viewBox="0 0 100 118" aria-hidden="true">
+                    <rect x="6" y="2" width="88" height="5" fill="var(--over)" />
+                    <rect x="6" y="10" width="88" height="5" fill="var(--over)" />
+                    <rect x="6" y="18" width="88" height="5" fill="var(--over)" />
+                    <rect x="6" y="26" width="88" height="5" fill="var(--over)" />
+                    <rect x="6" y="34" width="88" height="5" fill="var(--over)" />
+                    <rect x="6" y="42" width="88" height="5" fill="var(--over)" />
+                    <polygon points="6,50 94,50 68,86 32,86" fill="color-mix(in srgb, var(--gate) 28%, var(--line))" />
+                    <rect x="32" y="90" width="36" height="6" fill="var(--gate)" />
+                    <rect x="32" y="100" width="36" height="6" fill="var(--gate)" />
+                  </svg>
+                  <p class="effect-to">useful evidence</p>
+                </div>
               </div>
             </div>
             <div class="backend-library">
@@ -350,24 +349,13 @@ const plugins = [
             </div>
           </div>
           <p>
-            Examples: SWE-Pruner, LLMLingua, or an <span class="dot-domain">AI4S domain reader</span>
-            (materials chemistry uses the same snap). SWE-Pruner and LLMLingua are wrapping paths,
-            not evaluated in this work. SparseRead is not post-hoc summarization,
-            KV-cache compression, or an always-on replacement for native tools.
+            Examples: SWE-Pruner, LLMLingua, or an AI4S domain reader
+            (materials chemistry uses the same snap). SWE-Pruner and LLMLingua
+            are wrapping paths, not evaluated in this work. SparseRead is not
+            post-hoc summarization, KV-cache compression, or an always-on
+            replacement for native tools.
           </p>
         </div>
-      </div>
-      <div class="panel limit" data-claim-id={t67.id}>
-        <h3>Regime boundary · force mode, not gated SparseRead</h3>
-        <p>
-          Forced sparse reading increases tokens by {fmtPct(t67.value)}% on a
-          SPARQL / global-statistics task.
-        </p>
-        <p data-claim-id={t59.id}>
-          Forced sparse reading increases tokens by {fmtPct(t59.value)}% on a
-          rule-coding task. The Read Gate exists to stay out of that regime.
-          Protocol-level fallback remains available after force.
-        </p>
       </div>
     </section>
 
