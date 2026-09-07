@@ -510,47 +510,37 @@ section { margin-top: 72px; }
 }
 
 .planes { display: grid; grid-template-columns: 1fr; gap: 16px; margin: 20px 0 0; }
-.flow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin: 12px 0;
+.control-path {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.55;
+  margin: 0 0 10px;
 }
-.chip {
-  font-family: var(--mono);
-  font-size: 12px;
-  padding: 6px 8px;
-  border: 1px solid var(--line);
-}
-.chip.gate { color: var(--gate-dim); border-color: var(--gate); }
-.chip.backend { color: #9dc0ea; border-color: var(--backend); }
-.chip.domain { color: #c4b0ec; border-color: var(--domain); }
-.arrow { color: var(--faint); font-family: var(--mono); font-size: 12px; }
 
-.dot-gate { color: var(--gate-dim); }
-.dot-backend { color: #9dc0ea; }
-.dot-domain { color: #c4b0ec; }
-
-.backend-kit { display: grid; gap: 16px; margin: 16px 0 12px; }
+.backend-kit { display: grid; gap: 14px; margin: 16px 0 12px; }
 .backend-socket,
 .backend-library {
   overflow: visible;
-  padding: 18px 14px 16px;
-  background: color-mix(in srgb, var(--backend) 8%, var(--panel));
+  padding: 16px 14px 14px;
 }
-.backend-socket { border: 1px solid var(--backend); }
-.backend-library { border: 1px dashed var(--domain); background: color-mix(in srgb, var(--domain) 8%, var(--panel)); }
+.backend-socket {
+  background: var(--sr-panel);
+  border: 1px solid color-mix(in srgb, var(--gate) 40%, var(--line));
+}
+.backend-library {
+  background: var(--limit-bg);
+  border: 1px solid color-mix(in srgb, var(--limit-line) 55%, var(--line));
+}
 .backend-socket-label {
   display: block;
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #9dc0ea;
+  color: var(--gate-dim);
   margin-bottom: 12px;
 }
-.backend-library .backend-socket-label { color: #c4b0ec; }
+.backend-library .backend-socket-label { color: var(--limit-ink); }
 .socket-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 120px;
@@ -560,8 +550,8 @@ section { margin-top: 72px; }
 .reader-effect {
   margin: 0;
   padding: 12px 10px 10px;
-  background: color-mix(in srgb, var(--backend) 16%, var(--panel));
-  border: 1px solid var(--backend);
+  background: color-mix(in srgb, var(--panel) 55%, var(--sr-panel));
+  border: 1px solid color-mix(in srgb, var(--gate) 28%, var(--line));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -575,13 +565,15 @@ section { margin-top: 72px; }
 .reader-effect .effect-from,
 .reader-effect .effect-to {
   margin: 0;
-  font-size: 11px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
   line-height: 1.3;
   text-align: center;
 }
 .reader-effect .effect-from {
   margin-bottom: 8px;
-  color: var(--muted);
+  color: var(--over-dim);
 }
 .reader-effect .effect-to {
   margin-top: 8px;
@@ -608,8 +600,8 @@ section { margin-top: 72px; }
 }
 .brick {
   --tab-h: 16px;
-  --brick: var(--backend);
-  --brick-face: color-mix(in srgb, var(--backend) 34%, var(--bg-elev));
+  --brick: color-mix(in srgb, var(--gate) 55%, var(--line));
+  --brick-face: color-mix(in srgb, var(--gate) 16%, var(--panel));
   --brick-cut: polygon(
     0 var(--tab-h),
     10% var(--tab-h), 10% 0, 24% 0, 24% var(--tab-h),
@@ -623,8 +615,8 @@ section { margin-top: 72px; }
   color: var(--ink);
 }
 .brick-upper {
-  --brick: var(--backend);
-  --brick-face: color-mix(in srgb, var(--backend) 40%, var(--bg-elev));
+  --brick: color-mix(in srgb, var(--gate) 48%, var(--line));
+  --brick-face: color-mix(in srgb, var(--gate) 14%, var(--panel));
   --brick-cut: polygon(
     0 var(--tab-h),
     10% var(--tab-h), 10% 0, 24% 0, 24% var(--tab-h),
@@ -639,26 +631,26 @@ section { margin-top: 72px; }
   );
 }
 .brick-lower {
-  --brick: color-mix(in srgb, var(--backend) 55%, #16324f);
-  --brick-face: color-mix(in srgb, var(--backend) 58%, var(--bg-elev));
+  --brick: color-mix(in srgb, var(--gate) 62%, var(--line));
+  --brick-face: color-mix(in srgb, var(--gate) 26%, var(--bg-elev));
 }
 .brick-plugin {
-  --brick: var(--domain);
-  --brick-face: color-mix(in srgb, var(--domain) 28%, var(--bg-elev));
+  --brick: color-mix(in srgb, var(--limit-line) 70%, var(--line));
+  --brick-face: color-mix(in srgb, var(--limit-line) 18%, var(--panel));
 }
 .brick-thickness,
 .brick-face { clip-path: var(--brick-cut); }
 .brick-thickness {
   position: absolute;
   inset: 5px 0 0;
-  background: color-mix(in srgb, var(--brick) 62%, #000);
+  background: color-mix(in srgb, var(--brick) 70%, #000);
 }
 .brick-face {
   position: relative;
   min-height: 84px;
   padding: calc(var(--tab-h) + 10px) 16px 14px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, #fff 10%, var(--brick-face)), var(--brick-face) 22%);
+    linear-gradient(180deg, color-mix(in srgb, #fff 12%, var(--brick-face)), var(--brick-face) 22%);
 }
 .brick-upper .brick-face { padding-bottom: calc(var(--tab-h) + 12px); }
 .brick-face b { display: block; font-size: 14px; font-weight: 650; }
@@ -669,6 +661,29 @@ section { margin-top: 72px; }
   font-family: var(--mono);
   font-size: 11px;
   color: var(--ink);
+}
+
+html[data-theme="light"] .brick {
+  filter:
+    drop-shadow(0 1px 1px rgb(70 58 28 / 0.08))
+    drop-shadow(0 4px 8px rgb(70 58 28 / 0.06));
+}
+html[data-theme="light"] .brick-face {
+  background: linear-gradient(
+    180deg,
+    var(--brick-face),
+    color-mix(in srgb, var(--brick) 14%, var(--brick-face))
+  );
+}
+html[data-theme="light"] .backend-socket .brick-upper {
+  --brick-face: color-mix(in srgb, var(--gate) 22%, var(--panel));
+}
+html[data-theme="light"] .backend-socket .brick-lower {
+  --brick-face: color-mix(in srgb, var(--gate) 34%, var(--bg-elev));
+}
+html[data-theme="light"] .brick-plugin {
+  --brick: color-mix(in srgb, var(--limit-line) 77%, var(--line));
+  --brick-face: color-mix(in srgb, var(--limit-line) 28%, var(--panel));
 }
 
 pre.mono {
@@ -1067,7 +1082,7 @@ pre.mono {
   main { padding: 28px 18px 72px; }
   h1 { font-size: 40px; }
   .tagline { font-size: 22px; }
-  .stats, .grid2, .grid3, .grid4, .planes, .replay-grid, .compare-grid, .protocol-row, .chart-chips, .results-board, .result-pills, .backend-rail, .plugin-row, .quality-body, .rank-lane, .result-twin { grid-template-columns: 1fr; }
+  .stats, .grid2, .grid3, .grid4, .planes, .replay-grid, .compare-grid, .protocol-row, .chart-chips, .results-board, .result-pills, .backend-rail, .plugin-row, .quality-body, .rank-lane, .result-twin, .socket-body { grid-template-columns: 1fr; }
   .install-tablist { grid-template-columns: 1fr 1fr; }
   .install-tablist button:nth-child(2) { border-right: none; }
   .install-tablist button:nth-child(1),
