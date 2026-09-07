@@ -1,0 +1,590 @@
+# SparseRead public claim registry
+# Paper of record: arXiv:2608.22237v1 (23 Aug 2026)
+# Rule: website / GIF / posters / social copy may use only
+# approved_for_publication: true items. Do not paraphrase away
+# aggregation, baseline, model, or task qualifiers.
+#
+# approval_policy:
+#   true  = stated in the public paper with explicit conditions, or
+#           locally cross-checked against a named result file
+#   false = superseded local draft, single-run plotting adjustment,
+#           figure-OCR uncertain, demo-only, or missing local artifact
+
+paper:
+  arxiv_id: "2608.22237"
+  version: v1
+  title: "Read Less, Solve More: Token-Efficient Sparse Reading for AI Agents"
+  url: "https://arxiv.org/pdf/2608.22237"
+  github: "https://github.com/Zedong-Liu/SparseReading"
+  submitted: "2026-08-23"
+
+setup:
+  models:
+    - Claude Opus 5
+    - Qwen3.6-Plus
+    - DeepSeek-V4-Flash
+    - DeepSeek-V4-Pro
+    - GLM-5.1
+    - Kimi-K2.5
+  frameworks:
+    - {name: NanoBot, version: v0.2.0}
+    - {name: OpenCode, version: v1.17.14}
+    - {name: OpenClaw, version: v2026.6.11}
+  task_sources:
+    - QwenClawBench
+    - Claw-Eval
+    - PinchBench
+    - LooGLE
+    - materials-chemistry AI-for-Science
+  n_tasks_general: 125
+  scenarios:
+    - long-context reading
+    - multi-file audit and diagnosis
+    - structured analysis
+    - native-fit controls
+    - AI for Science (materials chemistry)
+  baselines:
+    - Naive full reading
+    - ACON zero-shot compressor (auxiliary calls included)
+    - Complexity Trap observation masking (retain latest 10)
+  primary_metrics:
+    - total token volume reduction vs Naive
+    - task-score change vs Naive
+    - end-to-end wall-time saving vs Naive
+  gate_analysis_aggregation: "request-count change averaged over three runs (paper §6.1)"
+
+claims:
+  - id: paper-abs-token-max
+    claim: "Across six frontier models and five workload scenarios, SparseRead reduces token volume by up to 92.9%."
+    metric: token_reduction
+    value: 92.9
+    unit: percent
+    baseline: Naive full reading
+    model: "six models including Claude Opus 5; maximum cell"
+    framework: NanoBot (main matrix, Figure 7)
+    dataset: "125-task general eval + AI-for-Science scenario"
+    task: "maximum across 30 model–scenario cells"
+    num_runs: null
+    aggregation: maximum
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: Abstract / §6.2
+    paper_figure_or_table: Figure 7
+    reproduce_command: null
+    approved_for_publication: true
+    notes: "Must keep 'up to'. Local checkout has no 30-cell source table."
+
+  - id: paper-abs-wall-max
+    claim: "Across the same matrix, SparseRead reduces wall time by up to 89.0%."
+    metric: wall_time_saving
+    value: 89.0
+    unit: percent
+    baseline: Naive full reading
+    model: "six models; maximum cell"
+    framework: NanoBot
+    dataset: "five scenarios"
+    task: "maximum across 30 model–scenario cells"
+    num_runs: null
+    aggregation: maximum
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: Abstract / §6.2
+    paper_figure_or_table: Figure 7
+    reproduce_command: null
+    approved_for_publication: true
+    notes: "Must keep 'up to'. Do not equate to cost or quality."
+
+  - id: paper-abs-quality-preserve
+    claim: "SparseRead preserves or improves task quality on the reported matrix (not on every individual cell)."
+    metric: score_delta
+    value: null
+    unit: null
+    baseline: Naive full reading
+    model: six models
+    framework: NanoBot
+    dataset: five scenarios
+    task: "26 of 30 model–scenario cells preserve or improve score"
+    num_runs: null
+    aggregation: cell count
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: Abstract / §6.2
+    paper_figure_or_table: Figure 7
+    reproduce_command: null
+    approved_for_publication: true
+    notes: "Abstract says 'preserving or improving'. §6.2 quantifies 26/30. Four cells are between -0.10 and -0.02."
+
+  - id: paper-s62-30-of-30-cost
+    claim: "SparseRead reduces both token volume and wall time in all 30 NanoBot model–scenario cells."
+    metric: token_and_wall_reduction
+    value: 30
+    unit: cells
+    baseline: Naive
+    model: six models
+    framework: NanoBot
+    dataset: five scenarios
+    task: all 30 cells
+    num_runs: null
+    aggregation: count
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: §6.2
+    paper_figure_or_table: Figure 7
+    reproduce_command: null
+    approved_for_publication: true
+    notes: null
+
+  - id: paper-s62-sparsefit-range
+    claim: "On the four sparse-fit scenarios, token reduction is 15.7–92.9% and wall-time saving is 28.3–89.0%."
+    metric: token_reduction
+    value: [15.7, 92.9]
+    unit: percent
+    baseline: Naive
+    model: six models
+    framework: NanoBot
+    dataset: "long-context, multi-file audit, structured analysis, AI for Science"
+    task: sparse-fit scenarios
+    num_runs: null
+    aggregation: range
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: §6.2
+    paper_figure_or_table: Figure 7
+    reproduce_command: null
+    approved_for_publication: true
+    notes: "Native-fit controls are excluded from this range."
+
+  - id: paper-s62-opus-sparsefit
+    claim: "Claude Opus 5, the strongest model evaluated, saves 59.6–89.0% of tokens and 51.3–78.1% of wall time on sparse-fit scenarios."
+    metric: token_reduction
+    value: [59.6, 89.0]
+    unit: percent
+    baseline: Naive
+    model: Claude Opus 5
+    framework: NanoBot
+    dataset: sparse-fit scenarios
+    task: sparse-fit scenarios
+    num_runs: null
+    aggregation: range
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: §6.2
+    paper_figure_or_table: Figure 7
+    reproduce_command: null
+    approved_for_publication: true
+    notes: "Use as Strong Model claim. Local checkout has no Opus traces."
+
+  - id: paper-s62-ai4s
+    claim: "In AI for Science (materials chemistry), all six models reduce token use by 82.7–89.1% and wall time by 28.3–63.0%."
+    metric: token_reduction
+    value: [82.7, 89.1]
+    unit: percent
+    baseline: Naive
+    model: six models
+    framework: NanoBot
+    dataset: materials-chemistry tasks
+    task: AI for Science
+    num_runs: null
+    aggregation: range
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: §6.2
+    paper_figure_or_table: Figure 7
+    reproduce_command: null
+    approved_for_publication: true
+    notes: "No local AI4S fixtures found."
+
+  - id: paper-s63-vs-baselines
+    claim: "Versus ACON and Complexity Trap observation masking on six model–scenario settings, SparseRead has the lowest token volume and wall time in every setting and is the only method whose score never falls below Naive."
+    metric: comparative_rank
+    value: null
+    unit: null
+    baseline: "Naive, ACON zero-shot, CT last-10 masking"
+    model: "DeepSeek-V4-Flash, DeepSeek-V4-Pro, Qwen3.6-Plus"
+    framework: NanoBot
+    dataset: "long-context reading and multi-file audit"
+    task: "six model–scenario settings in Figure 8"
+    num_runs: 1
+    aggregation: descriptive single runs
+    source_file: results/reports/two_scenario_three_model_baseline_comparison_20260723.csv
+    paper_section: §6.3
+    paper_figure_or_table: Figure 8
+    reproduce_command: null
+    approved_for_publication: true
+    notes: "Local CSV is n=1. Some T12 ACON/CT token/time values include user-provided retest multipliers. Do not hide that."
+
+  - id: paper-s63-token-range
+    claim: "In the Figure 8 comparison, SparseRead reduces tokens by 63.4–86.3% and wall time by 44.7–72.3% versus Naive."
+    metric: token_reduction
+    value: [63.4, 86.3]
+    unit: percent
+    baseline: Naive
+    model: "DS-Flash, DS-Pro, Qwen3.6-Plus"
+    framework: NanoBot
+    dataset: "LooGLE 5Q and T12 audit"
+    task: Figure 8 settings
+    num_runs: 1
+    aggregation: range over six settings
+    source_file: results/reports/two_scenario_three_model_baseline_comparison_20260723.csv
+    paper_section: §6.3
+    paper_figure_or_table: Figure 8
+    reproduce_command: null
+    approved_for_publication: true
+    notes: "Paper also states 1.8–3.6× completion-time speedup from these wall-time reductions."
+
+  - id: paper-s63-speedup
+    claim: "The measured Figure 8 wall-time reductions correspond to a 1.8–3.6× end-to-end completion-time speedup."
+    metric: wall_time_speedup
+    value: [1.8, 3.6]
+    unit: "×"
+    baseline: Naive
+    model: "DS-Flash, DS-Pro, Qwen3.6-Plus"
+    framework: NanoBot
+    dataset: "LooGLE 5Q and T12 audit"
+    task: Figure 8 settings
+    num_runs: 1
+    aggregation: range
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: §6.3
+    paper_figure_or_table: Figure 8
+    reproduce_command: null
+    approved_for_publication: true
+    notes: "Speedup is derived from wall time, not a separate throughput experiment."
+
+  - id: paper-tab1-framework-medians
+    claim: "Across three frameworks and five models, median token reductions are 69.0% (NanoBot), 71.8% (OpenCode), and 28.7% (OpenClaw); median wall-time savings are 64.4%, 64.9%, and 28.2%."
+    metric: token_reduction
+    value: {NanoBot: 69.0, OpenCode: 71.8, OpenClaw: 28.7}
+    unit: percent
+    baseline: Naive
+    model: five models (Table 1; Opus 5 not in this table)
+    framework: "NanoBot, OpenCode, OpenClaw"
+    dataset: paper Table 1 workload
+    task: framework portability suite
+    num_runs: null
+    aggregation: median per framework
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: §6.4
+    paper_figure_or_table: Table 1
+    reproduce_command: null
+    approved_for_publication: true
+    notes: "12 of 15 cells preserve or improve score. Three small regressions −0.031 to −0.013. Local checkout lacks Table 1 raw rows."
+
+  - id: paper-intro-useful-6-15
+    claim: "In representative high-sparsity tasks, only 6–15% of the exposed reading content contributes to the current decision."
+    metric: useful_share
+    value: [6, 15]
+    unit: percent
+    baseline: exposed reading content = 100%
+    model: trace analysis in §1
+    framework: null
+    dataset: representative high-sparsity tasks
+    task: null
+    num_runs: null
+    aggregation: range
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: §1
+    paper_figure_or_table: Figure 2 (related)
+    reproduce_command: null
+    approved_for_publication: true
+    notes: "§2.1 later says useful evidence is 6–34% of the reading budget by scenario. Use 6–15% only with 'representative high-sparsity tasks'. Use 6–34% when citing Figure 2."
+
+  - id: paper-fig2-useful-6-34
+    claim: "In high-sparsity settings (long-document QA, PDF QA, audit bundles), useful evidence occupies 6–34% of the reading budget."
+    metric: useful_share
+    value: [6, 34]
+    unit: percent
+    baseline: exposed reading budget
+    model: null
+    framework: null
+    dataset: high-sparsity scenarios in Figure 2
+    task: null
+    num_runs: null
+    aggregation: range
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: §2.1
+    paper_figure_or_table: Figure 2
+    reproduce_command: null
+    approved_for_publication: true
+    notes: null
+
+  - id: paper-fig3-17x
+    claim: "In paired high-sparsity runs, full-read agents spend up to 17.3× more tokens than SparseRead without improving task score."
+    metric: token_overhead_ratio
+    value: 17.3
+    unit: "×"
+    baseline: SparseRead
+    model: "grouped in Figure 3 (Qwen3.5-35B, DeepSeek-Flash, DeepSeek-Pro)"
+    framework: null
+    dataset: high-sparsity paired runs
+    task: "Long-doc QA row showing 17.3×"
+    num_runs: null
+    aggregation: maximum reported
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: §2.2
+    paper_figure_or_table: Figure 3
+    reproduce_command: null
+    approved_for_publication: true
+    notes: "Must keep 'up to'. Do not say quality always improves."
+
+  - id: paper-fig4-protocol
+    claim: "Without protocol state, agents require 1.7–6.2× more requests and 2.1–12.5× more tokens."
+    metric: request_overhead_ratio
+    value: [1.7, 6.2]
+    unit: "×"
+    baseline: protocol-complete SparseRead
+    model: null
+    framework: null
+    dataset: "Long-book QA, multi-file audit, PDF report QA, security policy audit"
+    task: protocol-sufficiency pairs
+    num_runs: null
+    aggregation: range
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: §3.1
+    paper_figure_or_table: Figure 4
+    reproduce_command: null
+    approved_for_publication: true
+    notes: >-
+      Paper §3.1 prose states 2.1–12.5× tokens. Figure 4 bar labels visible
+      in the PDF extract are 6.1×, 6.5×, 3.6×, 2.1×. Keep the prose range;
+      do not invent a 12.5× bar if a graphic is redrawn.
+
+  - id: paper-fig5-high-sparse
+    claim: "On long-document QA / PDF / multi-file audit, Sparse Reading reduces tokens by 80–88% (figure annotations −80%, −88%, −82%)."
+    metric: token_change
+    value: [-80, -88, -82]
+    unit: percent
+    baseline: Naive / full read
+    model: null
+    framework: NanoBot
+    dataset: "Long-book QA, PDF report QA, multi-file audit"
+    task: "L5Q / T21 / T12 in the gate-boundary figure family"
+    num_runs: null
+    aggregation: per-task
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: §3.2
+    paper_figure_or_table: Figure 5
+    reproduce_command: null
+    approved_for_publication: true
+    notes: "Use as high-sparsity regime evidence, not as a global average."
+
+  - id: paper-fig5-t67
+    claim: "Forced sparse reading increases tokens by 309.2% on T67."
+    metric: token_change
+    value: 309.2
+    unit: percent
+    baseline: Naive
+    model: null
+    framework: NanoBot
+    dataset: QwenClawBench
+    task: T67 SPARQL / global statistics in Figure 5
+    num_runs: null
+    aggregation: single reported cell
+    source_file: SRO_test/qwenclawbench/supp_e4_boundary_nanobot_20260623/e4_paired_deltas.csv
+    paper_section: §3.2
+    paper_figure_or_table: Figure 5
+    reproduce_command: null
+    approved_for_publication: true
+    notes: "Regime-boundary / do-not-always-on claim. Score still moved +0.09. Local CSV is DeepSeek-V4-Flash force vs baseline, not Pro."
+
+  - id: paper-fig5-t59
+    claim: "Forced sparse reading increases tokens by 210.5% on T59."
+    metric: token_change
+    value: 210.5
+    unit: percent
+    baseline: Naive
+    model: null
+    framework: NanoBot
+    dataset: QwenClawBench
+    task: T59 rule-coding
+    num_runs: null
+    aggregation: single reported cell
+    source_file: SRO_test/qwenclawbench/supp_e4_boundary_nanobot_20260623/e4_paired_deltas.csv
+    paper_section: §3.2
+    paper_figure_or_table: Figure 5
+    reproduce_command: null
+    approved_for_publication: true
+    notes: "Score moved +0.22. Token cost is the point, not a quality loss. Local CSV is DeepSeek-V4-Flash force vs baseline."
+
+  - id: paper-s61-prior-obs-share
+    claim: "Prior work reports that external observations account for 60–80% of tokens processed in agent trajectories."
+    metric: observation_token_share
+    value: [60, 80]
+    unit: percent
+    baseline: null
+    model: null
+    framework: null
+    dataset: "Wang et al. 2026 (cited)"
+    task: null
+    num_runs: null
+    aggregation: cited range
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: §1
+    paper_figure_or_table: null
+    reproduce_command: null
+    approved_for_publication: true
+    notes: "This is a citation of SWE-Pruner / Wang et al. 2026, not a SparseRead measurement. Attribute it."
+
+  - id: case-flagship-loogle5q-flash
+    claim: "On LooGLE 5Q with DeepSeek-V4-Flash, SparseRead uses 50,699 tokens vs Naive 369,042 at score 1.0 for both (4 vs 17 requests; 39.4s vs 97.8s)."
+    metric: total_token_volume
+    value: {naive: 369042, sparseread: 50699}
+    unit: tokens
+    baseline: Naive
+    model: DeepSeek-V4-Flash
+    framework: NanoBot
+    dataset: LooGLE
+    task: task_loogle_shortdep_fall_of_outremer_5q
+    num_runs: 1
+    aggregation: single run
+    source_file: results/reports/two_scenario_three_model_baseline_comparison_20260723.csv
+    paper_section: §6.3
+    paper_figure_or_table: Figure 8
+    reproduce_command: "make reproduce CASE=flagship"
+    approved_for_publication: true
+    notes: "CSV marks SR as historical same-task, Naive as new clean-runtime rerun. Public copy must say single run. Token reduction ≈ 86.3%."
+
+  - id: case-flagship-loogle5q-flash-reduction
+    claim: "LooGLE 5Q / DeepSeek-V4-Flash token reduction is (369042-50699)/369042 ≈ 86.3%."
+    metric: token_reduction
+    value: 86.3
+    unit: percent
+    baseline: Naive
+    model: DeepSeek-V4-Flash
+    framework: NanoBot
+    dataset: LooGLE
+    task: task_loogle_shortdep_fall_of_outremer_5q
+    num_runs: 1
+    aggregation: single-run derived
+    source_file: results/reports/two_scenario_three_model_baseline_comparison_20260723.csv
+    paper_section: §6.3
+    paper_figure_or_table: Figure 8
+    reproduce_command: "make reproduce CASE=flagship"
+    approved_for_publication: true
+    notes: "Matches paper §6.3 maximum 86.3% in the Figure 8 comparison."
+
+  - id: case-strong-t12-pro
+    claim: "On T12 stock-fetcher audit with DeepSeek-V4-Pro, SparseRead reaches score 1.0 vs Naive 0.333 using 72,061 vs 224,626 tokens (5 vs 13 requests; 43.9s vs 158.8s)."
+    metric: task_score
+    value: {naive: 0.333, sparseread: 1.0}
+    unit: score
+    baseline: Naive
+    model: DeepSeek-V4-Pro
+    framework: NanoBot
+    dataset: QwenClawBench
+    task: task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check
+    num_runs: 1
+    aggregation: single run
+    source_file: results/reports/two_scenario_three_model_baseline_comparison_20260723.csv
+    paper_section: §6.3
+    paper_figure_or_table: Figure 8
+    reproduce_command: "make reproduce CASE=strong_model"
+    approved_for_publication: true
+    notes: "Quality and tokens both move. Still a single historical paired run. Not Opus 5 — Opus traces are missing locally."
+
+  - id: case-boundary-t67
+    claim: "Forced SparseRead on T67 increases tokens by 309.2% (Figure 5)."
+    metric: token_change
+    value: 309.2
+    unit: percent
+    baseline: Naive
+    model: null
+    framework: NanoBot
+    dataset: QwenClawBench
+    task: task_00067_write_sparql_query_for_product_reviews_containing_iphone
+    num_runs: null
+    aggregation: paper-reported cell
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: §3.2
+    paper_figure_or_table: Figure 5 / Figure 9
+    reproduce_command: "make reproduce CASE=regime_boundary"
+    approved_for_publication: true
+    notes: "Must present as force-mode overhead, not as gated SparseRead."
+
+  - id: local-draft-median-14task
+    claim: "Local AAAI draft reports 21.9–47.3% median token reduction on a 14-task / 3-model snapshot."
+    metric: token_reduction
+    value: [21.9, 47.3]
+    unit: percent
+    baseline: Native / full-read
+    model: "Qwen, DS-Flash, DS-Pro"
+    framework: NanoBot
+    dataset: 14-task snapshot
+    task: 14-task suite
+    num_runs: null
+    aggregation: median per model
+    source_file: latex/tables/model_summary.tex
+    paper_section: null
+    paper_figure_or_table: null
+    reproduce_command: null
+    approved_for_publication: false
+    notes: "SUPERSEDED by arXiv:2608.22237. Do not use on website, GIF, or social copy."
+
+  - id: local-latex-starred-estimates
+    claim: "Local platform_summary.tex OpenCode/OpenClaw/GLM/Kimi rows are filled estimates."
+    metric: null
+    value: null
+    unit: null
+    baseline: null
+    model: "GLM-5.1*, Kimi-K2.6*"
+    framework: "OpenCode*, OpenClaw*"
+    dataset: null
+    task: null
+    num_runs: null
+    aggregation: filled estimate
+    source_file: latex/tables/platform_summary.tex
+    paper_section: null
+    paper_figure_or_table: null
+    reproduce_command: null
+    approved_for_publication: false
+    notes: "Do not publish. Public paper Table 1 supersedes these starred rows and uses Kimi-K2.5, not Kimi-K2.6."
+
+  - id: demo-paperbench-not-a-result
+    claim: "demo/paperbench_research_demo is a deterministic presentation packet, not a paper evaluation cell."
+    metric: null
+    value: null
+    unit: null
+    baseline: null
+    model: null
+    framework: null
+    dataset: OpenAI PaperBench-style packet
+    task: paperbench_style_replication_audit
+    num_runs: 0
+    aggregation: scripted replay
+    source_file: demo/paperbench_research_demo/README.md
+    paper_section: null
+    paper_figure_or_table: null
+    reproduce_command: "python3 demo/paperbench_research_demo/replay_demo.py"
+    approved_for_publication: false
+    notes: "May be used as a method illustration labeled REPLAY. Never show its token counts as experimental results."
+
+  - id: fig8-dspro-loogle-naive-wall-70s
+    claim: "LooGLE 5Q / DS-Pro Naive wall time 70.0s was set to a requested plotting value."
+    metric: wall_seconds
+    value: 70.0
+    unit: seconds
+    baseline: null
+    model: DeepSeek-V4-Pro
+    framework: NanoBot
+    dataset: LooGLE
+    task: LooGLE 5Q
+    num_runs: 1
+    aggregation: plotting override
+    source_file: results/reports/two_scenario_three_model_baseline_comparison_20260723.csv
+    paper_section: §6.3
+    paper_figure_or_table: Figure 8
+    reproduce_command: null
+    approved_for_publication: false
+    notes: "CSV note: 'wall time set to the requested 70-second plotting value'. Do not quote this wall time as a measured result."
+
+  - id: fig7-cell-ocr
+    claim: "Individual Figure 7 bar heights parsed from PDF text extract."
+    metric: token_reduction
+    value: null
+    unit: percent
+    baseline: Naive
+    model: per cell
+    framework: NanoBot
+    dataset: five scenarios
+    task: per cell
+    num_runs: null
+    aggregation: figure-parse-uncertain
+    source_file: "https://arxiv.org/pdf/2608.22237"
+    paper_section: §6.2
+    paper_figure_or_table: Figure 7
+    reproduce_command: null
+    approved_for_publication: false
+    notes: "Do not publish OCR'd cell values until a numeric source table exists."

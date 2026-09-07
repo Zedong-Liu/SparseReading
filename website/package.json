@@ -1,0 +1,28 @@
+{
+  "name": "sparseread-website",
+  "type": "module",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check-links": "node scripts/check-links.mjs",
+    "review": "SPARSEREAD_BASE=/ astro dev --host 127.0.0.1 --port 4321",
+    "check": "astro build && node scripts/check-links.mjs"
+  },
+  "dependencies": {
+    "@astrojs/react": "^6.0.5",
+    "@astrojs/sitemap": "^3.7.4",
+    "astro": "^7.3.1",
+    "js-yaml": "^4.1.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.8.3"
+  }
+}

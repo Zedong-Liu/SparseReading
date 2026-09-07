@@ -11,7 +11,7 @@ fallbacks explicit.
 
 [![CI](https://github.com/Zedong-Liu/SparseReading/actions/workflows/ci.yml/badge.svg)](https://github.com/Zedong-Liu/SparseReading/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[Paper](https://arxiv.org/abs/2608.22237) · [中文](README.zh-CN.md)
+[Paper](https://arxiv.org/abs/2608.22237) · [Site](https://zedong-liu.github.io/SparseReading/) · [中文](README.zh-CN.md)
 
 </div>
 

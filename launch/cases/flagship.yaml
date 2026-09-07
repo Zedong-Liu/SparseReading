@@ -1,0 +1,54 @@
+id: flagship
+role: flagship
+human_title: "Five facts from a 100k-character history chapter"
+one_liner: "Answer five local questions about the Fall of Outremer without reading the whole book into context."
+task_id: task_loogle_shortdep_fall_of_outremer_5q
+source_benchmark: LooGLE
+object_type: long text
+object_size: "~100k characters in document.txt"
+model: DeepSeek-V4-Flash
+framework: NanoBot
+mode: SparseRead vs Naive
+fallback_used: false
+claim_ids:
+  - case-flagship-loogle5q-flash
+  - case-flagship-loogle5q-flash-reduction
+naive:
+  score: 1.0
+  tokens: 369042
+  wall_seconds: 97.834
+  requests: 17
+sparseread:
+  score: 1.0
+  tokens: 50699
+  wall_seconds: 39.437
+  requests: 4
+  reader_calls: 4
+reduction_pct: 86.3
+paper:
+  section: "§6.3"
+  figure: Figure 8
+source_file: results/reports/two_scenario_three_model_baseline_comparison_20260723.csv
+num_runs: 1
+replay_label: "REPLAY of a recorded Figure 8 run — not a live model"
+questions:
+  - "What was Gregory X's dual crusading policy?"
+  - "Why did the barons pay homage to San Severino?"
+  - "Who inherited Achaea from William II of Villehardouin?"
+  - "Which fortifications did the Mongol army occupy in September 1280?"
+  - "When did Khalil's troops take the outer battlements of Acre?"
+full_read_story:
+  - "Open document.txt (~100k characters)"
+  - "Keep the whole chapter in context"
+  - "Answer five local facts"
+  - "17 model requests, 369,042 tokens"
+sparseread_story:
+  - "Object Preview of the long text"
+  - "Read Gate selects sparse path"
+  - "collect five evidence slots"
+  - "Write five short answers and stop"
+  - "4 requests, 50,699 tokens, score 1.0"
+caveats:
+  - "Single run"
+  - "SparseRead row is historical same-task in the CSV"
+  - "Do not present as an average"

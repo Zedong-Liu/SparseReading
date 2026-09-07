@@ -1,0 +1,524 @@
+---
+import CiteCopy from "../components/CiteCopy";
+import CopySnippet from "../components/CopySnippet";
+import { HarnessMark } from "../components/HarnessMark";
+import HeroCarousel from "../components/HeroCarousel";
+import InstallTabs from "../components/InstallTabs";
+import ReplayStage from "../components/ReplayStage";
+import ResultsBoard from "../components/ResultsBoard";
+import SavedTicker from "../components/SavedTicker";
+import {
+  authors,
+  CANONICAL,
+  citationBib,
+  claim,
+  fig8Pairs,
+  flagshipCase,
+  fmtPct,
+  glossary,
+  paper,
+  replayProps,
+  setup,
+} from "../data/launch";
+import Base from "../layouts/Base.astro";
+
+const tokenMax = claim("paper-abs-token-max");
+const wallMax = claim("paper-abs-wall-max");
+const cost30 = claim("paper-s62-30-of-30-cost");
+const quality = claim("paper-abs-quality-preserve");
+const useful = claim("paper-intro-useful-6-15");
+const fig3 = claim("paper-fig3-17x");
+const t67 = claim("paper-fig5-t67");
+const t59 = claim("paper-fig5-t59");
+const flagship = claim("case-flagship-loogle5q-flash");
+const flagshipRed = claim("case-flagship-loogle5q-flash-reduction");
+const opus = claim("paper-s62-opus-sparsefit");
+const tab1 = claim("paper-tab1-framework-medians");
+const vsBase = claim("paper-s63-vs-baselines");
+const fig8Range = claim("paper-s63-token-range");
+const speedup = claim("paper-s63-speedup");
+const heroDef = `Token-efficient reading for AI agents. SparseRead admits only the evidence needed for the next decision, so token volume drops versus Naive full reading — up to ${fmtPct(tokenMax.value)}%.`;
+
+const jsonLd = [
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareSourceCode",
+    name: glossary.product_name,
+    description: heroDef,
+    codeRepository: paper.github,
+    url: CANONICAL,
+    programmingLanguage: ["Python", "TypeScript"],
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "ScholarlyArticle",
+    name: paper.title,
+    identifier: `arXiv:${paper.arxiv_id}`,
+    url: paper.url,
+    datePublished: paper.submitted,
+    author: authors.map((name) => ({ "@type": "Person", name })),
+  },
+];
+
+const replay = replayProps();
+const fig8 = fig8Pairs();
+const installHref = `${paper.github}/blob/main/docs/sparseread_installation.md`;
+const tokenMedians = tab1.value as Record<string, number>;
+const wallMedians: Record<string, number> = {
+  NanoBot: 64.4,
+  OpenCode: 64.9,
+  OpenClaw: 28.2,
+};
+const harnesses = [
+  {
+    id: "nanobot" as const,
+    name: "NanoBot",
+    version: "v0.2.0",
+    line: `Median ${tokenMedians.NanoBot.toFixed(1)}% tokens · ${wallMedians.NanoBot.toFixed(1)}% wall`,
+  },
+  {
+    id: "opencode" as const,
+    name: "OpenCode",
+    version: "v1.17.14",
+    line: `Median ${tokenMedians.OpenCode.toFixed(1)}% tokens · ${wallMedians.OpenCode.toFixed(1)}% wall`,
+  },
+  {
+    id: "openclaw" as const,
+    name: "OpenClaw",
+    version: "v2026.6.11",
+    line: `Median ${tokenMedians.OpenClaw.toFixed(1)}% tokens · ${wallMedians.OpenClaw.toFixed(1)}% wall`,
+  },
+  {
+    id: "claude" as const,
+    name: "Claude Code",
+    version: "2.1.221",
+    line: "MCP + session hooks · GitHub release",
+  },
+];
+const harnessLoop = [...harnesses, ...harnesses, ...harnesses];
+const backends = [
+  {
+    name: "Text / PDF",
+    role: "local evidence from long documents",
+    types: ".txt · .md · .pdf · .log",
+  },
+  {
+    name: "Tables",
+    role: "schema, projection, exact handoff",
+    types: ".json · .csv · .tsv · .yaml · .xlsx · .xml",
+  },
+  {
+    name: "Collections",
+    role: "pick sources, close cross-file evidence",
+    types: "file trees · mixed sources",
+  },
+  {
+    name: "Script library",
+    role: "validated LAMMPS templates",
+    types: ".py wrappers · LAMMPS input",
+  },
+];
+const plugins = [
+  { name: "SWE-Pruner", role: "wrap as a backend" },
+  { name: "LLMLingua", role: "wrap as a backend" },
+  { name: "AI4S domain reader", role: "same interface" },
+];
+---
+
+<Base
+  title={`${glossary.product_name} — ${glossary.tagline}`}
+  description={heroDef}
+  canonical={CANONICAL}
+  jsonLd={jsonLd}
+>
+  <SavedTicker
+    slot="header-tools"
+    client:only="react"
+    naiveTokens={flagshipCase.naive.tokens}
+    srTokens={flagshipCase.sparseread.tokens}
+  >
+    <a class="saved-ticker" slot="fallback" href="#demo">
+      <strong class="saved-ticker-row">
+        <b>+0.0k</b>
+        <span>tokens saved</span>
+      </strong>
+      <small>cumulative vs Full Read · flagship cell</small>
+    </a>
+  </SavedTicker>
+  <main id="main">
+    <section id="hero">
+      <p class="kicker">{glossary.product_name} · arXiv:{paper.arxiv_id}{paper.version}</p>
+      <h1>{glossary.product_name}</h1>
+      <p class="tagline">{glossary.tagline}</p>
+      <p class="hero-def" data-claim-id={tokenMax.id}>{heroDef}</p>
+      <div class="cta">
+        <a class="primary" href={paper.github}>GitHub</a>
+        <a href={`${import.meta.env.BASE_URL}#demo`}>Watch the replay</a>
+        <a href={paper.url}>Paper</a>
+      </div>
+      <HeroCarousel
+        client:load
+        fig8={fig8}
+        flagship={{
+          title: flagshipCase.human_title,
+          model: flagshipCase.model,
+          framework: flagshipCase.framework,
+          naiveTokens: flagshipCase.naive.tokens,
+          srTokens: flagshipCase.sparseread.tokens,
+          naiveReq: flagshipCase.naive.requests,
+          srReq: flagshipCase.sparseread.requests,
+          naiveWall: flagshipCase.naive.wall_seconds,
+          srWall: flagshipCase.sparseread.wall_seconds,
+          naiveScore: flagshipCase.naive.score,
+          srScore: flagshipCase.sparseread.score,
+          reduction: flagshipCase.reduction_pct,
+          questions: flagshipCase.questions,
+        }}
+        matrix={{
+          tokenMax: fmtPct(tokenMax.value),
+          wallMax: fmtPct(wallMax.value),
+          tokenMedian: fmtPct((tab1.value as Record<string, number>).NanoBot),
+          wallMedian: "64.4",
+          scenarios: "Five scenarios",
+          files: "long text · PDFs · file trees · tables · materials",
+          quality: "Quality held or improved",
+          opus: "Claude Opus 5 saves 59.6–89.0% tokens on sparse-fit scenarios.",
+        }}
+      />
+      <div class="stats">
+        <div class="stat" data-claim-id={`${tokenMax.id} ${tab1.id}`}>
+          <b>up to {fmtPct(tokenMax.value)}%</b>
+          <span>tokens vs Naive</span>
+          <span class="note">median {fmtPct(tokenMedians.NanoBot)}% on NanoBot</span>
+        </div>
+        <div class="stat" data-claim-id={`${wallMax.id} ${tab1.id}`}>
+          <b>up to {fmtPct(wallMax.value)}%</b>
+          <span>wall time vs Naive</span>
+          <span class="note">median 64.4% on NanoBot</span>
+        </div>
+        <div class="stat" data-claim-id={quality.id}>
+          <b>Five scenarios</b>
+          <span>long text, PDFs, file trees, tables, materials</span>
+          <span class="note">quality held or improved on 26 of 30 settings</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="problem">
+      <p class="section-label">01 / The Problem</p>
+      <h2>Over-reading</h2>
+      <p>
+        Over-reading is object-level access when the current decision needs only a
+        bounded evidence slice. Long-context models, KV-cache tricks, and post-hoc
+        compressors act after a broad object read has already been paid.
+      </p>
+      <p data-claim-id={useful.id}>
+        In representative high-sparsity tasks, only <strong class="problem-num">{(useful.value as [number, number])[0]}–{(useful.value as [number, number])[1]}%</strong> of the exposed reading content contributes to the current decision.
+      </p>
+      <p data-claim-id={fig3.id}>
+        In paired high-sparsity runs, full-read agents spend up to <strong class="problem-num">{fig3.value}×</strong> more tokens than SparseRead without improving task score.
+      </p>
+    </section>
+
+    <section id="frameworks">
+      <p class="section-label">02 / Frameworks</p>
+      <h2>Same protocol, four harnesses</h2>
+      <p>
+        SparseRead is a thin adapter around one token-efficient reading runtime, not a new agent.
+        The paper evaluates NanoBot, OpenCode, and OpenClaw. Claude Code ships in the GitHub release.
+        Token savings are real and not uniform.
+      </p>
+      <div class="harness-strip" data-claim-id={tab1.id} aria-label="Supported harnesses">
+        <div class="harness-track">
+          {harnessLoop.map((item, index) => (
+            <div class="harness-card" aria-hidden={index >= harnesses.length}>
+              <HarnessMark id={item.id} size={32} />
+              <div>
+                <strong>{item.name}</strong>
+                <span class="framework-version">{item.version}</span>
+                <p>{item.line}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <p class="note">
+        Paper medians cover NanoBot, OpenCode, and OpenClaw · five models · Claude Opus 5 is not in that suite · 12 of 15 cells hold or improve score
+      </p>
+    </section>
+
+    <section id="demo">
+      <p class="section-label">03 / SparseRead in Action</p>
+      <h2>Flagship replay</h2>
+      <p>
+        Long-context reading / {flagshipCase.model} / {flagshipCase.framework}.
+        Recorded run, labeled REPLAY — not a live model.
+        PaperBench demo tokens are not shown here.
+      </p>
+      <ReplayStage client:load {...replay} />
+      <p class="note">
+        {flagshipCase.caveats.join(" · ")} · {flagship.paper_figure_or_table} · {flagship.source_file}
+      </p>
+    </section>
+
+    <section id="how">
+      <p class="section-label">04 / How It Works</p>
+      <h2>A gate in front. Snap-in backends behind.</h2>
+      <p>
+        The control plane decides whether to read sparse. The data plane is a
+        socket: reader backends and a domain compressor plug in like bricks.
+        Public terms first; implementation aliases in parentheses.
+      </p>
+      <div class="planes">
+        <div class="panel">
+          <h3>Control plane</h3>
+          <p>Object Preview (FileCard) → Read Intent (HintSpec) → Read Gate → macro actions → Evidence State.</p>
+          <div class="flow">
+            <span class="chip gate">Read Gate</span>
+            <span class="arrow">outputs</span>
+            <span class="chip gate">force</span>
+            <span class="chip gate">advisory</span>
+            <span class="chip gate">native</span>
+          </div>
+          <p>
+            Agent-selected macro actions:
+            <code>scout</code>, <code>focus</code>, <code>collect</code>, <code>refine</code>, <code>verify</code>.
+            Evidence State / EvidencePack holds anchors, coverage, unresolved needs, and stop / refine / protocol fallback.
+          </p>
+        </div>
+        <div class="panel">
+          <h3>Data plane · compress inside the reader</h3>
+          <p>
+            <span class="dot-backend">Reader Backends</span> do the compression:
+            the object stays outside context until a bounded slice is admitted.
+            Swap Text/PDF, tables, collections, or the script-library without changing the Read Gate.
+            A specialized compressor registers as a backend here — not after a full read.
+          </p>
+          <div class="backend-kit">
+            <div class="backend-socket">
+              <span class="backend-socket-label">Unified Reader Interface · installed</span>
+              <div class="socket-body">
+              <div class="backend-rail">
+                {[
+                  [backends[0], backends[2]],
+                  [backends[1], backends[3]],
+                ].map((stack) => (
+                  <div class="brick-stack">
+                    {stack.map((item, index) => (
+                      <div class={`brick ${index === 0 ? "brick-upper" : "brick-lower"}`}>
+                        <div class="brick-thickness" aria-hidden="true" />
+                        <div class="brick-face">
+                          <b>{item.name}</b>
+                          <span>{item.role}</span>
+                          <code>{item.types}</code>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              <div class="reader-effect">
+                <p class="effect-from">Full object</p>
+                <svg class="compress-graphic" viewBox="0 0 100 118" aria-hidden="true">
+                  <rect x="6" y="2" width="88" height="5" fill="var(--over)" />
+                  <rect x="6" y="10" width="88" height="5" fill="var(--over)" />
+                  <rect x="6" y="18" width="88" height="5" fill="var(--over)" />
+                  <rect x="6" y="26" width="88" height="5" fill="var(--over)" />
+                  <rect x="6" y="34" width="88" height="5" fill="var(--over)" />
+                  <rect x="6" y="42" width="88" height="5" fill="var(--over)" />
+                  <polygon points="6,50 94,50 68,86 32,86" fill="color-mix(in srgb, var(--backend) 55%, var(--line))" />
+                  <rect x="32" y="90" width="36" height="6" fill="var(--gate)" />
+                  <rect x="32" y="100" width="36" height="6" fill="var(--gate)" />
+                </svg>
+                <p class="effect-to">useful evidence</p>
+              </div>
+              </div>
+            </div>
+            <div class="backend-library">
+              <span class="backend-socket-label">User extensions · wrap and register</span>
+              <div class="plugin-row">
+                {plugins.map((item) => (
+                  <div class="brick brick-plugin">
+                    <div class="brick-thickness" aria-hidden="true" />
+                    <div class="brick-face">
+                      <b>{item.name}</b>
+                      <span>{item.role}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <p>
+            Examples: SWE-Pruner, LLMLingua, or an <span class="dot-domain">AI4S domain reader</span>
+            (materials chemistry uses the same snap). SWE-Pruner and LLMLingua are wrapping paths,
+            not evaluated in this work. SparseRead is not post-hoc summarization,
+            KV-cache compression, or an always-on replacement for native tools.
+          </p>
+        </div>
+      </div>
+      <div class="panel limit" data-claim-id={t67.id}>
+        <h3>Regime boundary · force mode, not gated SparseRead</h3>
+        <p>
+          Forced sparse reading increases tokens by {fmtPct(t67.value)}% on a
+          SPARQL / global-statistics task.
+        </p>
+        <p data-claim-id={t59.id}>
+          Forced sparse reading increases tokens by {fmtPct(t59.value)}% on a
+          rule-coding task. The Read Gate exists to stay out of that regime.
+          Protocol-level fallback remains available after force.
+        </p>
+      </div>
+    </section>
+
+    <section id="results">
+      <p class="section-label">05 / Results</p>
+      <h2>What you can take away without the paper</h2>
+      <p>
+        SparseRead is cheaper on tokens and wall time when the task is sparse.
+        Quality usually holds. It is not an always-on win on every cell.
+      </p>
+      <div
+        data-claim-id={`${flagship.id} ${flagshipRed.id} ${opus.id} ${tab1.id} ${vsBase.id} ${fig8Range.id} ${speedup.id} ${quality.id} ${cost30.id}`}
+      >
+        <ResultsBoard
+          client:load
+          flagship={{
+            naiveTokens: flagshipCase.naive.tokens,
+            srTokens: flagshipCase.sparseread.tokens,
+            naiveScore: flagshipCase.naive.score,
+            srScore: flagshipCase.sparseread.score,
+            naiveWall: flagshipCase.naive.wall_seconds,
+            srWall: flagshipCase.sparseread.wall_seconds,
+            naiveReq: flagshipCase.naive.requests,
+            srReq: flagshipCase.sparseread.requests,
+            reduction: flagshipCase.reduction_pct,
+          }}
+          frameworks={setup.frameworks.map((item) => ({
+            name: item.name,
+            token: tokenMedians[item.name],
+            wall: wallMedians[item.name],
+          }))}
+          opusTokens="59.6–89.0%"
+          opusWall="51.3–78.1%"
+          qualityHeld={26}
+          qualityTotal={30}
+          qualityDip="−0.10 and −0.02"
+        />
+      </div>
+      <p class="note">
+        Flagship cell is a single recorded run · Opus range is from the paper, this checkout has no Opus traces · comparison vs ACON and last-10 masking is six settings, some n=1
+      </p>
+    </section>
+
+    <section id="quickstart">
+      <p class="section-label">06 / Quickstart</p>
+      <h2>Install into the agent you already use</h2>
+      <p>
+        Source install from GitHub. Clone once, then pick a framework.
+        There is no PyPI or plugin-marketplace pin yet.
+      </p>
+      <CopySnippet
+        client:load
+        label="Clone"
+        code={`git clone https://github.com/Zedong-Liu/SparseReading.git
+cd SparseReading`}
+      />
+      <InstallTabs client:load />
+      <p>
+        After install, ask the agent to use SparseRead on a large file.
+        You do not call <code>sro_preview</code> by hand.
+        Full matrix, Windows notes, and doctor checks are in the
+        <a href={installHref}>source installation guide</a>.
+      </p>
+    </section>
+
+    <section id="cite">
+      <p class="section-label">07 / Citation</p>
+      <h2>Academic prototype</h2>
+      <p class="paper-title">{paper.title}</p>
+      <p>
+        <a href={paper.url}>arXiv:{paper.arxiv_id}</a> ({paper.version}, {paper.submitted}).
+        Setup in the claim registry
+        <span data-claim-id={tokenMax.id}>
+          ({setup.n_tasks_general} general tasks from {setup.task_sources.join(", ")};
+          models {setup.models.join(", ")})
+        </span>;
+        frameworks {setup.frameworks.map((item) => `${item.name} ${item.version}`).join(", ")}.
+        Claude Code 2.1.221 is a fourth GitHub-release integration, not a paper Table 1 row.
+      </p>
+      <p>
+        This checkout can replay the recorded Figure 8 flagship / multi-file audit / force-mode boundary packets
+        (<code>make reproduce CASE=flagship|strong_model|regime_boundary</code>)
+        and can cite paper ranges. It cannot reproduce from this tree:
+      </p>
+      <ul>
+        <li>the 125-task / 30-cell Figure 7 numeric source table</li>
+        <li>Claude Opus 5 or Kimi-K2.5 traces</li>
+        <li>Claw-Eval and materials-chemistry fixtures</li>
+        <li>a live rerun of the public matrix (<code>make reproduce-suite</code> only checks the three recorded cases)</li>
+      </ul>
+      <pre class="mono">{citationBib}</pre>
+      <CiteCopy client:idle bibtex={citationBib} />
+    </section>
+
+    <section id="faq">
+      <p class="section-label">08 / FAQ</p>
+      <h2>FAQ</h2>
+      <div class="faq">
+        <details>
+          <summary>Which agents does SparseRead support?</summary>
+          <p>
+            NanoBot, OpenCode, OpenClaw, and Claude Code. One token-efficient
+            reading runtime; four harness adapters.
+          </p>
+        </details>
+        <details>
+          <summary>How do I install it?</summary>
+          <p>
+            Clone the GitHub repo, then use the Quickstart for your agent.
+            Source install today — pick a platform and copy the command.
+          </p>
+        </details>
+        <details>
+          <summary>Do I call SparseRead tools myself?</summary>
+          <p>
+            No. Ask the agent to use SparseRead on a large file or evidence pack.
+            The adapter exposes the protocol.
+          </p>
+        </details>
+        <details>
+          <summary>What does it save?</summary>
+          <p data-claim-id={`${tokenMax.id} ${wallMax.id}`}>
+            Token volume drops by up to {fmtPct(tokenMax.value)}% versus Naive full
+            reading. Wall time drops by up to {fmtPct(wallMax.value)}%.
+          </p>
+        </details>
+      </div>
+    </section>
+
+    <section id="limitations">
+      <p class="section-label">09 / Limitations</p>
+      <h2>Limitations</h2>
+      <ul>
+        <li>Not a universal replacement for native tools. The Read Gate can choose native.</li>
+        <li data-claim-id={t67.id}>Force mode can add a large token tax (+{fmtPct(t67.value)}% tokens on a SPARQL / global-statistics task).</li>
+        <li data-claim-id={flagship.id}>Flagship Figure 8 numbers are a single run, not a mean.</li>
+        <li data-claim-id={quality.id}>Quality is 26/30 on the NanoBot matrix, not 30/30.</li>
+        <li data-claim-id={tab1.id}>Table 1 has three small score regressions (−0.031 to −0.013).</li>
+        <li>Token volume is not automatically dollar cost or latency in every serving stack.</li>
+        <li data-claim-id={vsBase.id}>
+          Figure 8 comparison cells are single runs. Some multi-file-audit ACON/CT
+          token and time values include retest multipliers.
+        </li>
+      </ul>
+    </section>
+
+    <section id="authors">
+      <p class="section-label">10 / Authors</p>
+      <h2>Authors</h2>
+      <p class="authors">{authors.join(" · ")}</p>
+      <p class="note">As listed on arXiv:{paper.arxiv_id}.</p>
+    </section>
+  </main>
+</Base>

@@ -1,0 +1,26 @@
+{
+  "case": "flagship",
+  "label": "REPLAY of a recorded Figure 8 run — not a live model",
+  "claim_ids": ["case-flagship-loogle5q-flash", "case-flagship-loogle5q-flash-reduction"],
+  "task": "task_loogle_shortdep_fall_of_outremer_5q",
+  "task_completed": "Five short-dependency answers from Fall of Outremer",
+  "naive": {
+    "score": 1.0,
+    "tokens": 369042,
+    "wall_seconds": 97.834,
+    "requests": 17,
+    "fallback_used": false
+  },
+  "sparseread": {
+    "score": 1.0,
+    "tokens": 50699,
+    "wall_seconds": 39.437,
+    "requests": 4,
+    "reader_calls": 4,
+    "fallback_used": false
+  },
+  "reduction_pct": 86.3,
+  "source_file": "results/reports/two_scenario_three_model_baseline_comparison_20260723.csv",
+  "paper": "arXiv:2608.22237 §6.3 Figure 8",
+  "num_runs": 1
+}
