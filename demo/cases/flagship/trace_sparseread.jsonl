@@ -1,0 +1,3 @@
+{"lane": "sparseread", "step": 1, "action": "sro_preview", "target": "document.txt", "note": "Object Preview / FileCard; Read Gate selects sparse path", "tokens_delta": 4200, "request_delta": 1}
+{"lane": "sparseread", "step": 2, "action": "sro_read", "mode": "collect", "target": "five slots", "note": "Reader Backend returns five anchored evidence blocks", "tokens_delta": 31800, "request_delta": 1}
+{"lane": "sparseread", "step": 3, "action": "write_file", "target": "answer.txt", "note": "Evidence State closed; stop. Score 1.0", "tokens_delta": 14699, "request_delta": 2}

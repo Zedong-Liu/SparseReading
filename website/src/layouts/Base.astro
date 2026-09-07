@@ -1,0 +1,96 @@
+---
+import ThemeToggle from "../components/ThemeToggle";
+import "../styles/global.css";
+
+interface Props {
+  title: string;
+  description: string;
+  canonical?: string;
+  jsonLd?: unknown[];
+  noindex?: boolean;
+}
+
+const { title, description, canonical, jsonLd = [], noindex = false } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const reviewMode = import.meta.env.DEV;
+const og = `${canonical ?? "https://zedong-liu.github.io/SparseReading/"}og.png`;
+---
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {canonical && <link rel="canonical" href={canonical} />}
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    <link rel="icon" href={`${base}favicon.svg`} />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="SparseRead" />
+    <meta property="og:description" content="Read only the evidence needed for the next decision." />
+    {canonical && <meta property="og:url" content={canonical} />}
+    <meta property="og:image" content={og} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content={og} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    {jsonLd.length > 0 && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
+    <script is:inline>
+      (function () {
+        try {
+          var saved = localStorage.getItem("sr-theme");
+          var theme =
+            saved === "light" || saved === "dark"
+              ? saved
+              : window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : "dark";
+          document.documentElement.dataset.theme = theme;
+        } catch (err) {
+          document.documentElement.dataset.theme = "dark";
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    {reviewMode && (
+      <div class="review-banner">
+        Review draft · not published ·
+        <a href={`${base}review/`}>Post previews and asset list</a>
+        ·
+        <a href={base}>Site</a>
+      </div>
+    )}
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="site-header-inner">
+        <a class="wordmark" href={`${base}`}>SparseRead</a>
+        <nav class="nav" aria-label="Sections">
+          <a href={`${base}#problem`}>Problem</a>
+          <a href={`${base}#frameworks`}>Frameworks</a>
+          <a href={`${base}#demo`}>Demo</a>
+          <a href={`${base}#how`}>How</a>
+          <a href={`${base}#results`}>Results</a>
+          <a href={`${base}#quickstart`}>Quickstart</a>
+          <a href={`${base}#cite`}>Cite</a>
+          {reviewMode && <a href={`${base}review/`}>Review drafts</a>}
+          <a href="https://github.com/Zedong-Liu/SparseReading">GitHub</a>
+        </nav>
+        <div class="header-tools">
+          <slot name="header-tools" />
+          <ThemeToggle client:load />
+        </div>
+      </div>
+    </header>
+    <slot />
+    <footer class="site-footer">
+      {reviewMode
+        ? "Static site. No API key required. This launch workspace does not publish GitHub Pages."
+        : "Static site. No API key required."}
+    </footer>
+  </body>
+</html>

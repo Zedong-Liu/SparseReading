@@ -1,0 +1,137 @@
+---
+import Base from "./layouts/Base.astro";
+import { loadPosts, renderBlocks, renderInline } from "./data/posts";
+
+const posts = loadPosts();
+const assets = [
+  ["Website", "website/ — local review server", "Needs review", "review", "Open the site. Banner says review draft. Do not deploy."],
+  ["Post previews", "this page", "Needs review", "review", "X / HN / LinkedIn / 中文 / HF / outreach rendered as posts."],
+  ["X thread", "launch/copy/x-launch-thread.md", "Needs review", "review", "8 tweets. Attach demo.gif on tweet 2. Handle unassigned."],
+  ["Hacker News", "launch/copy/hacker-news.md", "Needs review", "review", "Show HN not filed. Title is a draft."],
+  ["LinkedIn", "launch/copy/linkedin.md", "Needs review", "review", "Poster and company page unassigned."],
+  ["中文长文", "launch/copy/chinese-long-post.md", "Needs review", "review", "Essay voice. Channel (Zhihu / WeChat / other) unassigned."],
+  ["Hugging Face", "launch/copy/huggingface-summary.md", "Needs review", "review", "Card copy only. No Space or model repo created."],
+  ["Outreach", "launch/copy/researcher-outreach.md", "Needs review", "review", "Two letter templates. Placeholders still in brackets."],
+  ["Claims registry", "launch/claims.yaml", "Ready", "ready", "23 approved rows. Public surfaces may use only these."],
+  ["Replay demo", "make demo", "Ready", "ready", "No API key. Three recorded cases. Not the 125-task suite."],
+  ["Storyboard GIF", "assets/launch/sparseread-demo.gif", "Ready", "ready", "1280×720 labeled REPLAY. Not 12 fps film."],
+  ["OG / poster", "website/public/og.png", "Ready", "ready", "Generated from approved flagship + maxima only."],
+  ["README hero", "README.md", "Ready", "ready", "Paper tagline and approved maxima. Unchanged this round."],
+  ["mp4 / webm", "assets/launch/RECORDING.md", "Blocked", "blocked", "ffmpeg not installed."],
+  ["Lighthouse", "Gate 4", "Blocked", "blocked", "Not measured."],
+  ["125-task artifacts", "launch/audit.md", "Blocked", "blocked", "Figure 7 table / Opus / AI4S absent."],
+  ["Who publishes", "readiness-report.md", "Blocked", "blocked", "Last unchecked human box. Do not post."],
+];
+---
+<Base
+  title="SparseRead launch review — drafts"
+  description="Internal review of SparseRead launch copy and asset status. Not published."
+  noindex={true}
+>
+  <main class="wrap" id="main">
+    <p class="kicker">Internal review · do not post · do not deploy</p>
+    <h1>Launch assets, as they stand</h1>
+    <p class="hero-def">
+      This page is for you. The public site is the other tab. Numbers below
+      come from approved rows in <code>launch/claims.yaml</code>. Nothing here
+      has been posted.
+    </p>
+
+    <nav class="review-nav" aria-label="Channels">
+      <a href="#assets">Asset list</a>
+      {posts.map((post) => (
+        <a href={`#${post.id}`}>{post.channel}</a>
+      ))}
+    </nav>
+
+    <section id="assets">
+      <h2>Current status</h2>
+      <table class="asset-table">
+        <thead>
+          <tr>
+            <th>Asset</th>
+            <th>Status</th>
+            <th>Where</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          {assets.map(([name, where, status, tone, note]) => (
+            <tr>
+              <td>{name}</td>
+              <td class={`status status-${tone}`}>{status}</td>
+              <td><code>{where}</code></td>
+              <td>{note}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+
+    {posts.map((post) => (
+      <section class="preview" id={post.id}>
+        <div class="preview-head">
+          <p class="kicker">{post.file}</p>
+          <h2>{post.channel}</h2>
+          <p class="note">claim_ids: {post.claimIds}</p>
+        </div>
+
+        {post.tweets && (
+          <div class="tweet-stack">
+            {post.tweets.map((tweet) => (
+              <article class={tweet.chars > 280 ? "tweet over" : "tweet"}>
+                <p class="tweet-meta">
+                  SparseRead · draft · handle unassigned · {tweet.n}/8 · {tweet.chars} chars
+                  {tweet.chars > 280 ? " · over 280" : ""}
+                </p>
+                <p set:html={renderInline(tweet.text).replace(/\n/g, "<br />")} />
+              </article>
+            ))}
+          </div>
+        )}
+
+        {post.id === "hn" && (
+          <div class="chrome">
+            <p class="hn-title">{post.title}</p>
+            <p class="hn-sub">draft · Show HN not filed · sparse-reading · 0 points</p>
+            <div set:html={renderBlocks(post.body)} />
+          </div>
+        )}
+
+        {post.id === "li" && (
+          <div class="chrome">
+            <p class="tweet-meta" style="color:#5b6370">SparseRead · draft · poster unassigned</p>
+            <div set:html={renderBlocks(post.body)} />
+          </div>
+        )}
+
+        {post.id === "zh" && (
+          <article class="article" lang="zh-CN">
+            <p class="kicker" style="color:#2f8f5b">草稿 · 渠道未定</p>
+            <h2 style="margin-top:0">{post.title}</h2>
+            <div set:html={renderBlocks(post.body)} />
+          </article>
+        )}
+
+        {post.id === "hf" && (
+          <div class="chrome">
+            <p class="kicker" style="color:#2f8f5b">Hugging Face card · draft · no repo created</p>
+            <div set:html={renderBlocks(post.body)} />
+          </div>
+        )}
+
+        {post.emails && (
+          <div>
+            {post.emails.map((email) => (
+              <article class="email">
+                <p class="note">To: [{email.audience}] · draft · do not send</p>
+                <h3 class="email-subject">{email.subject}</h3>
+                <div set:html={renderBlocks(email.body)} />
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    ))}
+  </main>
+</Base>

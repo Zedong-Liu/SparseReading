@@ -1,0 +1,3 @@
+{"lane": "naive", "step": 1, "action": "read_file", "target": "document.txt", "note": "Full-read admits the ~100k-character chapter", "tokens_delta": 210000, "request_delta": 4}
+{"lane": "naive", "step": 2, "action": "reread", "target": "document.txt", "note": "Later questions keep the whole object in context", "tokens_delta": 120000, "request_delta": 8}
+{"lane": "naive", "step": 3, "action": "write_file", "target": "answer.txt", "note": "Five answers; score 1.0", "tokens_delta": 39042, "request_delta": 5}

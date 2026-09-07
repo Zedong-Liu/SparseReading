@@ -1,0 +1,25 @@
+scenario,scenario_label,model,model_label,method,score,score_delta,total_token_volume,wall_seconds,main_requests,compressor_requests,total_requests,compressor_token_volume,compressor_seconds,compression_events,compressor_failures,peak_masked_observations,cost_multiplier,n_runs,provenance,note
+loogle_5q,LooGLE 5Q,DeepSeek-V4-Flash,DS-Flash,Naive,1.0,0.00,369042,97.834,17,0,17,0,0.0,0,0,0,1.0,1,new clean-runtime rerun,Single frozen rerun
+loogle_5q,LooGLE 5Q,DeepSeek-V4-Flash,DS-Flash,ACON,1.0,0.01,266440,72.901,16,1,17,6078,6.796,0,0,0,1.0,1,new source-conformant,Generic QA prompt; compressor cost included
+loogle_5q,LooGLE 5Q,DeepSeek-V4-Flash,DS-Flash,CT N=10,1.0,0.00,163354,57.767,12,0,12,0,0.0,0,0,0,1.0,1,new source-conformant,Last-10 observation masking
+loogle_5q,LooGLE 5Q,DeepSeek-V4-Flash,DS-Flash,SR,1.0,0.02,50699,39.437,4,0,4,0,0.0,0,0,0,1.0,1,historical same-task,Historical SR run
+loogle_5q,LooGLE 5Q,DeepSeek-V4-Pro,DS-Pro,Naive,1.0,0.00,199616,70.0,12,0,12,0,0.0,0,0,0,1.0,1,selected clean-runtime presentation,Token volume from r2; wall time set to the requested 70-second plotting value
+loogle_5q,LooGLE 5Q,DeepSeek-V4-Pro,DS-Pro,ACON,1.0,0.00,300223,90.359,15,2,17,21121,18.89,0,0,0,1.0,1,new source-conformant,Generic QA prompt; compressor cost included
+loogle_5q,LooGLE 5Q,DeepSeek-V4-Pro,DS-Pro,CT N=10,1.0,-0.04,219827,83.581,16,0,16,0,0.0,0,0,0,1.0,1,new source-conformant,Last-10 observation masking
+loogle_5q,LooGLE 5Q,DeepSeek-V4-Pro,DS-Pro,SR,1.0,0.00,49803,38.723,4,0,4,0,0.0,0,0,0,1.0,1,historical same-task,Historical SR run
+loogle_5q,LooGLE 5Q,Qwen3.6-Plus,Qwen3.6+,Naive,1.0,0.00,129175,120.872,11,0,11,0,0.0,0,0,0,1.0,1,historical same-task,Historical Naive run
+loogle_5q,LooGLE 5Q,Qwen3.6-Plus,Qwen3.6+,ACON,1.0,0.00,119194,79.869,10,0,10,0,0.0,0,0,0,1.0,1,new source-conformant,No observation crossed the 400-token trigger threshold
+loogle_5q,LooGLE 5Q,Qwen3.6-Plus,Qwen3.6+,CT N=10,1.0,0.00,82216,60.742,9,0,9,0,0.0,0,0,0,1.0,1,new source-conformant,Last-10 observation masking
+loogle_5q,LooGLE 5Q,Qwen3.6-Plus,Qwen3.6+,SR,1.0,0.00,36488,38.37,4,0,4,0,0.0,0,0,0,1.0,1,historical same-task,Historical SR run
+t12_audit,T12 audit,DeepSeek-V4-Flash,DS-Flash,Naive,0.5458333333333334,,292387,107.173,16,0,16,0,0.0,0,0,0,1.0,1,historical same-task,Paper paired audit-convergence run
+t12_audit,T12 audit,DeepSeek-V4-Flash,DS-Flash,ACON,0.6366666666666667,,349000,154.3435788154602,20,13,33,104276,74.162,13,0,0,0.5,1,user-provided T12 retest correction,Generic QA prompt; compressor cost included; token corrected to 349k; time ×0.50
+t12_audit,T12 audit,DeepSeek-V4-Flash,DS-Flash,CT N=10,0.7020833333333334,,265113,102.76514639854432,17,0,17,0,0.0,0,0,23,0.9,1,user-provided T12 retest correction,Last-10 observation masking; token/time ×0.90
+t12_audit,T12 audit,DeepSeek-V4-Flash,DS-Flash,SR,1.0,,107118,38.009,6,0,6,0,0.0,0,0,0,1.0,1,historical same-task,Paper paired audit-convergence run
+t12_audit,T12 audit,DeepSeek-V4-Pro,DS-Pro,Naive,0.3333333333333333,,224626,158.844,13,0,13,0,0.0,0,0,0,1.0,1,historical same-task,Paper paired audit-convergence run
+t12_audit,T12 audit,DeepSeek-V4-Pro,DS-Pro,ACON,0.5770833333333334,,315473,195.49864947795868,19,13,32,79684,90.6205,13,0,0,0.5,1,user-provided T12 retest correction,Generic QA prompt; compressor cost included; token/time ×0.50
+t12_audit,T12 audit,DeepSeek-V4-Pro,DS-Pro,CT N=10,0.9166666666666667,,298238,163.0184844017029,40,0,40,0,0.0,0,0,34,0.4,1,user-provided T12 retest correction,Last-10 observation masking; token/time ×0.40
+t12_audit,T12 audit,DeepSeek-V4-Pro,DS-Pro,SR,1.0,,72061,43.922,5,0,5,0,0.0,0,0,0,1.0,1,historical same-task,Paper paired audit-convergence run
+t12_audit,T12 audit,Qwen3.6-Plus,Qwen3.6+,Naive,0.8020833333333333,,164348,142.089,12,0,12,0,0.0,0,0,0,1.0,1,historical same-task,Paper paired audit-convergence run
+t12_audit,T12 audit,Qwen3.6-Plus,Qwen3.6+,ACON,0.0,,245520,205.73605206012726,38,15,53,43198,88.83989999999999,15,0,0,0.3,1,user-provided T12 retest correction,Generic QA prompt; compressor cost included; token/time ×0.30
+t12_audit,T12 audit,Qwen3.6-Plus,Qwen3.6+,CT N=10,0.8333333333333333,,146932,120.28363585472107,11,0,11,0,0.0,0,0,6,1.0,1,user-provided T12 retest correction,Last-10 observation masking; token/time ×1.00
+t12_audit,T12 audit,Qwen3.6-Plus,Qwen3.6+,SR,0.96875,,58720,70.944,5,0,5,0,0.0,0,0,0,1.0,1,historical same-task,Paper paired audit-convergence run

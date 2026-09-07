@@ -1,0 +1,81 @@
+# Shared public terminology. Website, GIF, copy, and demo labels must use these
+# spellings. Do not invent synonyms on public surfaces.
+# Paper of record: arXiv:2608.22237v1
+
+product_name: SparseRead
+paper_title: "Read Less, Solve More: Token-Efficient Sparse Reading for AI Agents"
+arxiv_id: "2608.22237"
+arxiv_url: "https://arxiv.org/pdf/2608.22237"
+github_url: "https://github.com/Zedong-Liu/SparseReading"
+tagline: "Read only the evidence needed for the next decision."
+one_line_definition: >-
+  A training-free, model-transparent pre-reading layer that turns broad object
+  access into bounded, iterative evidence acquisition.
+
+terms:
+  SparseRead:
+    meaning: The framework / reading layer.
+    do_not_use_as: Sparse Reading (that is the capability)
+  Sparse Reading:
+    meaning: The capability — pre-read evidence acquisition before full object exposure.
+  over-reading:
+    meaning: Object-level access when the current decision needs only a bounded evidence slice.
+  Read Gate:
+    meaning: Request-level regime controller. Outputs force, advisory, or native.
+    color_role: gate
+  Reader Backend:
+    meaning: Typed extractor behind a unified reader interface.
+    color_role: backend
+  domain-specific Reader:
+    meaning: A specialized backend (e.g. AI-for-Science) registered under the same interface.
+    color_role: domain_reader
+  Object Preview:
+    meaning: First bounded view of an eligible artifact (FileCard in the implementation).
+  Read Intent:
+    meaning: Structured evidence need written by the agent (HintSpec in the implementation).
+  Evidence State:
+    meaning: Accumulated anchored evidence, coverage, unresolved needs, stop/refine/fallback.
+    implementation_alias: EvidencePack
+  EvidencePack:
+    meaning: Implementation name for the returned evidence state. Public copy may say Evidence State / EvidencePack once, then pick one.
+    preferred_public: EvidencePack
+  macro actions:
+    values: [scout, focus, collect, refine, verify]
+  gate_outputs:
+    values: [force, advisory, native]
+    note: Protocol-level fallback remains available after force.
+  Naive:
+    meaning: Full / native reading baseline without SparseRead.
+  ACON:
+    meaning: Model-based zero-shot observation compressor baseline. Auxiliary calls are included in cost.
+  Obs. masking / Complexity Trap:
+    meaning: Training-free last-10 observation masking baseline.
+
+forbidden_public_phrases:
+  - lossless
+  - 无损
+  - completely no quality impact
+  - 完全不影响质量
+  - works on all tasks
+  - 适用于所有任务
+  - infinite context
+  - 无限上下文
+  - necessarily reduces cost
+  - 必然降低成本
+  - works on all models
+  - 在所有模型上都有效
+  - always-on replacement for native tools
+
+metric_names:
+  token_reduction: total token volume reduction vs Naive, end-to-end
+  wall_time_saving: end-to-end job time reduction vs Naive
+  score_delta: SparseRead task score minus Naive task score
+  useful_share: useful answer-bearing evidence / exposed reading budget
+
+color_system:
+  background: deep gray-blue
+  body_font: Inter or Geist
+  mono_font: IBM Plex Mono
+  read_gate: green
+  reader_backend: blue
+  domain_reader: purple
