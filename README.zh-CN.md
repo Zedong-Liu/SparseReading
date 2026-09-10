@@ -13,6 +13,10 @@ SparseRead 是一个免训练、面向工具调用型 Agent 的阅读层。在�
 
 </div>
 
+<p align="center">
+  <img src="assets/launch/sparseread-demo-wide.gif" alt="SparseRead 回放：全文读取 vs 稀疏取证，以及成本-质量前沿" width="100%">
+</p>
+
 Agent 很擅长推理，但默认的阅读动作往往仍然是：
 
 ```text
