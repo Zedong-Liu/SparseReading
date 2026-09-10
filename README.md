@@ -15,6 +15,10 @@ fallbacks explicit.
 
 </div>
 
+<p align="center">
+  <img src="assets/launch/sparseread-demo-wide.gif" alt="SparseRead replay: full read vs sparse evidence, then the cost-quality frontier" width="100%">
+</p>
+
 Agents are good at reasoning, but their default reading action is often still:
 
 ```text
