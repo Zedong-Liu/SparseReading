@@ -37,25 +37,86 @@ const vsBase = claim("paper-s63-vs-baselines");
 const fig8Range = claim("paper-s63-token-range");
 const speedup = claim("paper-s63-speedup");
 const heroDef = `Token-efficient reading for AI agents. SparseRead admits only the evidence needed for the next decision, so token volume drops versus Naive full reading — up to ${fmtPct(tokenMax.value)}%.`;
+const pageTitle = `${glossary.product_name} — Token-efficient reading for AI agents`;
+const pageDescription = `Token-efficient reading for Claude Code, OpenCode, OpenClaw, and NanoBot. SparseRead admits only the evidence needed for the next decision — up to ${fmtPct(tokenMax.value)}% fewer tokens vs Naive full reading.`;
+const paperAbs = `https://arxiv.org/abs/${paper.arxiv_id}`;
+const scholarAuthors = authors.map((name) => {
+  const parts = name.trim().split(/\s+/);
+  return `${parts.at(-1)}, ${parts.slice(0, -1).join(" ")}`;
+});
+const faqs: { q: string; a: string; claimId?: string }[] = [
+  {
+    q: "What is SparseRead?",
+    a: "A training-free, token-efficient reading layer for AI agents. It admits only the evidence needed for the next decision instead of dumping whole files, PDFs, or repositories into context.",
+  },
+  {
+    q: "Which agents does SparseRead support?",
+    a: "NanoBot, OpenCode, OpenClaw, and Claude Code. One token-efficient reading runtime; four harness adapters.",
+  },
+  {
+    q: "How do I install it?",
+    a: "Clone the GitHub repo, then use the Quickstart for your agent. Source install today — pick a platform and copy the command.",
+  },
+  {
+    q: "Can I add a custom compression tool to SparseRead?",
+    a: "Yes. The unified reader backend can take any new tool — wrap it, register it, and SparseRead will call it instead of reading the whole object first.",
+  },
+  {
+    q: "What does it save?",
+    a: `Token volume drops by up to ${fmtPct(tokenMax.value)}% versus Naive full reading. Wall time drops by up to ${fmtPct(wallMax.value)}%.`,
+    claimId: `${tokenMax.id} ${wallMax.id}`,
+  },
+];
 
 const jsonLd = [
   {
     "@context": "https://schema.org",
-    "@type": "SoftwareSourceCode",
-    name: glossary.product_name,
-    description: heroDef,
-    codeRepository: paper.github,
-    url: CANONICAL,
-    programmingLanguage: ["Python", "TypeScript"],
-  },
-  {
-    "@context": "https://schema.org",
-    "@type": "ScholarlyArticle",
-    name: paper.title,
-    identifier: `arXiv:${paper.arxiv_id}`,
-    url: paper.url,
-    datePublished: paper.submitted,
-    author: authors.map((name) => ({ "@type": "Person", name })),
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": `${CANONICAL}#website`,
+        name: glossary.product_name,
+        url: CANONICAL,
+        description: pageDescription,
+        inLanguage: "en",
+      },
+      {
+        "@type": ["SoftwareApplication", "SoftwareSourceCode"],
+        "@id": `${CANONICAL}#software`,
+        name: glossary.product_name,
+        applicationCategory: "DeveloperApplication",
+        operatingSystem: "Linux, macOS, Windows",
+        description: heroDef,
+        url: CANONICAL,
+        codeRepository: paper.github,
+        downloadUrl: paper.github,
+        programmingLanguage: ["Python", "TypeScript"],
+        offers: { "@type": "Offer", price: 0, priceCurrency: "USD" },
+        sameAs: [paper.github, paperAbs, paper.url],
+        author: authors.map((name) => ({ "@type": "Person", name })),
+        citation: { "@id": `${CANONICAL}#paper` },
+      },
+      {
+        "@type": "ScholarlyArticle",
+        "@id": `${CANONICAL}#paper`,
+        name: paper.title,
+        identifier: `arXiv:${paper.arxiv_id}`,
+        url: paperAbs,
+        encodingUrl: paper.url,
+        datePublished: paper.submitted,
+        author: authors.map((name) => ({ "@type": "Person", name })),
+        discussionUrl: CANONICAL,
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${CANONICAL}#faq`,
+        mainEntity: faqs.map((item) => ({
+          "@type": "Question",
+          name: item.q,
+          acceptedAnswer: { "@type": "Answer", text: item.a },
+        })),
+      },
+    ],
   },
 ];
 
@@ -72,25 +133,25 @@ const harnesses = [
   {
     id: "nanobot" as const,
     name: "NanoBot",
-    version: "v0.2.0",
+    version: "v0.3.0",
     line: `Median ${tokenMedians.NanoBot.toFixed(1)}% tokens · ${wallMedians.NanoBot.toFixed(1)}% wall`,
   },
   {
     id: "opencode" as const,
     name: "OpenCode",
-    version: "v1.17.14",
+    version: "v1.18.25",
     line: `Median ${tokenMedians.OpenCode.toFixed(1)}% tokens · ${wallMedians.OpenCode.toFixed(1)}% wall`,
   },
   {
     id: "openclaw" as const,
     name: "OpenClaw",
-    version: "v2026.6.11",
+    version: "v2026.8.1",
     line: `Median ${tokenMedians.OpenClaw.toFixed(1)}% tokens · ${wallMedians.OpenClaw.toFixed(1)}% wall`,
   },
   {
     id: "claude" as const,
     name: "Claude Code",
-    version: "2.1.221",
+    version: "2.1.252",
     line: "MCP + session hooks · GitHub release",
   },
 ];
@@ -122,13 +183,21 @@ const plugins = [
   { name: "LLMLingua", role: "wrap as a backend" },
   { name: "AI4S domain reader", role: "same interface" },
 ];
+const [taglineLead, taglineStop] = glossary.tagline.split(/(?<=\.)\s+/);
 ---
 
 <Base
-  title={`${glossary.product_name} — ${glossary.tagline}`}
-  description={heroDef}
+  title={pageTitle}
+  description={pageDescription}
   canonical={CANONICAL}
   jsonLd={jsonLd}
+  ogImageAlt={`${glossary.product_name}: token-efficient reading for AI agents. Up to ${fmtPct(tokenMax.value)}% fewer tokens vs Naive full reading.`}
+  paperAbs={paperAbs}
+  paperPdf={paper.url}
+  citationTitle={paper.title}
+  citationAuthors={scholarAuthors}
+  citationDate={paper.submitted}
+  citationArxiv={paper.arxiv_id}
 >
   <SavedTicker
     slot="header-tools"
@@ -148,7 +217,7 @@ const plugins = [
     <section id="hero">
       <p class="kicker">{glossary.product_name} · arXiv:{paper.arxiv_id}{paper.version}</p>
       <h1>{glossary.product_name}</h1>
-      <p class="tagline">{glossary.tagline}</p>
+      <p class="tagline">{taglineLead}<br />{taglineStop}</p>
       <p class="hero-def" data-claim-id={tokenMax.id}>{heroDef}</p>
       <div class="cta">
         <a class="primary" href={paper.github}>GitHub</a>
@@ -433,7 +502,7 @@ cd SparseReading`}
           models {setup.models.join(", ")})
         </span>;
         frameworks {setup.frameworks.map((item) => `${item.name} ${item.version}`).join(", ")}.
-        Claude Code 2.1.221 is a fourth GitHub-release integration, not a paper Table 1 row.
+        Claude Code 2.1.252 is a fourth GitHub-release integration, not a paper Table 1 row.
       </p>
       <p>
         This checkout can replay the recorded Figure 8 flagship / multi-file audit / force-mode boundary packets
@@ -454,34 +523,12 @@ cd SparseReading`}
       <p class="section-label">08 / FAQ</p>
       <h2>FAQ</h2>
       <div class="faq">
-        <details>
-          <summary>Which agents does SparseRead support?</summary>
-          <p>
-            NanoBot, OpenCode, OpenClaw, and Claude Code. One token-efficient
-            reading runtime; four harness adapters.
-          </p>
-        </details>
-        <details>
-          <summary>How do I install it?</summary>
-          <p>
-            Clone the GitHub repo, then use the Quickstart for your agent.
-            Source install today — pick a platform and copy the command.
-          </p>
-        </details>
-        <details>
-          <summary>Do I call SparseRead tools myself?</summary>
-          <p>
-            No. Ask the agent to use SparseRead on a large file or evidence pack.
-            The adapter exposes the protocol.
-          </p>
-        </details>
-        <details>
-          <summary>What does it save?</summary>
-          <p data-claim-id={`${tokenMax.id} ${wallMax.id}`}>
-            Token volume drops by up to {fmtPct(tokenMax.value)}% versus Naive full
-            reading. Wall time drops by up to {fmtPct(wallMax.value)}%.
-          </p>
-        </details>
+        {faqs.map((item) => (
+          <details>
+            <summary>{item.q}</summary>
+            <p {...(item.claimId ? { "data-claim-id": item.claimId } : {})}>{item.a}</p>
+          </details>
+        ))}
       </div>
     </section>
 

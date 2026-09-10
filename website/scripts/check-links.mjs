@@ -48,7 +48,7 @@ for (const file of htmlFiles) {
   }
 }
 
-const required = [`${BASE}og.png`, `${BASE}favicon.svg`];
+const required = [`${BASE}og.png`, `${BASE}favicon.svg`, `${BASE}llms.txt`, `${BASE}sitemap.xml`, `${BASE}robots.txt`];
 for (const href of required) hrefs.add(href);
 
 const errors = [];

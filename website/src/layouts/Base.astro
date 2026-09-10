@@ -8,11 +8,32 @@ interface Props {
   canonical?: string;
   jsonLd?: unknown[];
   noindex?: boolean;
+  ogImageAlt?: string;
+  paperAbs?: string;
+  paperPdf?: string;
+  citationTitle?: string;
+  citationAuthors?: string[];
+  citationDate?: string;
+  citationArxiv?: string;
 }
 
-const { title, description, canonical, jsonLd = [], noindex = false } = Astro.props;
+const {
+  title,
+  description,
+  canonical,
+  jsonLd = [],
+  noindex = false,
+  ogImageAlt = "SparseRead: token-efficient reading for AI agents",
+  paperAbs,
+  paperPdf,
+  citationTitle,
+  citationAuthors = [],
+  citationDate,
+  citationArxiv,
+} = Astro.props;
 const base = import.meta.env.BASE_URL;
 const reviewMode = import.meta.env.DEV;
+const siteName = "SparseRead";
 const og = `${canonical ?? "https://zedong-liu.github.io/SparseReading/"}og.png`;
 ---
 <!doctype html>
@@ -22,16 +43,39 @@ const og = `${canonical ?? "https://zedong-liu.github.io/SparseReading/"}og.png`
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    <meta name="author" content="Zedong Liu" />
+    <meta name="theme-color" content="#0F1724" />
     {canonical && <link rel="canonical" href={canonical} />}
-    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    {noindex
+      ? <meta name="robots" content="noindex, nofollow" />
+      : <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />}
     <link rel="icon" href={`${base}favicon.svg`} />
+    {canonical && <link rel="alternate" type="text/plain" href={`${canonical}llms.txt`} title="LLM index" />}
+    {paperAbs && <link rel="alternate" href={paperAbs} title="arXiv abstract" />}
+    {paperPdf && <link rel="alternate" type="application/pdf" href={paperPdf} title="Paper PDF" />}
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="SparseRead" />
-    <meta property="og:description" content="Read only the evidence needed for the next decision." />
+    <meta property="og:site_name" content={siteName} />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
     {canonical && <meta property="og:url" content={canonical} />}
     <meta property="og:image" content={og} />
+    <meta property="og:image:alt" content={ogImageAlt} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={og} />
+    <meta name="twitter:image:alt" content={ogImageAlt} />
+    {citationTitle && <meta name="citation_title" content={citationTitle} />}
+    {citationAuthors.map((name) => (
+      <meta name="citation_author" content={name} />
+    ))}
+    {citationDate && <meta name="citation_publication_date" content={citationDate} />}
+    {citationArxiv && <meta name="citation_arxiv_id" content={citationArxiv} />}
+    {paperPdf && <meta name="citation_pdf_url" content={paperPdf} />}
+    {canonical && <meta name="citation_fulltext_html_url" content={canonical} />}
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -77,6 +121,7 @@ const og = `${canonical ?? "https://zedong-liu.github.io/SparseReading/"}og.png`
           <a href={`${base}#results`}>Results</a>
           <a href={`${base}#quickstart`}>Quickstart</a>
           <a href={`${base}#cite`}>Cite</a>
+          <a href={`${base}#faq`}>FAQ</a>
           {reviewMode && <a href={`${base}review/`}>Review drafts</a>}
           <a href="https://github.com/Zedong-Liu/SparseReading">GitHub</a>
         </nav>
@@ -90,7 +135,7 @@ const og = `${canonical ?? "https://zedong-liu.github.io/SparseReading/"}og.png`
     <footer class="site-footer">
       {reviewMode
         ? "Static site. No API key required. This launch workspace does not publish GitHub Pages."
-        : "Static site. No API key required."}
+        : "SparseRead · token-efficient reading for AI agents · no API key required."}
     </footer>
   </body>
 </html>
