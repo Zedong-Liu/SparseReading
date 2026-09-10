@@ -1,0 +1,29 @@
+# SparseRead
+
+> Token-efficient reading for AI agents.
+
+SparseRead is a training-free reading layer that admits only the evidence needed for the next decision, instead of dumping whole files, PDFs, or repositories into context.
+
+- Website: https://zedong-liu.github.io/SparseReading/
+- Code: https://github.com/Zedong-Liu/SparseReading
+- Paper: https://arxiv.org/abs/2608.22237
+- PDF: https://arxiv.org/pdf/2608.22237
+
+## What it is
+
+A thin adapter around one token-efficient reading runtime, not a new agent. A Read Gate decides whether to read sparse; Reader Backends admit a bounded evidence slice. It is not post-hoc summarization, KV-cache compression, or an always-on replacement for native tools.
+
+## Supported agents
+
+Claude Code, OpenCode, OpenClaw, and NanoBot.
+
+## Results (paper, vs Naive full reading)
+
+- Token volume down by up to 92.9%.
+- Wall time down by up to 89.0%.
+- Quality held or improved on 26 of 30 NanoBot cells.
+- Keep “up to” on the maxima. Token volume is not automatically dollar cost.
+
+## 中文
+
+SparseRead 是面向 AI Agent 的省 token 阅读层：先拦截整文件 / PDF / 仓库的全文灌入，再按下一步决策需要的证据读取。论文 arXiv:2608.22237。

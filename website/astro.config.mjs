@@ -9,6 +9,11 @@ export default defineConfig({
     react(),
     sitemap({
       filter: (page) => !page.includes("/review"),
+      serialize: (item) => ({
+        ...item,
+        changefreq: "weekly",
+        priority: 1.0,
+      }),
     }),
     {
       name: "sparseread-review",
