@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.1.1 — 2026-08-26
+
+Registry release preparation:
+
+- Publish the framework-neutral Python distribution as `sparseread`, with
+  `sparseread-nanobot`, `sparseread-opencode`, `sparseread-openclaw`, and
+  `sparseread-claude` as independently installable adapters.
+- Publish the OpenCode and OpenClaw host plugins as
+  `@sparseread/opencode` and `@sparseread/openclaw`.
+- Add complete PyPI/npm metadata, typed-package markers, bundled MIT licenses,
+  deterministic version checks, artifact inspection, and isolated install
+  smoke tests.
+- Add Claude Code MCP and hook console commands and a tag-gated trusted
+  publishing workflow.
+
+The source directory remains `packages/sparseread-core`; only the public PyPI
+distribution name changes before its first registry publication.
+
 ## v0.1.0 — 2026-08-06
 
 四框架发布基线：

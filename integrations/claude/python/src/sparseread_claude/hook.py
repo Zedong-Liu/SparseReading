@@ -2,7 +2,7 @@
 
 Runs as a long-lived process (session hook) speaking Claude Code's JSON-lines
 hook protocol.  All routing decisions come from the shared
-``sparseread-core`` BenefitGate; this module only adds the Claude-specific
+``sparseread`` BenefitGate; this module only adds the Claude-specific
 execution surface:
 
 - PreToolUse Read/Bash: enforce -> deny + additionalContext,

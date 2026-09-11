@@ -38,7 +38,7 @@ python3 scripts/install_sparseread.py --platform opencode --opencode-workspace /
 python3 scripts/install_sparseread.py --platform openclaw --doctor
 ```
 
-The installer creates a managed Python runtime containing `sparseread-core`
+The installer creates a managed Python runtime containing `sparseread`
 and only the selected framework adapter. It installs packed JavaScript
 artifacts rather than linking the source checkout.
 

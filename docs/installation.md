@@ -1,8 +1,9 @@
 # SparseRead installation
 
-This guide describes the current single-repository source installation. The
-repository ships one framework-neutral core and one adapter per supported agent
-framework. It does not require a framework checkout at runtime.
+SparseRead ships one framework-neutral core and one adapter per supported agent
+framework. Registry packages download the runtime components; the repository
+installer additionally writes host configuration and creates an isolated
+managed Python environment.
 
 ## Requirements
 
@@ -15,7 +16,46 @@ framework. It does not require a framework checkout at runtime.
 Windows users should use PowerShell. The installer resolves `.cmd`, `.exe`, and
 `.bat` host commands automatically.
 
-## Verify a checkout
+## Install from PyPI and npm
+
+Install the shared runtime, including PDF and spreadsheet readers:
+
+```bash
+pip install "sparseread[all]"
+```
+
+NanoBot needs only Python packages:
+
+```bash
+pip install "sparseread-nanobot[nanobot]"
+```
+
+OpenCode and OpenClaw each need a Python bridge and a JavaScript host plugin:
+
+```bash
+# OpenCode components
+pip install sparseread-opencode
+npm install @sparseread/opencode
+
+# OpenClaw components
+pip install sparseread-openclaw
+npm install @sparseread/openclaw
+```
+
+Claude Code uses Python entry points instead of an npm plugin:
+
+```bash
+pip install sparseread-claude
+sparseread-claude-mcp --help
+sparseread-claude-hook --help
+```
+
+The npm packages do not install Python implicitly, and the Python bridge
+packages do not edit host configuration implicitly. This separation keeps
+registry installation auditable. Use the source installer in the next section
+when you want SparseRead to register the host integration automatically.
+
+## Install and configure from a checkout
 
 ```bash
 git clone https://github.com/Zedong-Liu/SparseReading.git
@@ -34,7 +74,7 @@ PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integra
 
 On PowerShell, replace the `:` separators in `PYTHONPATH` with `;`.
 
-## Install an adapter
+## Configure an adapter
 
 OpenCode:
 
@@ -89,7 +129,7 @@ protocol.
 - OpenClaw uses a packed npm plugin plus a managed Python bridge.
 - Claude Code uses an MCP stdio server, `PreToolUse`/`PostToolUse` hooks, and a
   generated `CLAUDE.md` when the workspace does not already have one.
-- NanoBot uses `sparseread-core` and `sparseread-nanobot` as Python dependencies.
+- NanoBot uses `sparseread` and `sparseread-nanobot` as Python dependencies.
 
 For architecture and package ownership, see
 [`docs/release_architecture.md`](release_architecture.md). For the Chinese

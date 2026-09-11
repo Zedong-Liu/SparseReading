@@ -717,23 +717,8 @@ wheels = [
 ]
 
 [[package]]
-name = "sparseread-claude"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "mcp" },
-    { name = "sparseread-core" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "mcp", specifier = ">=1.26,<2.0" },
-    { name = "sparseread-core", editable = "../../../packages/sparseread-core" },
-]
-
-[[package]]
-name = "sparseread-core"
-version = "0.1.0"
+name = "sparseread"
+version = "0.1.1"
 source = { editable = "../../../packages/sparseread-core" }
 dependencies = [
     { name = "pyyaml" },
@@ -750,6 +735,21 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0,<7.0" },
 ]
 provides-extras = ["pdf", "xlsx", "all", "dev"]
+
+[[package]]
+name = "sparseread-claude"
+version = "0.1.1"
+source = { editable = "." }
+dependencies = [
+    { name = "mcp" },
+    { name = "sparseread" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mcp", specifier = ">=1.26,<2.0" },
+    { name = "sparseread", editable = "../../../packages/sparseread-core" },
+]
 
 [[package]]
 name = "sse-starlette"

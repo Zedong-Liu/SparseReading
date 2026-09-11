@@ -1,7 +1,24 @@
 {
   "name": "@sparseread/opencode",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "description": "OpenCode plugin for the SparseRead context-efficient reading layer",
   "license": "MIT",
+  "author": "SparseRead contributors",
+  "homepage": "https://github.com/Zedong-Liu/SparseReading#readme",
+  "bugs": {
+    "url": "https://github.com/Zedong-Liu/SparseReading/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zedong-Liu/SparseReading.git",
+    "directory": "integrations/opencode/plugin"
+  },
+  "keywords": [
+    "ai-agents",
+    "context-management",
+    "opencode",
+    "sparse-reading"
+  ],
   "type": "module",
   "private": false,
   "main": "./dist/sparseread.js",
@@ -19,6 +36,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepack": "npm run build"
+  },
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
     "@opencode-ai/plugin": "1.18.10"

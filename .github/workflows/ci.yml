@@ -4,15 +4,20 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   python-tests:
     name: SparseRead tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Run core tests independently
@@ -38,39 +43,32 @@ jobs:
     name: Build plugins and packages
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          node-version: "22"
-      - name: Build OpenCode plugin
-        working-directory: integrations/opencode/plugin
-        run: |
-          npm ci
-          npm run build
-      - name: Build OpenClaw plugin
-        working-directory: integrations/openclaw/plugin
-        run: |
-          npm ci
-          npm run build
-      - uses: astral-sh/setup-uv@v5
-      - name: Build Python packages
-        run: |
-          mkdir -p dist
-          uv build --project packages/sparseread-core --out-dir dist
-          for adapter in nanobot opencode openclaw claude; do
-            uv build --project "integrations/$adapter/python" --out-dir dist
-          done
-          ls -la dist
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24.15.0"
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - name: Build and inspect all registry artifacts
+        run: python scripts/build_release.py --output dist/release
+      - name: Check Python package descriptions
+        run: uvx twine check dist/release/python/*
 
   windows-install-tests:
     name: Windows install tests
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
       - name: Install test dependencies
         run: |
           uv venv .venv

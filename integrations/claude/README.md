@@ -17,7 +17,7 @@ python3 scripts/install_sparseread.py --platform claude \
   --claude-workspace /path/to/your/project --doctor
 ```
 
-The installer builds `sparseread-core` and `sparseread-claude` wheels, creates
+The installer builds `sparseread` and `sparseread-claude` wheels, creates
 a managed Python runtime under `~/.sparseread/claude`, writes `.mcp.json` and
 `.claude/settings.local.json`, and creates `CLAUDE.md` when the workspace does
 not already have one.

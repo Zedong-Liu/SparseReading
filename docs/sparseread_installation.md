@@ -1,9 +1,9 @@
 # SparseRead 安装指南
 
-这份文档描述当前 single-repo 分支的默认源码安装形态。SparseRead 现在是
+这份文档描述 registry 组件和 single-repo 源码安装形态。SparseRead 现在是
 四框架共享一个 core（`packages/sparseread-core`），每个框架的桥接面不同：
 
-- NanoBot：作为普通 Python 依赖安装（`sparseread-core` + `sparseread-nanobot`），
+- NanoBot：作为普通 Python 依赖安装（`sparseread` + `sparseread-nanobot`），
   由 NanoBot 框架内部加载 adapter；
 - OpenCode：通过 TS 插件 + Python bridge 安装到 workspace；
 - OpenClaw：通过 npm 插件包 + Python bridge 安装到 OpenClaw profile；
@@ -11,8 +11,8 @@
   安装（Claude Code 没有 npm 插件系统，`.mcp.json` 和
   `.claude/settings.local.json` 就是它的“插件形态”）。
 
-这还不是 PyPI/npm/官方插件市场的一键发行版。当前目标是让开源用户能从源码
-稳定安装、验证、使用，并且四个框架使用同一套 core 能力。
+v0.1.1 提供 PyPI 和 npm 下载。Registry 包不会隐式修改宿主配置；源码安装器
+继续负责自动注册宿主、创建受管 Python runtime。官方插件市场是独立的后续分发面。
 
 当前源码安装目标支持 macOS、Linux、Windows。Windows 默认推荐路径是 **PowerShell 原生安装**，不推荐把日常产品安装建立在 WSL shell wrapper 之上。仓库里的 PinchBench/QwenClawBench benchmark runtime 仍包含 POSIX `/tmp`、shell wrapper 等假设，不作为 Windows 日常安装验证的一部分；Windows 用户优先使用本指南中的 release fixture、doctor 和快速体验测试。
 
@@ -79,6 +79,20 @@ OpenClaw 插件声明的 host 版本要求是 `openclaw >= 2026.5.17`。更旧�
 | benchmark shell runtime | ✅ 可用 | ⚠️ 不作为默认安装路径 |
 
 ## Fresh Machine 安装
+
+只下载 registry 组件时：
+
+```bash
+pip install "sparseread[all]"
+pip install "sparseread-nanobot[nanobot]"  # NanoBot
+pip install sparseread-opencode            # OpenCode Python bridge
+npm install @sparseread/opencode           # OpenCode host plugin
+pip install sparseread-openclaw            # OpenClaw Python bridge
+npm install @sparseread/openclaw           # OpenClaw host plugin
+pip install sparseread-claude              # Claude MCP + hooks
+```
+
+需要自动配置宿主时，从源码开始：
 
 从源码开始：
 
@@ -212,7 +226,7 @@ py scripts/install_sparseread.py --platform openclaw --doctor
 
 ## 安装到 NanoBot
 
-NanoBot 不需要 installer。`sparseread-core` 与 `sparseread-nanobot` 是普通
+NanoBot 不需要 installer。`sparseread` 与 `sparseread-nanobot` 是普通
 Python 依赖，宿主 `nanobot-ai` 由用户自行安装（本仓库不随带框架源码）。
 `sparseread-nanobot` 通过官方 `AgentHook` + `ToolRegistry` 接入：
 `install(agent, ...)` 会注册 SRO 工具并自动挂载 `SparseReadHook`；hook 是
@@ -234,10 +248,10 @@ uv pip install --python <你的 nanobot venv>\Scripts\python.exe `
   -e integrations\nanobot\python
 ```
 
-发布形态（PyPI 就绪后）：
+PyPI 发布形态：
 
 ```bash
-pip install "sparseread-core>=0.1,<0.2" "sparseread-nanobot>=0.1,<0.2"
+pip install "sparseread>=0.1.1,<0.2" "sparseread-nanobot>=0.1.1,<0.2"
 pip install "sparseread-nanobot[nanobot]"   # 可选：一并安装 nanobot-ai 宿主
 ```
 
@@ -283,7 +297,7 @@ py scripts/install_sparseread.py --platform claude --claude-workspace D:\path\to
 
 安装脚本会：
 
-- 构建 `sparseread-core` + `sparseread-claude` wheel，创建受管 Python runtime
+- 构建 `sparseread` + `sparseread-claude` wheel，创建受管 Python runtime
   `~/.sparseread/claude/`；
 - 合并写入 `/path/to/your/project/.mcp.json`（MCP stdio server，
   暴露 `sro_preview/sro_read/sro_card/sro_raw/sro_decide/sro_trace/

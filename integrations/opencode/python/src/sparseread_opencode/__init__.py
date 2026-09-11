@@ -3,7 +3,7 @@
 from typing import Any
 
 __all__ = ["OpenCodeBridge", "classify_opencode_gate"]
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 
 def __getattr__(name: str) -> Any:
