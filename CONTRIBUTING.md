@@ -21,7 +21,7 @@ uv run --project packages/sparseread-core --with pytest --with pytest-asyncio \
   pytest packages/sparseread-core/tests -q
 
 PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integrations/opencode/python/src:integrations/openclaw/python/src:integrations/claude/python/src" \
-  uv run --with pytest --with pytest-asyncio pytest -q
+  uv run --project . --extra test pytest -q
 ```
 
 If you change a JavaScript plugin, also run its build:

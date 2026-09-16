@@ -2,7 +2,7 @@
   "id": "sparseread-openclaw",
   "name": "SparseRead for OpenClaw",
   "description": "Adds SparseRead tools and optional gate hooks for long documents and compact evidence closures.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "activation": {
     "onStartup": true
   },

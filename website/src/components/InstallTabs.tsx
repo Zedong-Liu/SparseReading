@@ -25,7 +25,7 @@ runtime = install(agent)`,
     id: "opencode",
     label: "OpenCode",
     hint: "Writes the workspace plugin, a managed Python runtime, and runs doctor.",
-    code: `python3 scripts/install_sparseread.py \\
+    code: `uv run --project . python scripts/install_sparseread.py \\
   --platform opencode \\
   --opencode-workspace /path/to/your/project \\
   --doctor`,
@@ -34,7 +34,7 @@ runtime = install(agent)`,
     id: "openclaw",
     label: "OpenClaw",
     hint: "Builds the OpenClaw plugin, installs it into the current profile, and runs doctor.",
-    code: `python3 scripts/install_sparseread.py \\
+    code: `uv run --project . python scripts/install_sparseread.py \\
   --platform openclaw \\
   --doctor`,
   },
@@ -42,7 +42,7 @@ runtime = install(agent)`,
     id: "claude",
     label: "Claude Code",
     hint: "Merges MCP tools and session hooks into the workspace. Restart Claude Code after install.",
-    code: `python3 scripts/install_sparseread.py \\
+    code: `uv run --project . python scripts/install_sparseread.py \\
   --platform claude \\
   --claude-workspace /path/to/your/project \\
   --doctor`,

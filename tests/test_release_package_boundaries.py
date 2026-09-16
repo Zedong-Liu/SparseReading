@@ -61,7 +61,7 @@ def test_javascript_plugins_are_publishable_and_versioned() -> None:
         )
         assert package["name"] == f"@sparseread/{framework}"
         assert package["private"] is False
-        assert package["version"] == "0.1.0"
+        assert package["version"] == "0.1.1"
         assert package["scripts"]["prepack"] == "npm run build"
 
 

@@ -76,6 +76,72 @@ def test_bridge_invocation_appends_module_to_managed_python() -> None:
     assert command == [str(python), "-m", "sparseread_openclaw.bridge"]
 
 
+def test_resolve_python_rejects_an_explicit_old_interpreter(monkeypatch) -> None:
+    installer = load_installer()
+    monkeypatch.setattr(installer, "python_version", lambda _python: (3, 10))
+
+    try:
+        installer.resolve_python("/usr/bin/python3.10")
+    except SystemExit as exc:
+        assert "requires Python 3.11+" in str(exc)
+        assert "selected interpreter" in str(exc)
+    else:
+        raise AssertionError("expected an explicit Python 3.10 interpreter to be rejected")
+
+
+def test_resolve_python_uses_uv_managed_interpreter_when_default_is_old(monkeypatch) -> None:
+    installer = load_installer()
+    versions = {"/usr/bin/python3.9": (3, 9), "/opt/uv/python3.12": (3, 12)}
+    monkeypatch.setattr(installer.sys, "executable", "/usr/bin/python3.9")
+    monkeypatch.setattr(installer, "python_version", lambda python: versions[python])
+    monkeypatch.setattr(installer.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None)
+
+    def fake_run(cmd, **_kwargs):
+        assert cmd == ["/usr/bin/uv", "python", "find", "3.12"]
+        return subprocess.CompletedProcess(cmd, 0, "/opt/uv/python3.12\n", "")
+
+    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+
+    assert installer.resolve_python() == "/opt/uv/python3.12"
+
+
+def test_merge_json_rejects_invalid_existing_config(tmp_path: Path) -> None:
+    installer = load_installer()
+    config = tmp_path / "settings.json"
+    config.write_text("{invalid", encoding="utf-8")
+
+    try:
+        installer.merge_json(config, {"enabled": True}, dry_run=False)
+    except SystemExit as exc:
+        assert "existing JSON config is invalid" in str(exc)
+    else:
+        raise AssertionError("expected invalid JSON config to fail safely")
+
+
+def test_install_python_runtime_can_skip_optional_reader_dependencies(monkeypatch, tmp_path: Path) -> None:
+    installer = load_installer()
+    calls: list[list[str]] = []
+    monkeypatch.setattr(installer, "command_spec", lambda *_args, **_kwargs: installer.CommandSpec("uv"))
+
+    def fake_run(cmd: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(installer, "run", fake_run)
+
+    installer.install_python_runtime(
+        tmp_path / "runtime",
+        tmp_path / "adapter",
+        python="python3.12",
+        dry_run=True,
+        reader_extras="none",
+    )
+
+    pip_install = calls[-1]
+    assert "pymupdf>=1.25.0" not in pip_install
+    assert "openpyxl>=3.1.0,<4.0.0" not in pip_install
+
+
 def test_public_install_mode_auto_maps_to_internal_defaults() -> None:
     installer = load_installer()
 
@@ -152,6 +218,7 @@ def test_install_opencode_writes_persistent_workspace_config(monkeypatch, tmp_pa
 def test_openclaw_install_patch_defaults_enforce_hook_mode(monkeypatch, tmp_path: Path) -> None:
     installer = load_installer()
     calls: list[list[str]] = []
+    checked_calls: list[bool] = []
     patches: list[dict] = []
 
     monkeypatch.setattr(installer, "command_spec", lambda *_args, **_kwargs: installer.CommandSpec("/bin/true"))
@@ -161,6 +228,8 @@ def test_openclaw_install_patch_defaults_enforce_hook_mode(monkeypatch, tmp_path
 
     def fake_run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
         calls.append(cmd)
+        if "plugins" in cmd and ("install" in cmd or "enable" in cmd):
+            checked_calls.append(kwargs.get("check", True))
         if cmd[-3:] == ["config", "patch", "--stdin"]:
             patches.append(json.loads(kwargs["input_text"]))
         if cmd[-5:] == ["plugins", "inspect", "sparseread-openclaw", "--runtime", "--json"]:
@@ -205,6 +274,7 @@ def test_openclaw_install_patch_defaults_enforce_hook_mode(monkeypatch, tmp_path
     assert config["bridgeProtocol"] == "1.0"
     assert entry["hooks"]["allowPromptInjection"] is True
     assert entry["hooks"]["allowConversationAccess"] is True
+    assert checked_calls == [True, True]
     assert any(cmd[-2:] == ["sparseread-openclaw", "--force"] for cmd in calls)
     assert any(cmd[-3:] == ["registry", "--refresh", "--json"] for cmd in calls)
 

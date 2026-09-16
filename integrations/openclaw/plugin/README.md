@@ -18,5 +18,5 @@ For normal source installs, run this from the repository root instead of
 manually editing OpenClaw config:
 
 ```bash
-python3 scripts/install_sparseread.py --platform openclaw --doctor
+uv run --project . python scripts/install_sparseread.py --platform openclaw --doctor
 ```

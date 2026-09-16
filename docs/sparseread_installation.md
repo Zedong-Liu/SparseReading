@@ -52,6 +52,11 @@ sro_raw(raw_ref) -> 明确需要原文时的回溯入口
 
 Windows 上如果 `npm`、`openclaw` 等入口实际是 `.cmd/.exe/.bat`，安装脚本会自动解析到对应入口，不需要手动修改命令名。
 
+安装器会在修改目标 workspace 或 profile 前校验 Python 和宿主 CLI。推荐使用下文的
+`uv run --project . python ...` 形式，以避免系统 `python3` 低于 3.11；直接调用脚本时
+可用 `--python /path/to/python3.12` 显式指定。默认安装 PDF/XLSX 阅读器，纯文本部署可用
+`--reader-extras none` 减少 runtime 依赖。
+
 当前源码安装验证使用过：
 
 - OpenCode `1.17.14`
@@ -91,21 +96,21 @@ cd SparseReading
 
 ```bash
 PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integrations/opencode/python/src:integrations/openclaw/python/src:integrations/claude/python/src" \
-  uv run --with pytest --with pytest-asyncio pytest tests/test_release_fixtures.py -q
+  uv run --project . --extra test pytest tests/test_release_fixtures.py -q
 ```
 
 完整本地回归：
 
 ```bash
 PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integrations/opencode/python/src:integrations/openclaw/python/src:integrations/claude/python/src" \
-  uv run --with pytest --with pytest-asyncio pytest -q
+  uv run --project . --extra test pytest -q
 ```
 
 Windows PowerShell 可直接使用：
 
 ```powershell
 PYTHONPATH="packages/sparseread-core/src;integrations\nanobot\python\src;integrations\opencode\python\src;integrations\openclaw\python\src;integrations\claude\python\src" `
-  uv run --with pytest --with pytest-asyncio pytest tests/test_release_fixtures.py -q
+  uv run --project . --extra test pytest tests/test_release_fixtures.py -q
 ```
 
 ## 安装到 OpenCode
@@ -113,7 +118,7 @@ PYTHONPATH="packages/sparseread-core/src;integrations\nanobot\python\src;integra
 假设你已经能在目标 workspace 里运行 `opencode`。
 
 ```bash
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform opencode \
   --opencode-workspace /path/to/your/project \
   --doctor
@@ -137,7 +142,7 @@ opencode run "Use SparseRead to inspect the large report and answer the question
 Windows PowerShell：
 
 ```powershell
-py scripts/install_sparseread.py --platform opencode --opencode-workspace D:\path\to\your\project --doctor
+uv run --project . python scripts/install_sparseread.py --platform opencode --opencode-workspace D:\path\to\your\project --doctor
 Set-Location D:\path\to\your\project
 opencode run "请自动使用 SparseRead 阅读长报告并回答问题"
 ```
@@ -145,7 +150,7 @@ opencode run "请自动使用 SparseRead 阅读长报告并回答问题"
 如果 `opencode` 不在 PATH，显式指定可执行文件路径：
 
 ```bash
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform opencode \
   --opencode-cmd /absolute/path/to/opencode \
   --opencode-workspace /path/to/your/project \
@@ -165,7 +170,7 @@ sro_preview, sro_raw, sro_card, sro_read, sro_trace
 假设你已经能运行 `openclaw`。
 
 ```bash
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform openclaw \
   --doctor
 ```
@@ -192,7 +197,7 @@ sro_preview, sro_raw, sro_card, sro_read, sro_decide, sro_trace
 如果使用命名 profile：
 
 ```bash
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform openclaw \
   --openclaw-profile work \
   --doctor
@@ -207,7 +212,7 @@ OpenClaw 的 provider/model/key 仍由 OpenClaw 自己配置。SparseRead 不安
 Windows PowerShell：
 
 ```powershell
-py scripts/install_sparseread.py --platform openclaw --doctor
+uv run --project . python scripts/install_sparseread.py --platform openclaw --doctor
 ```
 
 ## 安装到 NanoBot
@@ -269,7 +274,7 @@ system 消息注入），不再依赖宿主 skill 文件。
 假设你已经能运行 `claude`：
 
 ```bash
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform claude \
   --claude-workspace /path/to/your/project \
   --doctor
@@ -278,7 +283,7 @@ python3 scripts/install_sparseread.py \
 Windows PowerShell：
 
 ```powershell
-py scripts/install_sparseread.py --platform claude --claude-workspace D:\path\to\project --doctor
+uv run --project . python scripts/install_sparseread.py --platform claude --claude-workspace D:\path\to\project --doctor
 ```
 
 安装脚本会：
@@ -314,7 +319,7 @@ Windows 注意：同事在 Windows 11 上曾遇到 MCP stdio/SSE 连接问题；
 如果两个 CLI 都已经安装：
 
 ```bash
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform both \
   --opencode-workspace /path/to/your/project \
   --doctor
@@ -323,7 +328,7 @@ python3 scripts/install_sparseread.py \
 如需关闭拦截、只让模型自然选择 SparseRead：
 
 ```bash
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform both \
   --opencode-workspace /path/to/your/project \
   --sparseread-mode advisory \
@@ -355,17 +360,17 @@ OpenCode 允许有界的 ready 后 verify。发布文档以此矩阵为准，避
 只检查本机命令和 bridge，不改框架配置：
 
 ```bash
-python3 scripts/install_sparseread.py --platform opencode --doctor-only
-python3 scripts/install_sparseread.py --platform openclaw --doctor-only
-python3 scripts/install_sparseread.py --platform claude --doctor-only
+uv run --project . python scripts/install_sparseread.py --platform opencode --doctor-only
+uv run --project . python scripts/install_sparseread.py --platform openclaw --doctor-only
+uv run --project . python scripts/install_sparseread.py --platform claude --doctor-only
 ```
 
 Windows PowerShell：
 
 ```powershell
-py scripts/install_sparseread.py --platform opencode --doctor-only
-py scripts/install_sparseread.py --platform openclaw --doctor-only
-py scripts/install_sparseread.py --platform claude --doctor-only
+uv run --project . python scripts/install_sparseread.py --platform opencode --doctor-only
+uv run --project . python scripts/install_sparseread.py --platform openclaw --doctor-only
+uv run --project . python scripts/install_sparseread.py --platform claude --doctor-only
 ```
 
 doctor 会做两层检查：
@@ -437,7 +442,7 @@ FINAL_DEADLINE: 2026-07-18 09:30 UTC.
 
 ```bash
 PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integrations/opencode/python/src:integrations/openclaw/python/src:integrations/claude/python/src" \
-  uv run --with pytest --with pytest-asyncio pytest tests/test_release_fixtures.py -q
+  uv run --project . --extra test pytest tests/test_release_fixtures.py -q
 ```
 
 这 6 个 fixture 覆盖：

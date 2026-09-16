@@ -52,7 +52,7 @@ Use the source installer from the repository root when OpenClaw is already
 installed:
 
 ```bash
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform openclaw \
   --doctor
 ```

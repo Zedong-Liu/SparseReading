@@ -15,6 +15,12 @@ framework. It does not require a framework checkout at runtime.
 Windows users should use PowerShell. The installer resolves `.cmd`, `.exe`, and
 `.bat` host commands automatically.
 
+The installer validates Python before changing a workspace. The `uv run` form
+below supplies a compatible interpreter; when invoking the script directly,
+pass `--python /path/to/python3.12` if the default `python3` is older than 3.11.
+PDF/XLSX reader dependencies are installed by default; use
+`--reader-extras none` for a text-only runtime.
+
 ## Verify a checkout
 
 ```bash
@@ -22,14 +28,14 @@ git clone https://github.com/Zedong-Liu/SparseReading.git
 cd SparseReading
 
 PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integrations/opencode/python/src:integrations/openclaw/python/src:integrations/claude/python/src" \
-  uv run --with pytest --with pytest-asyncio pytest tests/test_release_fixtures.py -q
+  uv run --project . --extra test pytest tests/test_release_fixtures.py -q
 ```
 
 For a full local regression:
 
 ```bash
 PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integrations/opencode/python/src:integrations/openclaw/python/src:integrations/claude/python/src" \
-  uv run --with pytest --with pytest-asyncio pytest -q
+  uv run --project . --extra test pytest -q
 ```
 
 On PowerShell, replace the `:` separators in `PYTHONPATH` with `;`.
@@ -39,7 +45,7 @@ On PowerShell, replace the `:` separators in `PYTHONPATH` with `;`.
 OpenCode:
 
 ```bash
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform opencode \
   --opencode-workspace /path/to/your/project \
   --doctor
@@ -48,7 +54,7 @@ python3 scripts/install_sparseread.py \
 OpenClaw:
 
 ```bash
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform openclaw \
   --doctor
 ```
@@ -56,7 +62,7 @@ python3 scripts/install_sparseread.py \
 Claude Code:
 
 ```bash
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform claude \
   --claude-workspace /path/to/your/project \
   --doctor

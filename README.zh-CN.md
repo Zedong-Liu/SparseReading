@@ -74,31 +74,35 @@ Claude Code 使用 MCP 加 `PreToolUse`/`PostToolUse` session hooks，不使用 
 环境要求：Python 3.11+、[uv](https://docs.astral.sh/uv/)、OpenCode/OpenClaw 所需的
 Node.js 22+，以及目标 Agent CLI。
 
+安装器会在修改 workspace 前校验 Python 版本。如果系统默认 `python3` 过旧，推荐使用
+上面的 `uv run` 形式，或显式传入 `--python /path/to/python3.12`。默认安装 PDF/XLSX
+阅读器；只处理文本时可以加 `--reader-extras none`。
+
 ```bash
 git clone https://github.com/Zedong-Liu/SparseReading.git
 cd SparseReading
 
 # 先验证 core、adapter、bridge protocol 和 release fixture
 PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integrations/opencode/python/src:integrations/openclaw/python/src:integrations/claude/python/src" \
-  uv run --with pytest --with pytest-asyncio pytest tests/test_release_fixtures.py -q
+  uv run --project . --extra test pytest tests/test_release_fixtures.py -q
 ```
 
 选择一个框架：
 
 ```bash
 # OpenCode：安装到已有 workspace
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform opencode \
   --opencode-workspace /path/to/your/project \
   --doctor
 
 # OpenClaw：安装到当前 profile
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform openclaw \
   --doctor
 
 # Claude Code：向 workspace 写入 MCP 和 session hooks
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform claude \
   --claude-workspace /path/to/your/project \
   --doctor
@@ -169,7 +173,7 @@ uv run --project packages/sparseread-core --with pytest --with pytest-asyncio \
 
 ```bash
 PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integrations/opencode/python/src:integrations/openclaw/python/src:integrations/claude/python/src" \
-  uv run --with pytest --with pytest-asyncio pytest -q
+  uv run --project . --extra test pytest -q
 ```
 
 更多架构约束见[发布架构](docs/release_architecture.md)。benchmark 和历史结果用于复现，
@@ -177,7 +181,7 @@ PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integra
 
 ## 当前边界
 
-- 当前基线是 `v0.1.0`，支持从源码安装。
+- 当前基线是 `v0.1.1`，支持从源码安装。
 - PyPI、npm 和各框架官方 marketplace 的一键发布尚未接通；目前支持路径是源码安装器。
 - Claude Code 已通过 MCP 和 session hooks 支持；Windows 上仍需按主机 CLI 和权限环境
   单独验证 MCP 通路。

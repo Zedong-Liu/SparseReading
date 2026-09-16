@@ -19,20 +19,10 @@ jobs:
         run: >-
           uv run --project packages/sparseread-core --with pytest --with pytest-asyncio
           pytest packages/sparseread-core/tests -q
-      - name: Install test dependencies
-        run: |
-          uv venv .venv
-          uv pip install --python .venv/bin/python \
-            "pyyaml>=6.0,<7.0" \
-            "mcp>=1.26,<2.0" \
-            "pymupdf>=1.25.0" \
-            "openpyxl>=3.1.0,<4.0.0" \
-            "pytest>=9.0,<10.0" \
-            "pytest-asyncio"
       - name: Run full SparseRead suite
         env:
           PYTHONPATH: ${{ github.workspace }}/packages/sparseread-core/src:${{ github.workspace }}/integrations/nanobot/python/src:${{ github.workspace }}/integrations/opencode/python/src:${{ github.workspace }}/integrations/openclaw/python/src:${{ github.workspace }}/integrations/claude/python/src
-        run: .venv/bin/python -m pytest -q
+        run: uv run --project . --extra test pytest -q
 
   build:
     name: Build plugins and packages
@@ -71,14 +61,7 @@ jobs:
         with:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v5
-      - name: Install test dependencies
-        run: |
-          uv venv .venv
-          uv pip install --python .venv\Scripts\python.exe `
-            "pyyaml>=6.0,<7.0" `
-            "pytest>=9.0,<10.0" `
-            "pytest-asyncio"
       - name: Run installer tests (Windows command semantics)
         env:
           PYTHONPATH: ${{ github.workspace }}/packages/sparseread-core/src;${{ github.workspace }}/integrations/nanobot/python/src;${{ github.workspace }}/integrations/opencode/python/src;${{ github.workspace }}/integrations/openclaw/python/src;${{ github.workspace }}/integrations/claude/python/src
-        run: .venv\Scripts\python.exe -m pytest tests\test_install_sparseread.py tests\test_nanobot_driver.py -q
+        run: uv run --project . --extra test pytest tests\test_install_sparseread.py tests\test_nanobot_driver.py -q

@@ -13,7 +13,7 @@ Claude-specific bridge surface. Claude Code has no npm plugin system, so the
 ## Install
 
 ```bash
-python3 scripts/install_sparseread.py --platform claude \
+uv run --project . python scripts/install_sparseread.py --platform claude \
   --claude-workspace /path/to/your/project --doctor
 ```
 

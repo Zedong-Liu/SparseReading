@@ -1120,7 +1120,7 @@ def main() -> int:
                 "source_runtime": str(source_runtime(task)),
                 "run_dir": str(run_dir),
                 "opencode_version": framework_version,
-                "opencode_plugin_version": "0.1.0",
+                "opencode_plugin_version": "0.1.1",
                 "source_revision": revision,
                 "workspace_realpath": str((run_dir / "runtime").resolve()),
                 "opencode_profile_root": str(Path(args.opencode_profile_root).expanduser().resolve())

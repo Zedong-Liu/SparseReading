@@ -34,8 +34,8 @@ For users who already have OpenCode or OpenClaw installed, use the installer
 from the repository root:
 
 ```bash
-python3 scripts/install_sparseread.py --platform opencode --opencode-workspace /path/to/project --doctor
-python3 scripts/install_sparseread.py --platform openclaw --doctor
+uv run --project . python scripts/install_sparseread.py --platform opencode --opencode-workspace /path/to/project --doctor
+uv run --project . python scripts/install_sparseread.py --platform openclaw --doctor
 ```
 
 The installer creates a managed Python runtime containing `sparseread-core`

@@ -83,31 +83,36 @@ import from this checkout at runtime.
 Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), Node.js 22+
 for OpenCode/OpenClaw, and the target agent CLI.
 
+The installer validates the selected Python before changing a workspace. If the
+shell's default Python is too old, use the documented `uv run` form above or
+pass `--python /path/to/python3.12`; PDF/XLSX readers are installed by default,
+and `--reader-extras none` is available for text-only installations.
+
 ```bash
 git clone https://github.com/Zedong-Liu/SparseReading.git
 cd SparseReading
 
 # Verify the core, adapters, bridge protocol, and release fixture first.
 PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integrations/opencode/python/src:integrations/openclaw/python/src:integrations/claude/python/src" \
-  uv run --with pytest --with pytest-asyncio pytest tests/test_release_fixtures.py -q
+  uv run --project . --extra test pytest tests/test_release_fixtures.py -q
 ```
 
 Choose one integration:
 
 ```bash
 # OpenCode: install into an existing workspace
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform opencode \
   --opencode-workspace /path/to/your/project \
   --doctor
 
 # OpenClaw: install into the current OpenClaw profile
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform openclaw \
   --doctor
 
 # Claude Code: install MCP and session hooks into a workspace
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform claude \
   --claude-workspace /path/to/your/project \
   --doctor
@@ -188,7 +193,7 @@ Run the full release suite:
 
 ```bash
 PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integrations/opencode/python/src:integrations/openclaw/python/src:integrations/claude/python/src" \
-  uv run --with pytest --with pytest-asyncio pytest -q
+  uv run --project . --extra test pytest -q
 ```
 
 Build the Python distributions and JavaScript plugins through the same CI path:
@@ -207,7 +212,7 @@ integration.
 
 ## Release scope and limitations
 
-- The current baseline is `v0.1.0` and is installable from source.
+- The current baseline is `v0.1.1` and is installable from source.
 - PyPI, npm, and official framework-marketplace publishing are not wired yet;
   the source installer is the supported distribution path today.
 - Claude Code is supported through MCP and session hooks. Its Windows MCP path

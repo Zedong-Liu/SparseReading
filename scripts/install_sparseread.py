@@ -21,6 +21,7 @@ CLAUDE_ADAPTER = ROOT / "integrations" / "claude" / "python"
 OPENCODE_PLUGIN = ROOT / "integrations" / "opencode" / "plugin"
 OPENCLAW_PLUGIN = ROOT / "integrations" / "openclaw" / "plugin"
 BRIDGE_PROTOCOL_VERSION = "1.0"
+MIN_PYTHON = (3, 11)
 WINDOWS_COMMAND_SUFFIXES = (".cmd", ".exe", ".bat")
 # .cmd files (e.g. npm.CMD) are batch scripts but subprocess.run() on Windows
 # can launch them via the full path returned by shutil.which().  Only .bat
@@ -38,6 +39,7 @@ CLAUDE_RUNTIME_TOOLS = (
     "sro_preflight",
     "sro_usage",
 )
+READER_DEPENDENCIES = ("pymupdf>=1.25.0", "openpyxl>=3.1.0,<4.0.0")
 
 
 @dataclass(frozen=True)
@@ -121,6 +123,72 @@ def require_command(name: str, *, install_hint: str = "") -> str:
                 return path
     suffix = f" {install_hint}" if install_hint else ""
     raise SystemExit(f"missing required command: {name}.{suffix}")
+
+
+def python_version(python: str) -> tuple[int, int]:
+    """Return the major/minor version for an interpreter selected by the user."""
+    try:
+        proc = subprocess.run(
+            [python, "-c", "import sys; print(sys.version_info[0], sys.version_info[1])"],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except OSError as exc:
+        raise SystemExit(f"cannot execute Python interpreter {python!r}: {exc}") from exc
+    if proc.returncode != 0:
+        raise SystemExit(
+            f"cannot inspect Python interpreter {python!r}.\n"
+            f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+        )
+    try:
+        major, minor = (int(part) for part in proc.stdout.strip().split()[:2])
+    except (ValueError, TypeError) as exc:
+        raise SystemExit(f"Python interpreter {python!r} returned an invalid version: {proc.stdout!r}") from exc
+    return major, minor
+
+
+def resolve_python(python: str | None = None) -> str:
+    """Select a compatible interpreter before creating any managed runtime."""
+    requested = python or sys.executable
+    version = python_version(requested)
+    if version >= MIN_PYTHON:
+        return requested
+    if python:
+        raise SystemExit(
+            f"SparseRead requires Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+. "
+            f"The selected interpreter {requested!r} is Python {version[0]}.{version[1]}."
+        )
+
+    uv_path = shutil.which("uv")
+    if uv_path:
+        probe = subprocess.run(
+            [uv_path, "python", "find", "3.12"],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        candidates = [line.strip() for line in probe.stdout.splitlines() if line.strip()]
+        if probe.returncode == 0 and candidates:
+            candidate = candidates[-1]
+            candidate_version = python_version(candidate)
+            if candidate_version >= MIN_PYTHON:
+                print(
+                    f"[install] current Python is {version[0]}.{version[1]}; "
+                    f"using uv-managed Python {candidate}"
+                )
+                return candidate
+
+    raise SystemExit(
+        f"SparseRead requires Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+. "
+        f"The current interpreter is Python {version[0]}.{version[1]}. "
+        "Install a compatible interpreter with `uv python install 3.12`, then "
+        "rerun with `--python <path>` if it is not discoverable."
+    )
 
 
 def command_spec(name: str, *, install_hint: str = "") -> CommandSpec:
@@ -220,10 +288,16 @@ def merge_json(path: Path, patch: dict[str, object], *, dry_run: bool) -> None:
     if path.exists():
         try:
             existing = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(existing, dict):
-                payload = existing
-        except (OSError, json.JSONDecodeError):
-            payload = {}
+        except OSError as exc:
+            raise SystemExit(f"cannot read existing JSON config {path}: {exc}") from exc
+        except json.JSONDecodeError as exc:
+            raise SystemExit(
+                f"existing JSON config is invalid: {path}. "
+                "Fix or back up the file before running the installer again."
+            ) from exc
+        if not isinstance(existing, dict):
+            raise SystemExit(f"existing JSON config must contain an object: {path}")
+        payload = existing
     for key, value in patch.items():
         if key == "hooks" and isinstance(value, dict) and isinstance(payload.get("hooks"), dict):
             hooks = dict(payload["hooks"])
@@ -250,8 +324,7 @@ def merge_json(path: Path, patch: dict[str, object], *, dry_run: bool) -> None:
             payload["enabledMcpjsonServers"] = merged
         else:
             payload[key] = value
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_json(path, payload, ensure_ascii=False)
 
 
 def opencode_workspace_config(workspace: Path, python: Path, policy: str, mode: str) -> dict[str, object]:
@@ -265,8 +338,31 @@ def opencode_workspace_config(workspace: Path, python: Path, policy: str, mode: 
     }
 
 
-def write_json(path: Path, payload: dict[str, object]) -> None:
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+def write_text_atomic(path: Path, content: str) -> None:
+    """Write a file beside its destination, then replace it atomically."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(content)
+        os.replace(temporary, path)
+    except OSError as exc:
+        raise SystemExit(f"cannot write {path}: {exc}") from exc
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink(missing_ok=True)
+
+
+def write_json(path: Path, payload: dict[str, object], *, ensure_ascii: bool = True) -> None:
+    write_text_atomic(path, json.dumps(payload, ensure_ascii=ensure_ascii, indent=2) + "\n")
 
 
 def read_json(path: Path) -> dict[str, object]:
@@ -378,7 +474,8 @@ def npm_install_and_build(plugin_dir: Path, *, dry_run: bool) -> None:
 
 def npm_pack(plugin_dir: Path, destination: Path, *, dry_run: bool) -> Path:
     npm_cmd = command_spec("npm")
-    destination.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        destination.mkdir(parents=True, exist_ok=True)
     proc = run(
         npm_cmd.argv("pack", "--json", "--pack-destination", str(destination)),
         cwd=plugin_dir,
@@ -403,7 +500,10 @@ def install_python_runtime(
     *,
     python: str,
     dry_run: bool,
+    reader_extras: str = "all",
 ) -> Path:
+    if reader_extras not in {"all", "none"}:
+        raise SystemExit(f"invalid reader extras selection: {reader_extras}")
     uv_cmd = command_spec("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
     managed_python = runtime_python(runtime_dir)
     run(uv_cmd.argv("venv", str(runtime_dir), "--python", python), dry_run=dry_run)
@@ -417,19 +517,17 @@ def install_python_runtime(
             wheels = sorted(wheel_dir.glob("*.whl"))
             if len(wheels) != 2:
                 raise SystemExit(f"expected core and adapter wheels, found: {wheels}")
-        run(
-            uv_cmd.argv(
-                "pip",
-                "install",
-                "--force-reinstall",
-                "--python",
-                str(managed_python),
-                *(str(wheel) for wheel in wheels),
-                "pymupdf>=1.25.0",
-                "openpyxl>=3.1.0,<4.0.0",
-            ),
-            dry_run=dry_run,
-        )
+        install_args = [
+            "pip",
+            "install",
+            "--force-reinstall",
+            "--python",
+            str(managed_python),
+            *(str(wheel) for wheel in wheels),
+        ]
+        if reader_extras == "all":
+            install_args.extend(READER_DEPENDENCIES)
+        run(uv_cmd.argv(*install_args), dry_run=dry_run)
     return managed_python
 
 
@@ -458,8 +556,9 @@ def install_opencode(args: argparse.Namespace) -> None:
     managed_python = install_python_runtime(
         opencode_runtime_dir(workspace),
         OPENCODE_ADAPTER,
-        python=getattr(args, "python", sys.executable),
+        python=getattr(args, "python", None) or sys.executable,
         dry_run=args.dry_run,
+        reader_extras=getattr(args, "reader_extras", "all"),
     )
     install_opencode_plugin_file(plugin_target, dry_run=args.dry_run)
     print(f"[opencode] install workspace: {workspace}")
@@ -477,8 +576,9 @@ def install_claude(args: argparse.Namespace) -> None:
     managed_python = install_python_runtime(
         claude_runtime_dir(),
         CLAUDE_ADAPTER,
-        python=getattr(args, "python", sys.executable),
+        python=getattr(args, "python", None) or sys.executable,
         dry_run=args.dry_run,
+        reader_extras=getattr(args, "reader_extras", "all"),
     )
     print(f"[claude] install workspace: {workspace}")
     if not args.dry_run:
@@ -496,7 +596,7 @@ def install_claude(args: argparse.Namespace) -> None:
         if not claude_md.exists():
             template = ROOT / "integrations" / "claude" / "CLAUDE.md"
             if template.exists():
-                claude_md.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
+                write_text_atomic(claude_md, template.read_text(encoding="utf-8"))
         else:
             print(
                 "[claude] CLAUDE.md already exists; copy SRO guidance from "
@@ -516,8 +616,9 @@ def install_openclaw(args: argparse.Namespace) -> None:
     managed_python = install_python_runtime(
         openclaw_runtime_dir(args.openclaw_profile),
         OPENCLAW_ADAPTER,
-        python=getattr(args, "python", sys.executable),
+        python=getattr(args, "python", None) or sys.executable,
         dry_run=args.dry_run,
+        reader_extras=getattr(args, "reader_extras", "all"),
     )
     profile_args = ["--profile", args.openclaw_profile] if args.openclaw_profile else []
     hook_policy: dict[str, bool] = {}
@@ -531,20 +632,19 @@ def install_openclaw(args: argparse.Namespace) -> None:
         dry_run=args.dry_run,
     )
     pack_dir = openclaw_runtime_dir(args.openclaw_profile).parent / "pack"
-    pack_dir.mkdir(parents=True, exist_ok=True)
     tarball = npm_pack(OPENCLAW_PLUGIN, pack_dir, dry_run=args.dry_run)
-    run(
-        openclaw_cmd.argv(*profile_args, "plugins", "install", str(tarball)),
-        check=False,
-        dry_run=args.dry_run,
-    )
-    if not args.dry_run:
-        tarball.unlink(missing_ok=True)
-    run(
-        openclaw_cmd.argv(*profile_args, "plugins", "enable", "sparseread-openclaw"),
-        check=False,
-        dry_run=args.dry_run,
-    )
+    try:
+        run(
+            openclaw_cmd.argv(*profile_args, "plugins", "install", str(tarball)),
+            dry_run=args.dry_run,
+        )
+        run(
+            openclaw_cmd.argv(*profile_args, "plugins", "enable", "sparseread-openclaw"),
+            dry_run=args.dry_run,
+        )
+    finally:
+        if not args.dry_run:
+            tarball.unlink(missing_ok=True)
     run(openclaw_cmd.argv(*profile_args, "plugins", "registry", "--refresh", "--json"), dry_run=args.dry_run)
     patch = {
         "plugins": {
@@ -622,14 +722,16 @@ def bridge_smoke(python: Path, module: str, *, dry_run: bool) -> None:
 def doctor(args: argparse.Namespace) -> None:
     profile = install_profile(args)
     command_spec("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
-    command_spec("node")
-    command_spec("npm")
     if args.platform in {"opencode", "both"}:
+        command_spec("node")
+        command_spec("npm")
         command_spec(args.opencode_cmd)
         bridge_smoke(runtime_python(opencode_runtime_dir(Path(args.opencode_workspace or os.getcwd()).expanduser().resolve())), "sparseread_opencode.bridge", dry_run=args.dry_run)
         if not args.dry_run:
             validate_opencode_workspace(Path(args.opencode_workspace or os.getcwd()).expanduser().resolve())
     if args.platform in {"openclaw", "both"}:
+        command_spec("node")
+        command_spec("npm")
         openclaw_cmd = command_spec(args.openclaw_cmd)
         bridge_smoke(runtime_python(openclaw_runtime_dir(args.openclaw_profile)), "sparseread_openclaw.bridge", dry_run=args.dry_run)
         if not args.dry_run:
@@ -646,7 +748,25 @@ def doctor(args: argparse.Namespace) -> None:
                 )
             validate_openclaw_runtime(inspect.stdout, hook_mode=profile.openclaw_hook_mode)
     if args.platform == "claude":
+        command_spec(getattr(args, "claude_cmd", "claude"))
         bridge_smoke(runtime_python(claude_runtime_dir()), "sparseread_claude.bridge", dry_run=args.dry_run)
+
+
+def preflight(args: argparse.Namespace) -> None:
+    """Validate every command and interpreter before mutating a target."""
+    command_spec("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
+    args.python = resolve_python(getattr(args, "python", None))
+    if args.platform in {"opencode", "both"}:
+        if not args.skip_build:
+            command_spec("node")
+            command_spec("npm")
+        command_spec(args.opencode_cmd)
+    if args.platform in {"openclaw", "both"}:
+        command_spec("node")
+        command_spec("npm")
+        command_spec(args.openclaw_cmd)
+    if args.platform == "claude":
+        command_spec(getattr(args, "claude_cmd", "claude"))
 
 
 def parse_args() -> argparse.Namespace:
@@ -662,7 +782,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--openclaw-profile", default="", help="Optional OpenClaw profile name")
     parser.add_argument("--openclaw-workspace", default="", help="Optional OpenClaw default SparseRead workspaceRoot")
     parser.add_argument("--claude-workspace", default="", help="Workspace to receive the Claude Code SRO config")
-    parser.add_argument("--python", default=sys.executable, help="Python used to create the managed SparseRead runtime")
+    parser.add_argument("--claude-cmd", default="claude", help="Claude Code executable used for preflight/doctor")
+    parser.add_argument(
+        "--python",
+        default=None,
+        help="Python used to create the managed SparseRead runtime (defaults to a compatible interpreter)",
+    )
+    parser.add_argument(
+        "--reader-extras",
+        choices=["all", "none"],
+        default="all",
+        help="Install PDF/XLSX reader dependencies (default: all; use none for text-only installs)",
+    )
     parser.add_argument(
         "--sparseread-mode",
         choices=["auto", "advisory"],
@@ -704,6 +835,7 @@ def main() -> int:
     if args.doctor_only:
         doctor(args)
         return 0
+    preflight(args)
     if args.platform in {"opencode", "both"}:
         install_opencode(args)
     if args.platform in {"openclaw", "both"}:

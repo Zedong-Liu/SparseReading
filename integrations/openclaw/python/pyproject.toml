@@ -1,6 +1,6 @@
 [project]
 name = "sparseread-openclaw"
-version = "0.1.0"
+version = "0.1.1"
 description = "OpenClaw bridge adapter for SparseRead"
 readme = "README.md"
 requires-python = ">=3.11"

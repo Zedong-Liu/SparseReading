@@ -49,7 +49,7 @@ Use the source installer from the repository root when OpenCode is already
 installed:
 
 ```bash
-python3 scripts/install_sparseread.py \
+uv run --project . python scripts/install_sparseread.py \
   --platform opencode \
   --opencode-workspace /path/to/project \
   --doctor
@@ -64,7 +64,7 @@ opencode run "Use SparseRead to inspect the large report"
 
 The installer now writes `.opencode/sparseread.json` as the persistent workspace
 config, so production launch no longer depends on shell-specific `source`
-activation. On Windows, use PowerShell and run `py scripts/install_sparseread.py ...`.
+activation. On Windows, use PowerShell and run `uv run --project . python scripts/install_sparseread.py ...`.
 
 ## Runner
 
