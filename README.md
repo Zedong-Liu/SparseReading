@@ -67,9 +67,10 @@ reader backends in three frameworks:
 | [OpenCode](integrations/opencode/) | `sparseread-opencode` | **71.8%** | **64.9%** | Evaluated |
 | [OpenClaw](integrations/openclaw/) | `sparseread-openclaw` | **28.7%** | **28.2%** | Evaluated |
 | [Claude Code](integrations/claude/) | `sparseread-claude` | — | — | Supported in this release |
+| [Codex](docs/codex-pi-adapters.md) | MCP + plugin hooks/skill | — | — | Source adapter; not paper-benchmarked |
+| [Pi](docs/codex-pi-adapters.md) | `@sparseread/pi` extension | — | — | Source adapter; not paper-benchmarked |
 
-Claude Code is the fourth supported integration in the single-repository
-release. It uses MCP plus `PreToolUse`/`PostToolUse` session hooks rather than
+Claude Code uses MCP plus `PreToolUse`/`PostToolUse` session hooks rather than
 an npm plugin. The local Claude Code validation report is available at
 [`benchmarks/qwenclawbench/claude_final_aggregate_20260805.md`](benchmarks/qwenclawbench/claude_final_aggregate_20260805.md);
 it is not part of the three-framework table in the paper.
@@ -81,7 +82,7 @@ runtime for the selected framework, so the installed integration does not
 import from this checkout at runtime.
 
 Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), Node.js 22+
-for OpenCode/OpenClaw, and the target agent CLI.
+for OpenCode/OpenClaw/Codex/Pi, and the target agent CLI.
 
 The installer validates the selected Python before changing a workspace. If the
 shell's default Python is too old, use the documented `uv run` form above or
@@ -98,6 +99,20 @@ PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integra
 ```
 
 Choose one integration:
+
+Codex and Pi use the same core with project-scoped frontend adapters:
+
+```bash
+uv run --python 3.12 python scripts/install_sparseread.py \
+  --platform codex --workspace /absolute/path/to/project --doctor
+uv run --python 3.12 python scripts/install_sparseread.py \
+  --platform pi --workspace /absolute/path/to/project --doctor
+```
+
+Restart in the target project and review the host's trust prompt. Codex hook
+trust is separate from installation; Pi project extensions also require review.
+Use `--sparseread-mode advisory` for tools/guidance without native-read blocking.
+See [design, setup, recovery, and limitations](docs/codex-pi-adapters.md).
 
 ```bash
 # OpenCode: install into an existing workspace

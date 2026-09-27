@@ -29,6 +29,7 @@ def test_core_has_no_framework_imports() -> None:
             "sparseread_opencode",
             "sparseread_openclaw",
             "sparseread_claude",
+            "sparseread_agent_tools",
             "mcp",
         }
         & imported_roots(CORE_SOURCE)
@@ -68,3 +69,21 @@ def test_javascript_plugins_are_publishable_and_versioned() -> None:
 def test_release_has_one_canonical_framework_source() -> None:
     assert not (ROOT / "opencode_pilot").exists()
     assert not (ROOT / "openclaw_pilot").exists()
+
+
+def test_host_transport_is_an_independent_core_only_adapter() -> None:
+    package = ROOT / "integrations/agent-tools/python"
+    metadata = tomllib.loads((package / "pyproject.toml").read_text())
+    assert metadata["project"]["name"] == "sparseread-agent-tools"
+    assert metadata["project"]["dependencies"] == ["sparseread-core>=0.1,<0.2", "mcp>=1.26,<2.0"]
+    assert not ({"sparseread_claude", "sparseread_opencode", "sparseread_openclaw", "sparseread_nanobot"} & imported_roots(package / "src"))
+
+
+def test_pi_package_ships_source_without_a_second_host_sdk() -> None:
+    package = json.loads((ROOT / "integrations/pi/package/package.json").read_text())
+    assert package["name"] == "@sparseread/pi"
+    assert package["version"] == "0.1.1"
+    assert package["pi"]["extensions"] == ["./src/index.ts"]
+    assert "pi-package" in package["keywords"]
+    assert not package.get("dependencies")
+    assert "@earendil-works/pi-coding-agent" in package["peerDependencies"]

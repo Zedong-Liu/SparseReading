@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +21,9 @@ CORE_PACKAGE = ROOT / "packages" / "sparseread-core"
 OPENCODE_ADAPTER = ROOT / "integrations" / "opencode" / "python"
 OPENCLAW_ADAPTER = ROOT / "integrations" / "openclaw" / "python"
 CLAUDE_ADAPTER = ROOT / "integrations" / "claude" / "python"
+HOST_ADAPTER = ROOT / "integrations" / "agent-tools" / "python"
+CODEX_PLUGIN = ROOT / "integrations" / "codex" / "plugin" / "sparseread-codex"
+PI_PLUGIN = ROOT / "integrations" / "pi" / "package"
 OPENCODE_PLUGIN = ROOT / "integrations" / "opencode" / "plugin"
 OPENCLAW_PLUGIN = ROOT / "integrations" / "openclaw" / "plugin"
 BRIDGE_PROTOCOL_VERSION = "1.0"
@@ -531,6 +537,168 @@ def install_python_runtime(
     return managed_python
 
 
+def host_workspace(args: argparse.Namespace) -> Path:
+    return Path(args.workspace or os.getcwd()).expanduser().resolve()
+
+
+def codex_project_payloads(workspace: Path) -> tuple[dict, str, str]:
+    """Merge only our marketplace entry and append an isolated TOML table."""
+    marketplace_file = workspace / ".agents" / "plugins" / "marketplace.json"
+    payload = read_json(marketplace_file) if marketplace_file.exists() else {
+        "name": "sparseread-" + hashlib.sha256(str(workspace).encode()).hexdigest()[:12],
+        "plugins": [],
+    }
+    name = payload.get("name")
+    entries = payload.get("plugins")
+    if not isinstance(name, str) or not name or not isinstance(entries, list):
+        raise SystemExit(f"Invalid Codex marketplace: {marketplace_file}")
+    entry = {
+        "name": "sparseread-codex",
+        "source": {"source": "local", "path": "./.sparseread/codex/sparseread-codex"},
+        "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+        "category": "Productivity",
+    }
+    existing = [item for item in entries if isinstance(item, dict) and item.get("name") == entry["name"]]
+    if existing and any(item.get("source") != entry["source"] for item in existing):
+        raise SystemExit("A different sparseread-codex marketplace entry already exists; refusing to overwrite it.")
+    if not existing:
+        entries.append(entry)
+    config = workspace / ".codex" / "config.toml"
+    text = config.read_text(encoding="utf-8") if config.exists() else ""
+    try:
+        parsed = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise SystemExit(f"Cannot merge invalid Codex config {config}: {exc}") from exc
+    key = f"sparseread-codex@{name}"
+    plugins = parsed.get("plugins", {})
+    if not isinstance(plugins, dict):
+        raise SystemExit(f"Codex plugins config must be a table: {config}")
+    if key not in plugins:
+        text += f'\n# SparseRead project adapter (hooks still require explicit trust).\n[plugins.{json.dumps(key)}]\nenabled = true\n'
+        try:
+            tomllib.loads(text)
+        except tomllib.TOMLDecodeError as exc:
+            raise SystemExit(f"Cannot safely append to {config}; use a plugins table instead of an inline table: {exc}") from exc
+    elif not isinstance(plugins[key], dict) or plugins[key].get("enabled") is not True:
+        print("[install] Existing Codex plugin disabled setting preserved; enable it manually when ready.")
+    return payload, text, key
+
+
+def validate_host_destination(args: argparse.Namespace) -> None:
+    workspace = host_workspace(args)
+    if not workspace.is_dir():
+        raise SystemExit(f"Workspace must already exist: {workspace}")
+    plugin = workspace / ".sparseread" / args.platform / f"sparseread-{args.platform}"
+    destinations = [plugin]
+    if args.platform == "codex":
+        destinations += [workspace / ".agents/plugins/marketplace.json", workspace / ".codex/config.toml"]
+    else:
+        destinations.append(workspace / ".pi/settings.json")
+    for destination in destinations:
+        current = destination
+        while current != workspace:
+            if current.is_symlink():
+                raise SystemExit(f"Refusing a symlinked installation destination: {current}")
+            current = current.parent
+    # copytree follows pre-existing links in child directories/files as well.
+    # Inspect only the owned plugin tree, not runtime venvs (which use symlinks).
+    if plugin.is_dir():
+        for child in plugin.rglob("*"):
+            if child.is_symlink():
+                raise SystemExit(f"Refusing a symlink inside the installation destination: {child}")
+    if args.platform == "codex":
+        codex_project_payloads(workspace)
+    else:
+        settings = workspace / ".pi" / "settings.json"
+        if settings.exists():
+            try:
+                read_json(settings)
+            except (OSError, json.JSONDecodeError) as exc:
+                raise SystemExit(f"Cannot merge Pi settings {settings}: {exc}") from exc
+    if plugin.exists() and not (plugin / ".sparseread-runtime.json").is_file():
+        raise SystemExit(f"Unmanaged plugin directory exists, refusing to overwrite: {plugin}")
+
+
+def install_host(args: argparse.Namespace) -> None:
+    validate_host_destination(args)
+    workspace = host_workspace(args)
+    root = workspace / ".sparseread" / args.platform
+    target = root / f"sparseread-{args.platform}"
+    # A new generation keeps the prior installed runtime intact if building fails.
+    if args.dry_run:
+        runtime = root / "runtime-new"
+    else:
+        root.mkdir(parents=True, exist_ok=True)
+        runtime = Path(tempfile.mkdtemp(prefix="runtime-", dir=root)) / "venv"
+    python = install_python_runtime(runtime, HOST_ADAPTER, python=args.python,
+                                    dry_run=args.dry_run, reader_extras=args.reader_extras)
+    source = CODEX_PLUGIN if args.platform == "codex" else PI_PLUGIN
+    if args.dry_run:
+        print(f"[dry-run] Copy packaged plugin {source} -> {target}")
+    else:
+        shutil.copytree(source, target, dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns("node_modules", "tests", "test", "__pycache__", "package-lock.json", "tsconfig.json"))
+        write_json(target / ".sparseread-runtime.json", {
+            "python": str(python), "workspace": str(workspace),
+            "mode": args.sparseread_mode, "protocol": BRIDGE_PROTOCOL_VERSION,
+        })
+        if args.platform == "codex":
+            # MCP config is not a shell: hook env placeholders are not portable
+            # across Codex clients here. Use the persistent managed install path.
+            node = require_command("node")
+            launcher = str(target / "scripts" / "launcher.mjs")
+            write_json(target / ".mcp.json", {"mcpServers": {"sparseread": {
+                "command": node,
+                "args": [launcher, "mcp"],
+            }}})
+            hooks_path = target / "hooks" / "hooks.json"
+            hooks = read_json(hooks_path)
+            for event, flag in (("PreToolUse", "--hook"), ("SessionStart", "--session-start")):
+                for group in hooks["hooks"].get(event, []):
+                    for hook in group.get("hooks", []):
+                        if hook.get("type") == "command":
+                            hook["command"] = shlex.join([node, launcher, flag])
+                            hook["commandWindows"] = subprocess.list2cmdline([node, launcher, flag])
+            write_json(hooks_path, hooks)
+            manifest_path = target / ".codex-plugin" / "plugin.json"
+            manifest = read_json(manifest_path)
+            base_version = str(manifest["version"]).split("+", 1)[0]
+            # Codex caches local packages by version. A reinstall/mode switch must
+            # not retain the previous runtime/hook configuration from that cache.
+            install_id = hashlib.sha256(str(python).encode()).hexdigest()[:12]
+            manifest["version"] = f"{base_version}+local.{install_id}"
+            write_json(manifest_path, manifest)
+    if args.platform == "codex":
+        payload, config, key = codex_project_payloads(workspace)
+        if not args.dry_run:
+            write_json(workspace / ".agents" / "plugins" / "marketplace.json", payload)
+            write_text_atomic(workspace / ".codex" / "config.toml", config)
+        print(f"[install] Codex project plugin: {key}. Restart in this trusted project; review/trust bundled hooks before auto interception.")
+        print("[install] No personal Codex config was changed. MCP/skill availability and hook trust are separate.")
+    else:
+        run(command_spec(args.pi_cmd).argv("install", "--local", str(target)), cwd=workspace, dry_run=args.dry_run)
+        print("[install] Pi project package registered. Restart or /reload; approve project extensions only after review.")
+    print(f"[install] Self-contained runtime: {python}. Previous runtime generations are retained for rollback.")
+
+
+def doctor_host(args: argparse.Namespace) -> None:
+    workspace = host_workspace(args)
+    target = workspace / ".sparseread" / args.platform / f"sparseread-{args.platform}"
+    if args.dry_run:
+        print(f"[dry-run] Validate {target} and its installed transport")
+        return
+    config = read_json(target / ".sparseread-runtime.json")
+    if config.get("workspace") != str(workspace) or config.get("protocol") != BRIDGE_PROTOCOL_VERSION:
+        raise SystemExit(f"Unexpected runtime configuration: {target}")
+    python = config.get("python")
+    if not isinstance(python, str) or not Path(python).is_file():
+        raise SystemExit(f"Installed interpreter is missing: {python}")
+    result = run([python, "-m", "sparseread_agent_tools.doctor", "--host", args.platform,
+                  "--workspace", str(workspace), "--mode", str(config.get("mode", "auto"))], cwd=workspace)
+    print(result.stdout.strip())
+    print("[doctor] Transport passed; host project trust/extension trust and Codex hook trust must still be verified in the host UI.")
+
+
 def install_opencode_plugin_file(plugin_target: Path, *, dry_run: bool) -> None:
     """Copy the pre-built plugin dist file directly into the OpenCode plugins dir.
 
@@ -722,6 +890,10 @@ def bridge_smoke(python: Path, module: str, *, dry_run: bool) -> None:
 def doctor(args: argparse.Namespace) -> None:
     profile = install_profile(args)
     command_spec("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
+    if args.platform in {"codex", "pi"}:
+        command_spec(args.codex_cmd if args.platform == "codex" else args.pi_cmd)
+        doctor_host(args)
+        return
     if args.platform in {"opencode", "both"}:
         command_spec("node")
         command_spec("npm")
@@ -756,6 +928,12 @@ def preflight(args: argparse.Namespace) -> None:
     """Validate every command and interpreter before mutating a target."""
     command_spec("uv", install_hint="Install uv first: https://docs.astral.sh/uv/")
     args.python = resolve_python(getattr(args, "python", None))
+    if args.platform in {"codex", "pi"}:
+        command_spec("node")
+        cli = command_spec(args.codex_cmd if args.platform == "codex" else args.pi_cmd)
+        if args.platform == "codex":
+            run(cli.argv("plugin", "list", "--help"))
+        validate_host_destination(args)
     if args.platform in {"opencode", "both"}:
         if not args.skip_build:
             command_spec("node")
@@ -773,7 +951,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Install self-contained SparseRead framework adapters.")
     parser.add_argument(
         "--platform",
-        choices=["opencode", "openclaw", "claude", "both"],
+        choices=["opencode", "openclaw", "claude", "codex", "pi", "both"],
         default="both",
     )
     parser.add_argument("--opencode-workspace", default="", help="Workspace to receive the OpenCode SparseRead plugin")
@@ -783,6 +961,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--openclaw-workspace", default="", help="Optional OpenClaw default SparseRead workspaceRoot")
     parser.add_argument("--claude-workspace", default="", help="Workspace to receive the Claude Code SRO config")
     parser.add_argument("--claude-cmd", default="claude", help="Claude Code executable used for preflight/doctor")
+    parser.add_argument("--workspace", default="", help="Existing project to receive the Codex or Pi adapter")
+    parser.add_argument("--codex-cmd", default="codex", help="Codex executable used for preflight/doctor")
+    parser.add_argument("--pi-cmd", default="pi", help="Pi executable used for project package registration")
     parser.add_argument(
         "--python",
         default=None,
@@ -842,6 +1023,8 @@ def main() -> int:
         install_openclaw(args)
     if args.platform == "claude":
         install_claude(args)
+    if args.platform in {"codex", "pi"}:
+        install_host(args)
     if args.doctor:
         doctor(args)
     return 0

@@ -1,5 +1,19 @@
 # SparseRead
 
+Codex / Pi 框架适配已加入源码安装入口：
+
+```bash
+uv run --python 3.12 python scripts/install_sparseread.py \
+  --platform codex --workspace /absolute/path/to/project --doctor
+uv run --python 3.12 python scripts/install_sparseread.py \
+  --platform pi --workspace /absolute/path/to/project --doctor
+```
+
+安装后在目标项目重启并审核信任提示。Codex 的 hook 信任与插件安装是分开的；
+Pi 项目扩展也需用户批准。加 `--sparseread-mode advisory` 可仅使用工具/提示而不
+拦截原生读取。两端复用未修改的核心，尚不代表论文外的新框架收益实测。
+详见[适配设计、安装与回退](docs/codex-pi-adapters.md)。
+
 <div align="center">
 
 **少读一点，解决更多。**

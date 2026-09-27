@@ -42,6 +42,13 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Validate Pi extension
+        working-directory: integrations/pi/package
+        run: |
+          npm ci --ignore-scripts
+          npm run typecheck
+          npm test
+          npm pack --dry-run
       - uses: astral-sh/setup-uv@v5
       - name: Build Python packages
         run: |
@@ -50,6 +57,7 @@ jobs:
           for adapter in nanobot opencode openclaw claude; do
             uv build --project "integrations/$adapter/python" --out-dir dist
           done
+          uv build --project integrations/agent-tools/python --out-dir dist
           ls -la dist
 
   windows-install-tests:
@@ -64,4 +72,4 @@ jobs:
       - name: Run installer tests (Windows command semantics)
         env:
           PYTHONPATH: ${{ github.workspace }}/packages/sparseread-core/src;${{ github.workspace }}/integrations/nanobot/python/src;${{ github.workspace }}/integrations/opencode/python/src;${{ github.workspace }}/integrations/openclaw/python/src;${{ github.workspace }}/integrations/claude/python/src
-        run: uv run --project . --extra test pytest tests\test_install_sparseread.py tests\test_nanobot_driver.py -q
+        run: uv run --project . --extra test pytest tests\test_install_sparseread.py tests\test_host_install.py tests\test_nanobot_driver.py -q

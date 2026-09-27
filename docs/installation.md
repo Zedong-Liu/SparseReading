@@ -8,9 +8,9 @@ framework. It does not require a framework checkout at runtime.
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
-- Node.js 22+ and npm for OpenCode or OpenClaw
+- Node.js 22+ for OpenCode/OpenClaw/Codex/Pi; npm for OpenCode/OpenClaw builds
 - Git
-- An installed OpenCode, OpenClaw, Claude Code, or NanoBot host
+- An installed OpenCode, OpenClaw, Claude Code, NanoBot, Codex, or Pi host
 
 Windows users should use PowerShell. The installer resolves `.cmd`, `.exe`, and
 `.bat` host commands automatically.
@@ -41,6 +41,21 @@ PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integra
 On PowerShell, replace the `:` separators in `PYTHONPATH` with `;`.
 
 ## Install an adapter
+
+Codex or Pi (project-scoped):
+
+```bash
+uv run --python 3.12 python scripts/install_sparseread.py \
+  --platform codex --workspace /path/to/your/project --doctor
+uv run --python 3.12 python scripts/install_sparseread.py \
+  --platform pi --workspace /path/to/your/project --doctor
+```
+
+Restart/reload in the project and review its trust prompt. Codex hook trust is
+separate from plugin installation; Pi project extensions also require approval.
+Use `--sparseread-mode advisory` for non-blocking guidance. Read the
+[Codex/Pi design and recovery notes](codex-pi-adapters.md) for tested host versions,
+cache-safe reinstalls, native fallback, and source-package limitations.
 
 OpenCode:
 

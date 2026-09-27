@@ -28,6 +28,12 @@ jobs:
           for adapter in nanobot opencode openclaw claude; do
             uv build --project "integrations/$adapter/python" --out-dir dist
           done
+          uv build --project integrations/agent-tools/python --out-dir dist
+      - name: Pack Codex plugin
+        run: tar -czf dist/sparseread-codex-plugin.tar.gz -C integrations/codex/plugin sparseread-codex
+      - name: Pack Pi extension
+        working-directory: integrations/pi/package
+        run: npm pack --pack-destination "$GITHUB_WORKSPACE/dist"
       - name: Build JavaScript plugin packages
         run: |
           npm ci
