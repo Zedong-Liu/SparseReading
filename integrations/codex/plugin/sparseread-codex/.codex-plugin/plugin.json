@@ -1,0 +1,21 @@
+{
+  "name": "sparseread-codex",
+  "version": "0.1.1",
+  "description": "SparseRead evidence tools and conservative read guidance for Codex.",
+  "author": {
+    "name": "SparseRead maintainers"
+  },
+  "license": "MIT",
+  "keywords": ["sparseread", "evidence", "reading", "codex"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "SparseRead",
+    "shortDescription": "Evidence first reading for Codex",
+    "longDescription": "Inspect large or structured project inputs through compact previews and targeted evidence, with conservative guidance for broad shell reads.",
+    "developerName": "SparseRead",
+    "category": "Developer tools",
+    "capabilities": ["Read"],
+    "defaultPrompt": ["Preview this large input, then read only relevant evidence."]
+  }
+}

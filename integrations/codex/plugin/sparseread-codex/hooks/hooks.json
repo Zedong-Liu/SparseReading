@@ -1,0 +1,32 @@
+{
+  "description": "SparseRead guidance for Codex. Review and trust these hooks before use.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/scripts/launcher.mjs\" --hook",
+            "commandWindows": "node \"%PLUGIN_ROOT%\\scripts\\launcher.mjs\" --hook",
+            "timeout": 20,
+            "statusMessage": "Checking for a broad unbounded read"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$PLUGIN_ROOT/scripts/launcher.mjs\" --session-start",
+            "commandWindows": "node \"%PLUGIN_ROOT%\\scripts\\launcher.mjs\" --session-start",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
