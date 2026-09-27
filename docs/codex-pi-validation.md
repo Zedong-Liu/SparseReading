@@ -15,6 +15,9 @@
 | wheel / npm 包边界 | host transport wheel 构建通过；Pi 包只含 src/README/package metadata |
 | 干净源码首次安装（目标路径含空格） | 从 Git archive 提取，无 dist/node_modules；Codex 和 Pi 完整安装 + doctor 通过 |
 | 核心改动检查 | packages/sparseread-core 无差异 |
+| 远端 CI（4072ed0） | Python 全套、Linux/Node22 插件构建、Windows 安装测试全部通过 |
+
+CI 记录：[36330352900](https://github.com/Zedong-Liu/SparseReading/actions/runs/36330352900)。
 
 两个实现子 agent 和独立审核 agent 均使用 `gpt-6-luna / max`。实现与审核角色
 分离；发现问题由主 agent 修复。审核结论见 [独立审核报告](codex-pi-review.md)。
@@ -41,8 +44,8 @@
 
 没有调用付费模型、没有新的质量/token/延迟 benchmark；不声称达到论文中其他
 框架的收益。没有修改用户个人配置、没有自动授予项目/插件/hook 信任。
-实际宿主验证运行于 macOS、Node24/Node22.23.3、Python3.12；已配置 Linux/Node22 CI 检查，
-但本阶段尚未在远端执行该 CI；
-本地尚未运行真实 Windows 宿主，也未对旧版 Codex/Pi 做兼容性承诺。
+实际宿主验证运行于 macOS、Node24/Node22.23.3、Python3.12；Linux/Node22 与
+Windows 安装单元测试的远端 CI 已通过。但尚未运行真实 Windows agent 宿主，
+也未对旧版 Codex/Pi 做兼容性承诺。
 Codex hook 信任的 UI 流程保留为用户操作；测试只验证定义发现与标准输入输出。
 本阶段未发布 npm/PyPI 包或更新既有 GitHub release。
