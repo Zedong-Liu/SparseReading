@@ -33,9 +33,27 @@ Pi 0.87.1、Node 24.15.0、Python 3.12。
 各 sparse 场景包含 preview → focus →（需要时 refine）→ bounded raw verification。
 四个已绑定对象和 23 个读取事件均出现在各自 `sro_trace` 中。JSONL 没有被包装
 成稀疏读取成功；native 场景的 `evidence_pass/raw_pass` 是 null。
+`native_source_oracle_pass` 只表示本地源文件包含预期内容，不表示执行了宿主
+原生读取。Pi 原生 SDK read 的实际执行由额外恢复检查单独验证；Codex 只验证
+路由和 Hook 契约，不声称测试了原生工具执行。
 逐项耗时见 [Codex 汇总](../results/host-replay-v012-codex.json) 和
 [Pi 汇总](../results/host-replay-v012-pi.json)。这些是一次本机样本，包含 lazy bridge
 启动成本，没有重复样本或统计显著性结论。
+
+为避免只计算证据文本，另计各场景所有工具返回的解析后 JSON 字符数（紧凑
+序列化，含 decide、preview、focus/refine、raw 核对；不含请求、传输封装、恢复
+检查或模型 token）。两个宿主包装不同，因此计数略有差异。
+
+| 场景 | 原文字符 | 工具调用数 | Codex 返回 JSON 字符 | Pi 返回 JSON 字符 |
+| --- | ---: | ---: | ---: | ---: |
+| 运行手册政策 | 45,576 | 5 | 9,119 | 9,314 |
+| 长开发记录超时 | 326,111 | 7 | 14,053 | 14,313 |
+| 移植总结缓存 | 8,578 | 4 | 8,865 | 9,060 |
+| 短故障日志 | 4,610 | 6 | 8,765 | 8,960 |
+
+长记录明显减少返回字符；8.6K 字符总结和 4.6K 字符日志的响应总量反而超过
+原文。不能据此宣称普遍节省 token；短文、精确行范围或全量需求可优先原生/
+有界读取。此次不修改核心阈值或 reader；工具合同正确与经济收益是两个验收项。
 
 ## 额外恢复与安全场景
 
@@ -62,6 +80,10 @@ Pi 0.87.1、Node 24.15.0、Python 3.12。
    通过原协议的 refine 找回证据；文档明确 focus 不是完整答案、原文核对仍重要。
 
 ## 复现
+
+发布候选回归：Python 254 项、Pi 19 项（含已安装 runtime，0 skipped）通过；
+Node 22 和 24 均通过，远端 CI 包含 Windows 安装单测。ZIP/tar.gz 精简源码包
+从干净环境安装两端并通过 doctor；正式 tag 仍需通过发布工作流。
 
 先按安装文档把两端安装到隔离项目，准备私有 cases JSON（不提交），字段：
 id（无隐私标签）、path（项目内路径）、goal、needles、expected、route；需要

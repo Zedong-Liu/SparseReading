@@ -88,8 +88,8 @@ npm/PyPI，也不修改已发布的 GitHub release。
 文件 selector 匹配原文行，目录 selector 选择子文件；旧会话的 raw_ref 必须
 重新 preview。JSONL 在当前核心中不受稀疏 reader 支持，保持原生工具路径。
 
-见 [本地真实记录回放报告](codex-pi-real-records.md) 和
-[v0.1.2 独立复核](codex-pi-v012-review.md)。
+见 [本地真实记录回放报告](https://github.com/Zedong-Liu/SparseReading/blob/v0.1.2/docs/codex-pi-real-records.md) 和
+[v0.1.2 独立复核](https://github.com/Zedong-Liu/SparseReading/blob/v0.1.2/docs/codex-pi-v012-review.md)。
 
 Codex：在目标项目重启，确认信任项目；在插件 UI 中审核并信任 SparseRead 的
 hook。Pi：重启或 `/reload`，审核后批准项目扩展。**安装器不自动授予信任。**

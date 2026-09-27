@@ -34,6 +34,8 @@ def test_partial_focus_followup_and_private_body_exclusion(tmp_path):
     report = replay.replay_case(call, case, tmp_path)
     assert report["initial_evidence_pass"] is False
     assert report["evidence_pass"] and report["raw_pass"] and report["anchors_pass"]
+    assert report["tool_calls"] == len(calls)
+    assert report["serialized_response_chars"] > report["evidence_chars"]
     rendered = json.dumps(report)
     assert all(private not in rendered for private in ["私有记录", "fixed", "Ada", "记录.md", str(tmp_path)])
     assert all("expected" not in params for _, params in calls)
@@ -44,7 +46,8 @@ def test_native_route_is_not_claimed_as_sparse_evidence(tmp_path):
     report = replay.replay_case(lambda *_: {"decision": {"mode": "native"}},
                                {"id": "native", "path": "session.jsonl", "expected": ["user"], "route": "native"}, tmp_path)
     assert report["evidence_pass"] is None and report["raw_pass"] is None
-    assert report["native_source_pass"]
+    assert report["native_source_oracle_pass"]
+    assert "native_source_pass" not in report
 
 
 def test_outside_target_and_invalid_oracle_fail_before_host_call(tmp_path):

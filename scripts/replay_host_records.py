@@ -67,13 +67,23 @@ def replay_case(call, case, workspace):
     expected = case["expected"]
     if not expected or not all(term in source for term in expected):
         raise ValueError("case expectations must exist in the local source")
+    transport_call = call
+    response_chars = 0
+    tool_calls = 0
+    def call(name, params):
+        nonlocal response_chars, tool_calls
+        response = transport_call(name, params)
+        response_chars += len(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
+        tool_calls += 1
+        return response
     started = time.monotonic()
     decision = call("sro_decide", {"path": case["path"]})["decision"]["mode"]
     result = {"id": case["id"], "source_bytes": path.stat().st_size, "route": decision,
               "route_pass": decision == case["route"]}
     if decision == "native":
         # The host intentionally delegates unsupported/exact reads to native.
-        result.update(evidence_pass=None, raw_pass=None, native_source_pass=True)
+        # Only the local source oracle was checked here, not a native host read.
+        result.update(evidence_pass=None, raw_pass=None, native_source_oracle_pass=True)
     else:
         preview = call("sro_preview", {"path": case["path"]})["preview_pack"]
         evidence = call("sro_read", {"target": {"artifact_id": preview["artifact_id"]}, "mode": "focus",
@@ -98,6 +108,8 @@ def replay_case(call, case, workspace):
                       evidence_ratio=round(len(text) / max(1, len(source)), 4),
                       anchors_pass=bool(blocks) and all(block.get("anchor") for block in blocks))
     result["seconds"] = round(time.monotonic() - started, 3)
+    result["tool_calls"] = tool_calls
+    result["serialized_response_chars"] = response_chars
     return result
 
 

@@ -14,7 +14,9 @@
       "source_chars": 45576,
       "evidence_ratio": 0.0681,
       "anchors_pass": true,
-      "seconds": 0.031
+      "seconds": 0.031,
+      "tool_calls": 5,
+      "serialized_response_chars": 9119
     },
     {
       "id": "development-timeout-diagnosis",
@@ -28,7 +30,9 @@
       "source_chars": 326111,
       "evidence_ratio": 0.0189,
       "anchors_pass": true,
-      "seconds": 0.207
+      "seconds": 0.228,
+      "tool_calls": 7,
+      "serialized_response_chars": 14053
     },
     {
       "id": "porting-stale-plugin",
@@ -42,7 +46,9 @@
       "source_chars": 8578,
       "evidence_ratio": 0.2334,
       "anchors_pass": true,
-      "seconds": 0.019
+      "seconds": 0.011,
+      "tool_calls": 4,
+      "serialized_response_chars": 8865
     },
     {
       "id": "job-failure-diagnosis",
@@ -56,7 +62,9 @@
       "source_chars": 4610,
       "evidence_ratio": 0.5792,
       "anchors_pass": true,
-      "seconds": 0.015
+      "seconds": 0.011,
+      "tool_calls": 6,
+      "serialized_response_chars": 8765
     },
     {
       "id": "historical-session-native-bypass",
@@ -65,8 +73,10 @@
       "route_pass": true,
       "evidence_pass": null,
       "raw_pass": null,
-      "native_source_pass": true,
-      "seconds": 1.996
+      "native_source_oracle_pass": true,
+      "seconds": 2.975,
+      "tool_calls": 1,
+      "serialized_response_chars": 954
     }
   ],
   "checks": {
