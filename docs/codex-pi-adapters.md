@@ -46,7 +46,7 @@ dependencies，避免打包第二份 agent/runtime。安装器使用官方 `pi i
 旧版本兼容性，建议先更新到具备这些接口的版本。
 
 ```sh
-git clone https://github.com/Zedong-Liu/SparseReading.git
+git clone --branch codex/codex-pi-adapters https://github.com/Zedong-Liu/SparseReading.git
 cd SparseReading
 
 uv run --python 3.12 python scripts/install_sparseread.py \
@@ -55,6 +55,10 @@ uv run --python 3.12 python scripts/install_sparseread.py \
 uv run --python 3.12 python scripts/install_sparseread.py \
   --platform pi --workspace /absolute/path/to/project --doctor
 ```
+
+当前扩展在 `codex/codex-pi-adapters` 功能分支，尚未合并到 main，也未加入此前的
+`v0.1.1` release。上面的下载命令明确选择这一分支；不要用旧 release 的
+安装器调用新 platform。
 
 安装到目标项目的 `.sparseread/<host>/`：独立 wheel runtime、插件和绝对路径配置。
 Codex 合并 `.agents/plugins/marketplace.json`，追加 `.codex/config.toml` 对应

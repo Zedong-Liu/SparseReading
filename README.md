@@ -102,6 +102,9 @@ Choose one integration:
 
 Codex and Pi use the same core with project-scoped frontend adapters:
 
+These source adapters currently live on `codex/codex-pi-adapters`, not in the
+existing `v0.1.1` release. Check out that branch before running the commands below.
+
 ```bash
 uv run --python 3.12 python scripts/install_sparseread.py \
   --platform codex --workspace /absolute/path/to/project --doctor

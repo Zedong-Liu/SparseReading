@@ -2,6 +2,9 @@
 
 Codex / Pi 框架适配已加入源码安装入口：
 
+当前请使用 `codex/codex-pi-adapters` 功能分支；尚未合并到 main，也未加入此前
+发布的 `v0.1.1` 安装器。
+
 ```bash
 uv run --python 3.12 python scripts/install_sparseread.py \
   --platform codex --workspace /absolute/path/to/project --doctor

@@ -7,12 +7,13 @@
 | 检查 | 结果 |
 | --- | --- |
 | Python 全量测试（含已有 adapters） | 225 passed |
-| Pi typecheck / build / 全量测试，启用真实 runtime smoke | Node22.23.3 18 passed，无跳过；此前 Node24 17 passed |
+| Pi typecheck / build / 全量测试，启用真实 runtime smoke | Node22.23.3 与 Node24 均 18 passed，无跳过 |
 | Codex manifest validator / skill validator / Node syntax | 通过 |
 | Codex CLI 0.158.0-alpha.2 实际 app-server | 发现插件、skill、hook；加载六个 MCP 工具；成功调用 sro_trace |
 | Codex 同一隔离 home 重装 auto → advisory | 新本地版本加载，未沿用旧缓存 |
 | Pi 0.87.1 官方 install --local 与 SDK loader | 源码资源包无 node_modules 仍可加载；六工具注册；preview → raw 成功 |
 | wheel / npm 包边界 | host transport wheel 构建通过；Pi 包只含 src/README/package metadata |
+| 干净源码首次安装（目标路径含空格） | 从 Git archive 提取，无 dist/node_modules；Codex 和 Pi 完整安装 + doctor 通过 |
 | 核心改动检查 | packages/sparseread-core 无差异 |
 
 两个实现子 agent 和独立审核 agent 均使用 `gpt-6-luna / max`。实现与审核角色

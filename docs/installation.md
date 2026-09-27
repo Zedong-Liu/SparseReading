@@ -44,6 +44,9 @@ On PowerShell, replace the `:` separators in `PYTHONPATH` with `;`.
 
 Codex or Pi (project-scoped):
 
+Use the `codex/codex-pi-adapters` source branch for these new adapters; the
+previously published `v0.1.1` installer does not include them yet.
+
 ```bash
 uv run --python 3.12 python scripts/install_sparseread.py \
   --platform codex --workspace /path/to/your/project --doctor
