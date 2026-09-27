@@ -70,4 +70,11 @@ class HostBridge(SparseReadBridgeServer):
                 params["target"] = {"path": self._path(target)}
             elif isinstance(target, dict) and "path" in target:
                 target["path"] = self._path(target["path"])
-        return super().handle(request)
+        result = super().handle(request)
+        # Core protocol failures are data; host transports must mark them as
+        # failed calls instead of presenting an empty result as usable evidence.
+        for key in ("raw", "preview_pack", "evidence_pack"):
+            payload = result.get(key)
+            if isinstance(payload, dict) and payload.get("error") and not payload.get("sro_guard"):
+                raise ValueError(str(payload["error"]))
+        return result

@@ -40,8 +40,8 @@ def test_preview_raw_and_context(host, tmp_path):
     assert pack["raw_ref"]
     raw = bridge.handle({"method": "raw", "params": {"raw_ref": pack["raw_ref"], "context": {"conversation_id": "first"}}})
     assert "failure" in json.dumps(raw)
-    wrong = bridge.handle({"method": "raw", "params": {"raw_ref": pack["raw_ref"], "context": {"conversation_id": "second"}}})
-    assert "failure" not in json.dumps(wrong)
+    with pytest.raises(ValueError, match="stale raw_ref"):
+        bridge.handle({"method": "raw", "params": {"raw_ref": pack["raw_ref"], "context": {"conversation_id": "second"}}})
 
 
 @pytest.mark.parametrize("path", ["../secret.txt", "/outside/secret.txt"])
@@ -49,6 +49,18 @@ def test_explicit_outside_paths_rejected(tmp_path, path):
     bridge = HostBridge(host="pi", workspace=tmp_path)
     with pytest.raises(ValueError, match="outside"):
         bridge.handle({"method": "preview", "params": {"path": path}})
+
+
+@pytest.mark.parametrize("host", ["codex", "pi"])
+def test_unicode_raw_range_and_stale_reference(host, tmp_path):
+    text = "记录🙂第一条\n第二条：故障恢复\n"
+    (tmp_path / "记录.md").write_text(text, encoding="utf-8")
+    bridge = HostBridge(host=host, workspace=tmp_path)
+    preview = bridge.handle({"method": "preview", "params": {"path": "记录.md"}})["preview_pack"]
+    raw = bridge.handle({"method": "raw", "params": {"raw_ref": preview["raw_ref"], "range": {"start": 2, "end": 9}}})["raw"]
+    assert raw["content"] == text[2:9]
+    with pytest.raises(ValueError, match="stale raw_ref"):
+        bridge.handle({"method": "raw", "params": {"raw_ref": "previous-session-ref"}})
 
 
 def test_symlink_outside_and_target_normalization(tmp_path):
@@ -83,6 +95,9 @@ async def test_real_stdio_mcp_preview_raw_and_errors(tmp_path):
             outside = await client.call_tool("sro_preview", {"path": "../secret.txt"})
             assert outside.isError
             assert "native" in outside.content[0].text
+            stale = await client.call_tool("sro_raw", {"raw_ref": "previous-session-ref"})
+            assert stale.isError, "a stale reference must not be presented as successful evidence"
+            assert "native" in stale.content[0].text
             invalid = await client.call_tool("sro_read", {"target": {"path": "report.md"}})
             assert invalid.isError
 

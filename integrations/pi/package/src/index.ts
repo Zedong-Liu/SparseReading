@@ -90,7 +90,7 @@ const toolDefinitions = [
   {
     name: "sro_raw",
     label: "SRO Raw",
-    description: "Retrieve exact source content behind a raw_ref when preview and targeted evidence are insufficient.",
+    description: "Retrieve exact source content behind a raw_ref. Range uses zero-based Unicode character offsets, end exclusive (not bytes or lines); default returns at most 50000 characters, so check truncated. Selector filters matching lines for files or selects a child file for directories. Refresh stale references with preview.",
     method: "raw",
     parameters: Type.Object({
       raw_ref: Type.String({ minLength: 1 }),
@@ -301,6 +301,12 @@ function registerTool(
           },
           signal,
         )
+        if (isObject(result)) {
+          for (const key of ["raw", "preview_pack", "evidence_pack"]) {
+            const payload = result[key]
+            if (isObject(payload) && payload.error && !payload.sro_guard) throw new Error(String(payload.error))
+          }
+        }
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
           details: undefined,

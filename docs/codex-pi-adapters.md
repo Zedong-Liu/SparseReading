@@ -46,7 +46,7 @@ dependencies，避免打包第二份 agent/runtime。安装器使用官方 `pi i
 旧版本兼容性，建议先更新到具备这些接口的版本。
 
 ```sh
-git clone --branch codex/codex-pi-adapters https://github.com/Zedong-Liu/SparseReading.git
+git clone --branch v0.1.2 https://github.com/Zedong-Liu/SparseReading.git
 cd SparseReading
 
 uv run --python 3.12 python scripts/install_sparseread.py \
@@ -56,9 +56,15 @@ uv run --python 3.12 python scripts/install_sparseread.py \
   --platform pi --workspace /absolute/path/to/project --doctor
 ```
 
-当前扩展在 `codex/codex-pi-adapters` 功能分支，尚未合并到 main，也未加入此前的
-`v0.1.1` release。上面的下载命令明确选择这一分支；不要用旧 release 的
-安装器调用新 platform。
+两个扩展随 `v0.1.2` 发布。也可以从 Release 下载
+`sparseread-source-installer-v0.1.2.zip` 或 `.tar.gz`，解压到 `sparseread-v0.1.2`
+后运行相同命令。先用发布的 `SHA256SUMS` 核对下载内容。
+`v0.1.1` 的旧安装器不支持这两个新 platform。
+
+若 Pi 重装时报 `Project is not trusted`，先审核目标项目的文件和扩展，然后
+显式加 `--pi-approve` 重跑安装命令。它仅为本次 Pi 安装命令提供项目批准，
+不自动改变永久信任、不开启全局绕过；后续宿主启动仍可能要求审核。
+安装器不会自动添加这个参数。
 
 安装到目标项目的 `.sparseread/<host>/`：独立 wheel runtime、插件和绝对路径配置。
 Codex 合并 `.agents/plugins/marketplace.json`，追加 `.codex/config.toml` 对应
@@ -72,6 +78,18 @@ Codex MCP 配置不能当作 shell 使用：安装器写入已解析的 Node/启
 Codex 还会按版本缓存插件；每次本地安装附加 `+local.<id>` 构建标识，确保重装
 或切换 advisory 时不会沿用旧缓存。这个标识不改变公开发布版本，不自动发布
 npm/PyPI，也不修改已发布的 GitHub release。
+
+## 真实记录读取注意事项
+
+`focus` 返回的是相关证据，不承诺回答所有问题；长开发记录的宽泛查询可能
+漏掉修复细节。沿同一 `artifact_id` 做定向 `refine`，或按 anchor/selector
+原文核对。`sro_raw.range` 是从 0 开始的 Unicode 字符偏移，end 不包含在结果中，
+不是字节或行号；默认最多 50000 字符，务必检查 `truncated`。
+文件 selector 匹配原文行，目录 selector 选择子文件；旧会话的 raw_ref 必须
+重新 preview。JSONL 在当前核心中不受稀疏 reader 支持，保持原生工具路径。
+
+见 [本地真实记录回放报告](codex-pi-real-records.md) 和
+[v0.1.2 独立复核](codex-pi-v012-review.md)。
 
 Codex：在目标项目重启，确认信任项目；在插件 UI 中审核并信任 SparseRead 的
 hook。Pi：重启或 `/reload`，审核后批准项目扩展。**安装器不自动授予信任。**

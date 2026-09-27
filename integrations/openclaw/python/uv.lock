@@ -59,7 +59,7 @@ wheels = [
 
 [[package]]
 name = "sparseread-core"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "../../../packages/sparseread-core" }
 dependencies = [
     { name = "pyyaml" },
@@ -79,7 +79,7 @@ provides-extras = ["pdf", "xlsx", "all", "dev"]
 
 [[package]]
 name = "sparseread-openclaw"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "sparseread-core" },

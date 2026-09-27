@@ -132,6 +132,33 @@ def test_build_failure_does_not_replace_active_config(tmp_path, monkeypatch):
     assert config.read_text() == '{"python":"previous"}'
 
 
+def test_pi_project_approval_is_explicit_and_scoped(tmp_path, monkeypatch):
+    installer = load_installer()
+    monkeypatch.setattr(installer, "require_command", lambda name, **kw: name)
+    monkeypatch.setattr(installer, "install_python_runtime", lambda runtime, adapter, **kw: runtime / "bin/python")
+    commands = []
+    monkeypatch.setattr(installer, "run", lambda cmd, **kw: commands.append(cmd) or subprocess.CompletedProcess(cmd, 0, "", ""))
+    options = args(tmp_path, "pi", True)
+    options.pi_approve = True
+    installer.install_host(options)
+    assert commands[0][-1] == "--approve"
+    assert commands[0][1:3] == ["install", "--local"]
+
+
+def test_pi_untrusted_project_has_actionable_error_without_auto_approval(tmp_path, monkeypatch):
+    installer = load_installer()
+    monkeypatch.setattr(installer, "require_command", lambda name, **kw: name)
+    monkeypatch.setattr(installer, "install_python_runtime", lambda runtime, adapter, **kw: runtime / "bin/python")
+    commands = []
+    def denied(command, **kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 1, "", "Project is not trusted. Use --approve")
+    monkeypatch.setattr(installer, "run", denied)
+    with pytest.raises(SystemExit, match="review|Review"):
+        installer.install_host(args(tmp_path, "pi", True))
+    assert "--approve" not in commands[0]
+
+
 def test_invalid_pi_settings_rejected_before_runtime_creation(tmp_path):
     installer = load_installer()
     settings = tmp_path / ".pi/settings.json"

@@ -164,6 +164,14 @@ test("advisory mode never checks or blocks native reads", async () => {
   assert.equal(bridges.length, 0)
 })
 
+test("core error payloads surface as failed tools, not successful evidence", async () => {
+  const { pi } = setup({ response: () => ({ raw: { error: "unknown or stale raw_ref; call sro_preview again" } }) })
+  await assert.rejects(
+    pi.tools.get("sro_raw").execute("stale-call", { raw_ref: "previous-session-ref" }, undefined, undefined, {}),
+    /stale raw_ref.*native tools/,
+  )
+})
+
 test("bridge errors fail open and release the one-time redirect reservation", async () => {
   const { pi, bridges } = setup({ requestError: new Error("outside configured workspace") })
   const handler = pi.handlers.get("tool_call")[0]

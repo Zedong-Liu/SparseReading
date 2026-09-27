@@ -676,7 +676,17 @@ def install_host(args: argparse.Namespace) -> None:
         print(f"[install] Codex project plugin: {key}. Restart in this trusted project; review/trust bundled hooks before auto interception.")
         print("[install] No personal Codex config was changed. MCP/skill availability and hook trust are separate.")
     else:
-        run(command_spec(args.pi_cmd).argv("install", "--local", str(target)), cwd=workspace, dry_run=args.dry_run)
+        command = command_spec(args.pi_cmd).argv("install", "--local", str(target))
+        if getattr(args, "pi_approve", False):
+            command.append("--approve")
+        result = run(command, cwd=workspace, dry_run=args.dry_run, check=False)
+        if result.returncode:
+            detail = result.stderr + result.stdout
+            if "Project is not trusted" in detail:
+                raise SystemExit("Pi requires project trust before changing local package settings. "
+                                 "Review this project's files/extensions, then rerun with --pi-approve "
+                                 "to approve this install command only. No trust was granted automatically.")
+            raise SystemExit(f"Pi project package registration failed ({result.returncode}): {detail}")
         print("[install] Pi project package registered. Restart or /reload; approve project extensions only after review.")
     print(f"[install] Self-contained runtime: {python}. Previous runtime generations are retained for rollback.")
 
@@ -964,6 +974,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace", default="", help="Existing project to receive the Codex or Pi adapter")
     parser.add_argument("--codex-cmd", default="codex", help="Codex executable used for preflight/doctor")
     parser.add_argument("--pi-cmd", default="pi", help="Pi executable used for project package registration")
+    parser.add_argument("--pi-approve", action="store_true",
+                        help="Explicitly trust Pi project-local files for this installation command only; use after reviewing the project/extensions")
     parser.add_argument(
         "--python",
         default=None,

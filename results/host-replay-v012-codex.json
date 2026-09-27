@@ -1,0 +1,82 @@
+{
+  "host": "codex",
+  "kind": "deterministic-real-host-replay-no-model",
+  "cases": [
+    {
+      "id": "runbook-api-policy",
+      "source_bytes": 45807,
+      "route": "force_sro",
+      "route_pass": true,
+      "initial_evidence_pass": true,
+      "evidence_pass": true,
+      "raw_pass": true,
+      "evidence_chars": 3103,
+      "source_chars": 45576,
+      "evidence_ratio": 0.0681,
+      "anchors_pass": true,
+      "seconds": 0.031
+    },
+    {
+      "id": "development-timeout-diagnosis",
+      "source_bytes": 333432,
+      "route": "force_sro",
+      "route_pass": true,
+      "initial_evidence_pass": false,
+      "evidence_pass": true,
+      "raw_pass": true,
+      "evidence_chars": 6176,
+      "source_chars": 326111,
+      "evidence_ratio": 0.0189,
+      "anchors_pass": true,
+      "seconds": 0.207
+    },
+    {
+      "id": "porting-stale-plugin",
+      "source_bytes": 8578,
+      "route": "force_sro",
+      "route_pass": true,
+      "initial_evidence_pass": true,
+      "evidence_pass": true,
+      "raw_pass": true,
+      "evidence_chars": 2002,
+      "source_chars": 8578,
+      "evidence_ratio": 0.2334,
+      "anchors_pass": true,
+      "seconds": 0.019
+    },
+    {
+      "id": "job-failure-diagnosis",
+      "source_bytes": 4612,
+      "route": "force_sro",
+      "route_pass": true,
+      "initial_evidence_pass": true,
+      "evidence_pass": true,
+      "raw_pass": true,
+      "evidence_chars": 2670,
+      "source_chars": 4610,
+      "evidence_ratio": 0.5792,
+      "anchors_pass": true,
+      "seconds": 0.015
+    },
+    {
+      "id": "historical-session-native-bypass",
+      "source_bytes": 91095,
+      "route": "native",
+      "route_pass": true,
+      "evidence_pass": null,
+      "raw_pass": null,
+      "native_source_pass": true,
+      "seconds": 1.996
+    }
+  ],
+  "checks": {
+    "trace_events": 23,
+    "trace_artifacts": 4,
+    "stale_ref_error": true,
+    "full_fidelity_native": true,
+    "new_task_restores_force": true,
+    "broad_redirect_once": true,
+    "bounded_native": true,
+    "outside_native_fallback": true
+  }
+}

@@ -271,7 +271,7 @@ def test_codex_plugin_version_tracks_shared_adapter() -> None:
         (PLUGIN_ROOT.parents[2] / "agent-tools" / "python" / "pyproject.toml").read_text(encoding="utf-8")
     )
 
-    assert plugin_manifest["version"] == adapter_metadata["project"]["version"] == "0.1.1"
+    assert plugin_manifest["version"] == adapter_metadata["project"]["version"] == "0.1.2"
     assert plugin_manifest["interface"]["defaultPrompt"]
 
 

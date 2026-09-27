@@ -2,8 +2,8 @@
 
 Codex / Pi 框架适配已加入源码安装入口：
 
-当前请使用 `codex/codex-pi-adapters` 功能分支；尚未合并到 main，也未加入此前
-发布的 `v0.1.1` 安装器。
+`v0.1.2` 已包含两个适配。请从 [GitHub Release](https://github.com/Zedong-Liu/SparseReading/releases/tag/v0.1.2)
+下载 source-installer ZIP/tar.gz 并解压，或克隆仓库，在解压后的根目录运行：
 
 ```bash
 uv run --python 3.12 python scripts/install_sparseread.py \
@@ -198,7 +198,7 @@ PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integra
 
 ## 当前边界
 
-- 当前基线是 `v0.1.1`，支持从源码安装。
+- 当前版本是 `v0.1.2`，支持从源码安装包安装。
 - PyPI、npm 和各框架官方 marketplace 的一键发布尚未接通；目前支持路径是源码安装器。
 - Claude Code 已通过 MCP 和 session hooks 支持；Windows 上仍需按主机 CLI 和权限环境
   单独验证 MCP 通路。

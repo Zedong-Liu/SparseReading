@@ -62,7 +62,7 @@ def test_javascript_plugins_are_publishable_and_versioned() -> None:
         )
         assert package["name"] == f"@sparseread/{framework}"
         assert package["private"] is False
-        assert package["version"] == "0.1.1"
+        assert package["version"] == "0.1.2"
         assert package["scripts"]["prepack"] == "npm run build"
 
 
@@ -82,7 +82,7 @@ def test_host_transport_is_an_independent_core_only_adapter() -> None:
 def test_pi_package_ships_source_without_a_second_host_sdk() -> None:
     package = json.loads((ROOT / "integrations/pi/package/package.json").read_text())
     assert package["name"] == "@sparseread/pi"
-    assert package["version"] == "0.1.1"
+    assert package["version"] == "0.1.2"
     assert package["pi"]["extensions"] == ["./src/index.ts"]
     assert "pi-package" in package["keywords"]
     assert not package.get("dependencies")

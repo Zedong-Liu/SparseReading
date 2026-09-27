@@ -102,8 +102,9 @@ Choose one integration:
 
 Codex and Pi use the same core with project-scoped frontend adapters:
 
-These source adapters currently live on `codex/codex-pi-adapters`, not in the
-existing `v0.1.1` release. Check out that branch before running the commands below.
+Codex and Pi are included in `v0.1.2`. Download the source installer ZIP/tar.gz
+from [GitHub Releases](https://github.com/Zedong-Liu/SparseReading/releases/tag/v0.1.2)
+and extract it, or clone the repository. Run the commands below from its root.
 
 ```bash
 uv run --python 3.12 python scripts/install_sparseread.py \
@@ -114,6 +115,8 @@ uv run --python 3.12 python scripts/install_sparseread.py \
 
 Restart in the target project and review the host's trust prompt. Codex hook
 trust is separate from installation; Pi project extensions also require review.
+If Pi reports an untrusted project, review its files/extensions and explicitly
+rerun with `--pi-approve` (trust for that install command only).
 Use `--sparseread-mode advisory` for tools/guidance without native-read blocking.
 See [design, setup, recovery, and limitations](docs/codex-pi-adapters.md).
 
@@ -230,7 +233,7 @@ integration.
 
 ## Release scope and limitations
 
-- The current baseline is `v0.1.1` and is installable from source.
+- The current release is `v0.1.2` and is installable from source bundles.
 - PyPI, npm, and official framework-marketplace publishing are not wired yet;
   the source installer is the supported distribution path today.
 - Claude Code is supported through MCP and session hooks. Its Windows MCP path
