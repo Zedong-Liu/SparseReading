@@ -186,7 +186,8 @@ def _zip_from_tar(tar_bytes: bytes, expected_root: str) -> bytes:
 def write_sha256sums(output_dir: Path) -> Path:
     manifest = output_dir / "SHA256SUMS"
     artifacts = sorted(
-        (path for path in output_dir.iterdir() if path.is_file() and not path.is_symlink() and path.name != manifest.name),
+        (path for path in output_dir.iterdir() if path.is_file() and not path.is_symlink()
+         and not path.name.startswith(".") and path.name != manifest.name),
         key=lambda path: path.name,
     )
     lines = []

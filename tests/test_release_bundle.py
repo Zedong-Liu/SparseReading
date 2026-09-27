@@ -91,6 +91,8 @@ def test_source_installer_archives_include_production_source_and_checksums(tmp_p
     output.mkdir()
     existing = output / "sparseread-core.whl"
     existing.write_bytes(b"existing distribution")
+    hidden = output / ".gitignore"
+    hidden.write_text("*\n", encoding="utf-8")
 
     tar_path, zip_path, sums_path = build_source_installer(repo, output, "v0.1.2")
 
