@@ -59,6 +59,17 @@ jobs:
           done
           uv build --project integrations/agent-tools/python --out-dir dist
           ls -la dist
+      - name: Test installed Pi wheel runtime
+        env:
+          PI_CODING_AGENT_DIR: ${{ runner.temp }}/sparseread-pi-ci-home
+        run: |
+          pi_smoke_root="$(mktemp -d)"
+          uv run --python 3.12 python scripts/install_sparseread.py \
+            --platform pi --workspace "$pi_smoke_root" \
+            --pi-cmd "$GITHUB_WORKSPACE/integrations/pi/package/node_modules/.bin/pi" \
+            --reader-extras none --doctor
+          SPARSEREAD_PI_RUNTIME_FILE="$pi_smoke_root/.sparseread/pi/sparseread-pi/.sparseread-runtime.json" \
+            npm --prefix integrations/pi/package test
 
   windows-install-tests:
     name: Windows install tests

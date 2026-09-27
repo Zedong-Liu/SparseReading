@@ -21,6 +21,15 @@ jobs:
         with:
           node-version: "22"
       - uses: astral-sh/setup-uv@v5
+      - name: Run Python release tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}/packages/sparseread-core/src:${{ github.workspace }}/integrations/nanobot/python/src:${{ github.workspace }}/integrations/opencode/python/src:${{ github.workspace }}/integrations/openclaw/python/src:${{ github.workspace }}/integrations/claude/python/src
+        run: uv run --project . --extra test pytest -q
+      - name: Test Pi extension
+        working-directory: integrations/pi/package
+        run: |
+          npm ci --ignore-scripts
+          npm test
       - name: Build Python distributions
         run: |
           mkdir -p dist
@@ -44,11 +53,27 @@ jobs:
           npm ci
           npm pack --pack-destination "$GITHUB_WORKSPACE/dist"
         working-directory: integrations/openclaw/plugin
+      - name: Build source installer bundles and checksums
+        run: python scripts/package_release.py --version "$GITHUB_REF_NAME" --output-dir dist
+      - name: Test installed Pi wheel runtime
+        env:
+          PI_CODING_AGENT_DIR: ${{ runner.temp }}/sparseread-pi-release-home
+        run: |
+          pi_smoke_root="$(mktemp -d)"
+          uv run --python 3.12 python scripts/install_sparseread.py \
+            --platform pi --workspace "$pi_smoke_root" \
+            --pi-cmd "$GITHUB_WORKSPACE/integrations/pi/package/node_modules/.bin/pi" \
+            --reader-extras none --doctor
+          SPARSEREAD_PI_RUNTIME_FILE="$pi_smoke_root/.sparseread/pi/sparseread-pi/.sparseread-runtime.json" \
+            npm --prefix integrations/pi/package test
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --verify-tag \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes
+          if [ -f "docs/releases/$GITHUB_REF_NAME.md" ]; then
+            gh release create "$GITHUB_REF_NAME" dist/* --verify-tag \
+              --title "$GITHUB_REF_NAME" --notes-file "docs/releases/$GITHUB_REF_NAME.md"
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --verify-tag \
+              --title "$GITHUB_REF_NAME" --generate-notes
+          fi

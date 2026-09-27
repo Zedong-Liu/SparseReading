@@ -106,13 +106,19 @@ def codex_tools(client, workspace):
                                "capabilities": {"experimentalApi": True}}, codex=True)
     client.process.stdin.write('{"method":"initialized"}\n')
     client.process.stdin.flush()
+    # Mirror host startup discovery. A cold app-server home may not have
+    # materialized local plugin components before the first thread starts.
+    client.call("plugin/list", {"cwds": [str(workspace)], "marketplaceKinds": ["local"], "forceRefetch": False}, codex=True)
+    client.call("plugin/read", {"pluginName": "sparseread-codex",
+                "marketplacePath": str(workspace / ".agents/plugins/marketplace.json")}, codex=True)
     thread = client.call("thread/start", {"cwd": str(workspace), "ephemeral": True}, codex=True)
     thread_id = thread["thread"]["id"]
     deadline = time.monotonic() + 30
     while True:
         inventory = client.call("mcpServerStatus/list", {"threadId": thread_id}, codex=True)
         servers = [s for s in inventory.get("data", []) if "sparseread" in s.get("name", "")]
-        if servers and servers[0].get("runtimeStatus") == "connected" and len(servers[0].get("tools", {})) >= 6:
+        expected = {"sro_preview", "sro_read", "sro_raw", "sro_card", "sro_decide", "sro_trace"}
+        if servers and servers[0].get("runtimeStatus") == "connected" and expected.issubset(servers[0].get("tools", {})):
             server = servers[0]["name"]
             break
         if time.monotonic() >= deadline:

@@ -1,6 +1,8 @@
 """Reporting tests use synthetic content; real local records are never fixtures."""
 import importlib.util
 import json
+import io
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -53,3 +55,19 @@ def test_outside_target_and_invalid_oracle_fail_before_host_call(tmp_path):
     (tmp_path / "note.md").write_text("a note")
     with pytest.raises(ValueError, match="expectations must exist"):
         replay.replay_case(unexpected, {"path": "note.md", "expected": ["not in note"]}, tmp_path)
+
+
+def test_codex_cold_home_discovers_plugins_before_starting_thread(tmp_path):
+    calls = []
+    class Client:
+        process = SimpleNamespace(stdin=io.StringIO())
+        def call(self, method, params, **kwargs):
+            calls.append(method)
+            if method == "thread/start":
+                return {"thread": {"id": "thread"}}
+            if method == "mcpServerStatus/list":
+                return {"data": [{"name": "sparseread", "runtimeStatus": "connected", "tools": {
+                    name: {} for name in ["sro_preview", "sro_read", "sro_raw", "sro_card", "sro_decide", "sro_trace"]}}]}
+            return {}
+    replay.codex_tools(Client(), tmp_path)
+    assert calls[:4] == ["initialize", "plugin/list", "plugin/read", "thread/start"]
