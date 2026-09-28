@@ -880,10 +880,12 @@ class SparseReadBridgeServer:
         )
 
     def _force_collection_parent_gate(self, path: Path, params: dict[str, Any]) -> dict[str, Any] | None:
+        context = self._episode_hint(params)
+        if context.goal == "full_fidelity":
+            return None
         child_info = inspect_file(path)
         if child_info.type == "collection":
             return None
-        context = self._episode_hint(params)
         child_decision = self.runtime.orchestrator.benefit_gate.decide(child_info, context)
         if child_decision.mode == "force_sro":
             return None

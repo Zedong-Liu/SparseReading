@@ -125,3 +125,22 @@ def test_targeted_incident_fields_and_native_compute_veto(host, tmp_path):
     }})
     assert decision["decision"]["mode"] == "native"
     assert not decision["host_gate"]["block_native_read"]
+
+
+@pytest.mark.parametrize("host", ["codex", "pi"])
+def test_full_fidelity_bypasses_parent_collection_scan(host, tmp_path, monkeypatch):
+    report = tmp_path / "report.md"
+    report.write_text("# Report\n" + "Evidence line.\n" * 2000)
+    bridge = HostBridge(host=host, workspace=tmp_path)
+    assert bridge.handle({"method": "preview", "params": {"path": "report.md"}})["decision"]["mode"] == "force_sro"
+
+    def unexpected_parent_scan(*_):
+        raise AssertionError("full-fidelity native veto must not scan parent collections")
+
+    monkeypatch.setattr(bridge, "_nearest_force_collection_root", unexpected_parent_scan)
+    decision = bridge.handle({"method": "decide", "params": {
+        "path": "report.md",
+        "episode_hint": {"relation": "switch", "goal": "full_fidelity", "coverage": "exhaustive"},
+    }})
+    assert decision["decision"]["mode"] == "native"
+    assert not decision["host_gate"]["block_native_read"]

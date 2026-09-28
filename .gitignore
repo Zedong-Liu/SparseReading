@@ -16,6 +16,7 @@ build/
 *.egg-info/
 
 # Local plugin install/build outputs
+.sparseread/
 integrations/*/plugin/node_modules/
 integrations/pi/package/node_modules/
 integrations/openclaw/plugin/dist/
