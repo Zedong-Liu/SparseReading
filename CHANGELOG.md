@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.3 — 2026-09-28
+
+- 修复 Codex/Pi 在大型工作区将长文件切换为 `full_fidelity` 原生读取时仍扫描父目录、
+  使工具调用超时的问题。明确的原生读取否决现在直接跳过父集合检查；reader、BenefitGate
+  阈值和证据协议不变。
+- 在真实 Codex 项目中验证安装、六个 MCP 工具、定向证据、原文回取及原生回退；用户在
+  Codex App 新会话中确认 `sro_preview` 和 `sro_read` 可用。新增 Codex/Pi 回归测试。
+- 本地安装产物加入 Git 忽略规则。`v0.1.2` 标签和附件保持不变。
+
 ## v0.1.2 — 2026-09-28
 
 - 新增 Codex 项目插件（MCP 六工具、Skill、显式信任的保守 Hook）和 Pi 源码扩展，

@@ -1,6 +1,6 @@
 {
   "name": "sparseread-codex",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "SparseRead evidence tools and conservative read guidance for Codex.",
   "author": {
     "name": "SparseRead maintainers"

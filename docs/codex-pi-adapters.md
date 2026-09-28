@@ -46,7 +46,7 @@ dependencies，避免打包第二份 agent/runtime。安装器使用官方 `pi i
 旧版本兼容性，建议先更新到具备这些接口的版本。
 
 ```sh
-git clone --branch v0.1.2 https://github.com/Zedong-Liu/SparseReading.git
+git clone --branch v0.1.3 https://github.com/Zedong-Liu/SparseReading.git
 cd SparseReading
 
 uv run --python 3.12 python scripts/install_sparseread.py \
@@ -56,8 +56,8 @@ uv run --python 3.12 python scripts/install_sparseread.py \
   --platform pi --workspace /absolute/path/to/project --doctor
 ```
 
-两个扩展随 `v0.1.2` 发布。也可以从 Release 下载
-`sparseread-source-installer-v0.1.2.zip` 或 `.tar.gz`，解压到 `sparseread-v0.1.2`
+两个扩展从 `v0.1.2` 起提供；推荐下载已修复大型工作区超时的 `v0.1.3`。
+也可以从 Release 下载 `sparseread-source-installer-v0.1.3.zip` 或 `.tar.gz`，解压到 `sparseread-v0.1.3`
 后运行相同命令。先用发布的 `SHA256SUMS` 核对下载内容。
 `v0.1.1` 的旧安装器不支持这两个新 platform。
 

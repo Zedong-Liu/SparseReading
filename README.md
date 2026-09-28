@@ -17,6 +17,7 @@ fallbacks explicit.
 
 ## 🔥 News
 
+- **2026-09-28:** [v0.1.3](https://github.com/Zedong-Liu/SparseReading/releases/tag/v0.1.3) fixes a large-workspace timeout when switching to full-fidelity native reading in Codex/Pi.
 - **2026-09-28:** Added Codex and Pi support in [v0.1.2](https://github.com/Zedong-Liu/SparseReading/releases/tag/v0.1.2).
 - **2026-09-14:** Support for Claude Code, OpenCode, OpenClaw, and NanoBot.
 
@@ -107,8 +108,8 @@ Choose one integration:
 
 Codex and Pi use the same core with project-scoped frontend adapters:
 
-Codex and Pi are included in `v0.1.2`. Download the source installer ZIP/tar.gz
-from [GitHub Releases](https://github.com/Zedong-Liu/SparseReading/releases/tag/v0.1.2)
+Codex and Pi are included in `v0.1.3`. Download the source installer ZIP/tar.gz
+from [GitHub Releases](https://github.com/Zedong-Liu/SparseReading/releases/tag/v0.1.3)
 and extract it, or clone the repository. Run the commands below from its root.
 
 ```bash
@@ -238,7 +239,7 @@ integration.
 
 ## Release scope and limitations
 
-- The current release is `v0.1.2` and is installable from source bundles.
+- The current release is `v0.1.3` and is installable from source bundles.
 - PyPI, npm, and official framework-marketplace publishing are not wired yet;
   the source installer is the supported distribution path today.
 - Claude Code is supported through MCP and session hooks. Its Windows MCP path

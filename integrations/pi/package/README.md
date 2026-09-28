@@ -4,7 +4,7 @@ Pi extension for SparseRead. It forwards `sro_preview`, `sro_read`, `sro_raw`,
 `sro_card`, `sro_decide`, and `sro_trace` to the shared Python bridge over
 JSONL protocol `1.0`.
 
-Available in the GitHub `v0.1.2` source installer bundle. The npm tarball alone
+Available in the GitHub `v0.1.3` source installer bundle. The npm tarball alone
 does not configure Python: use the project installer below.
 If Pi rejects an untrusted project, review its files/extensions and explicitly
 rerun the installer with `--pi-approve` (this install command only, not permanent

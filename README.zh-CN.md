@@ -2,7 +2,7 @@
 
 Codex / Pi 框架适配已加入源码安装入口：
 
-`v0.1.2` 已包含两个适配。请从 [GitHub Release](https://github.com/Zedong-Liu/SparseReading/releases/tag/v0.1.2)
+`v0.1.3` 已包含两个适配。请从 [GitHub Release](https://github.com/Zedong-Liu/SparseReading/releases/tag/v0.1.3)
 下载 source-installer ZIP/tar.gz 并解压，或克隆仓库，在解压后的根目录运行：
 
 ```bash
@@ -32,6 +32,7 @@ SparseRead 是一个免训练、面向工具调用型 Agent 的阅读层。在�
 
 ## 🔥 最新动态
 
+- **2026-09-28：** [v0.1.3](https://github.com/Zedong-Liu/SparseReading/releases/tag/v0.1.3) 修复 Codex/Pi 在大型工作区切换完整原生读取时的超时。
 - **2026-09-28：** [v0.1.2](https://github.com/Zedong-Liu/SparseReading/releases/tag/v0.1.2) 新增 Codex 和 Pi 支持。
 - **2026-09-14：** 支持 Claude Code、OpenCode、OpenClaw 和 NanoBot 四个框架。
 
@@ -203,7 +204,7 @@ PYTHONPATH="packages/sparseread-core/src:integrations/nanobot/python/src:integra
 
 ## 当前边界
 
-- 当前版本是 `v0.1.2`，支持从源码安装包安装。
+- 当前版本是 `v0.1.3`，支持从源码安装包安装。
 - PyPI、npm 和各框架官方 marketplace 的一键发布尚未接通；目前支持路径是源码安装器。
 - Claude Code 已通过 MCP 和 session hooks 支持；Windows 上仍需按主机 CLI 和权限环境
   单独验证 MCP 通路。

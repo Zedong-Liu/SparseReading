@@ -44,7 +44,7 @@ On PowerShell, replace the `:` separators in `PYTHONPATH` with `;`.
 
 Codex or Pi (project-scoped):
 
-Download the `v0.1.2` source-installer ZIP/tar.gz from GitHub Releases and extract
+Download the `v0.1.3` source-installer ZIP/tar.gz from GitHub Releases and extract
 it; the `v0.1.1` installer does not include these adapters.
 
 ```bash

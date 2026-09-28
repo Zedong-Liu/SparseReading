@@ -1,6 +1,6 @@
 [project]
 name = "sparseread-claude"
-version = "0.1.2"
+version = "0.1.3"
 description = "Claude Code bridge adapter for SparseRead"
 readme = "README.md"
 requires-python = ">=3.11"

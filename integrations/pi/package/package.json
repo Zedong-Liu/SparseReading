@@ -1,6 +1,6 @@
 {
   "name": "@sparseread/pi",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Pi coding agent extension for SparseRead",
   "keywords": [
     "pi-package",

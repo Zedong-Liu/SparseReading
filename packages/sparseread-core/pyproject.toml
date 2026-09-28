@@ -1,6 +1,6 @@
 [project]
 name = "sparseread-core"
-version = "0.1.2"
+version = "0.1.3"
 description = "Framework-neutral sparse reading protocol, readers, gate, and bridge server"
 readme = "README.md"
 requires-python = ">=3.11"
