@@ -34,6 +34,11 @@ SparseRead 是一个免训练、面向工具调用型 Agent 的阅读层。在�
   <img src="assets/launch/sparseread-demo-wide.gif" alt="SparseRead 回放：全文读取 vs 稀疏取证，以及成本-质量前沿" width="100%">
 </p>
 
+## 最新动态
+
+- **2026-09-28：** [v0.1.2](https://github.com/Zedong-Liu/SparseReading/releases/tag/v0.1.2) 新增 Codex 和 Pi 支持。
+- **2026-09-14：** 支持 Claude Code、OpenCode、OpenClaw 和 NanoBot 四个框架。
+
 Agent 很擅长推理，但默认的阅读动作往往仍然是：
 
 ```text

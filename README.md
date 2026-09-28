@@ -19,6 +19,11 @@ fallbacks explicit.
   <img src="assets/launch/sparseread-demo-wide.gif" alt="SparseRead replay: full read vs sparse evidence, then the cost-quality frontier" width="100%">
 </p>
 
+## News
+
+- **2026-09-28:** Added Codex and Pi support in [v0.1.2](https://github.com/Zedong-Liu/SparseReading/releases/tag/v0.1.2).
+- **2026-09-14:** Support for Claude Code, OpenCode, OpenClaw, and NanoBot.
+
 Agents are good at reasoning, but their default reading action is often still:
 
 ```text
