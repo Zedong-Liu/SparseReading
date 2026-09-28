@@ -1,10 +1,5 @@
 # SparseRead
 
-## 🔥 News
-
-- **2026-09-28:** Added Codex and Pi support in [v0.1.2](https://github.com/Zedong-Liu/SparseReading/releases/tag/v0.1.2).
-- **2026-09-14:** Support for Claude Code, OpenCode, OpenClaw, and NanoBot.
-
 <div align="center">
 
 **Read less. Solve more.**
@@ -19,6 +14,11 @@ fallbacks explicit.
 [Paper](https://arxiv.org/abs/2608.22237) · [Site](https://zedong-liu.github.io/SparseReading/) · [中文](README.zh-CN.md)
 
 </div>
+
+## 🔥 News
+
+- **2026-09-28:** Added Codex and Pi support in [v0.1.2](https://github.com/Zedong-Liu/SparseReading/releases/tag/v0.1.2).
+- **2026-09-14:** Support for Claude Code, OpenCode, OpenClaw, and NanoBot.
 
 <p align="center">
   <img src="assets/launch/sparseread-demo-wide.gif" alt="SparseRead replay: full read vs sparse evidence, then the cost-quality frontier" width="100%">
