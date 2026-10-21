@@ -178,7 +178,7 @@ def test_edit_structured_prelude_requires_tabular_dominance_without_logs(tmp_pat
     assert (explicit_compute.mode, explicit_compute.code) == ("force_sro", "structured_analysis_plan")
 
 
-def test_edit_episode_structured_prelude_returns_ready_compute_closure(tmp_path: Path) -> None:
+def test_edit_episode_structured_prelude_returns_source_excerpts(tmp_path: Path) -> None:
     data = tmp_path / "data"
     scripts = tmp_path / "scripts"
     data.mkdir()
@@ -243,10 +243,9 @@ def test_edit_episode_structured_prelude_returns_ready_compute_closure(tmp_path:
         },
         {"goal": "edit_or_execute", "relation": "new"},
     )
-    assert [block.anchor for block in pack.evidence] == ["collection_panel_did_closure"]
-    assert pack.next_action["overall_status"] == "ready_for_compute"
-    assert pack.next_action["required_outputs"] == ["did_regression.py", "did_results_summary.md"]
-    assert pack.unresolved == []
+    assert "data/panel.csv" in [block.anchor for block in pack.evidence]
+    assert pack.next_action["overall_status"] is None
+    assert pack.next_action["required_outputs"] == []
 
 
 def test_gate_ignores_decoy_benchmark_keywords(tmp_path: Path) -> None:
