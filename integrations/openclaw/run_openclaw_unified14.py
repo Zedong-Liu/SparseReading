@@ -68,35 +68,7 @@ REFERENCE_ALIASES = {
     "task_21_openclaw_comprehension": "task_21",
 }
 
-BENCH_COLLECT_HINTS: dict[str, dict[str, Any]] = {
-    "task_00012_a_stock_fetcher_system_audit_bug_identification_and_data_integrity_check": {
-        "target": "a_stock_announcements",
-        "mode": "collect",
-        "want": "fact",
-        "type_hint": "collection",
-        "slots": [
-            {"id": "state_vs_output", "question": "35 seen_ids vs 11 output records and the 24 orphaned IDs"},
-            {"id": "missing_csv", "question": "csv_summary true but summary_2026-02-09.csv is absent"},
-            {"id": "dedup_bug", "question": "deduplicate list(seen)[-5000:] ordering bug and sorted(seen, key=int)[-5000:] fix"},
-            {"id": "important_announcements", "question": "exactly five important announcements with IDs and company names"},
-            {"id": "config_cross_check", "question": "max_pages, fetch_sse, request_delay, category, notifications"},
-        ],
-    },
-    "task_00086_command_prefix_security_analysis": {
-        "target": ".",
-        "mode": "collect",
-        "want": "fact",
-        "type_hint": "collection",
-        "slots": [
-            {"id": "pipeline_commands", "question": "three non-trivial commands in scripts/run_pipeline.sh and their raw command strings"},
-            {"id": "classifications", "question": "curl pipe bash injection, python3 safe prefix, claude safe prefix with high-risk flag"},
-            {"id": "test_summary", "question": "data/test_commands.csv total commands, injection count, safe count"},
-            {"id": "policy_conflicts", "question": "KI-007/KI-008, LEGACY-R003, SAB-2025-001 conflicts and why security_policy.yaml v3.2.0 wins"},
-            {"id": "deliverables", "question": "security_analysis_report.md template needs and command_classifications.json required schema"},
-        ],
-        "trajectory": "one_collect_then_write",
-    },
-}
+BENCH_COLLECT_HINTS: dict[str, dict[str, Any]] = {}
 
 
 @dataclass(frozen=True)
@@ -218,19 +190,6 @@ def materialize_assets(task: LoadedTask, workspace: Path) -> None:
 
 
 def target_hint(task: LoadedTask) -> str:
-    task_text = (task.prompt + "\n" + task.automated_checks).lower()
-    if "downloads/" in task_text and "largest" in task_text and "text-like" in task_text:
-        return "downloads"
-    if "scheduled" in task_text and "notification" in task_text and "diagnosis_report.md" in task_text:
-        return "."
-    if task.task_id in BENCH_COLLECT_HINTS:
-        return str(BENCH_COLLECT_HINTS[task.task_id]["target"])
-    if task.task_id.startswith("task_loogle"):
-        return "document.txt"
-    if task.task_id == "task_21_openclaw_comprehension":
-        return "openclaw_report.pdf"
-    if task.task_id.startswith("task_00012"):
-        return "a_stock_announcements"
     for spec in task.workspace_files:
         if not isinstance(spec, dict):
             continue
@@ -278,57 +237,6 @@ def sro_collect_call_example(hint: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def feature_guidance(task: LoadedTask, task_spec_text: str) -> str:
-    text = task_spec_text.lower()
-    guidance = ""
-    if "literature retrieval" in text and ("cron_config" in text or "verified_rss_sources" in text):
-        guidance += (
-            "- This is a native diagnosis/code-fix task. Use native reads/grep/Python over "
-            "`cron_config.json`, `cron_logs/`, `literature_results/`, and `scripts/`; do not "
-            "start with SparseRead unless a native result is actually truncated.\n"
-        )
-    if "downloads/" in text and "largest" in text and "text-like" in text:
-        guidance += (
-            "- This is a native filesystem/stat task, not a SparseRead task. Use shell/Python "
-            "inspection such as `find`, `stat`, `file`, or `pathlib` on `downloads/`; exclude "
-            "PDF/ZIP/PNG from the considered list, and write only the text-like candidates in "
-            "`downloads/text_file_size_report.txt`.\n"
-        )
-    if "scheduled" in text and "notification" in text and "diagnosis_report.md" in text:
-        guidance += (
-            "- For scheduled notification diagnosis bundles, use native reads/grep/Python over the "
-            "small log/config/script/template files. Do not call sro_preview/sro_read unless a native "
-            "tool result is actually truncated; this task should normally be one native evidence "
-            "pass followed by writing `diagnosis_report.md` and `book_recommendation.sh`. The skill "
-            "deliverable is optional; skip `skill_workshop` when it would add another exploration loop.\n"
-            "- In `diagnosis_report.md`, explicitly cover: "
-            "`retry_after=3600` versus configured `delay_seconds=300`, non-daily execution gaps "
-            "or missing log dates, at least one secondary config/script issue such as timezone "
-            "ambiguity, `rate_limit` not enforced by the script, or placeholder/no real API send, "
-            "and concrete remediation such as honoring `retry_after` or activating the configured "
-            "Discord fallback.\n"
-        )
-    if "discount" in text and "discount_calculator.py" in text:
-        guidance += (
-            "- This is a native calculation/code task over small rule and user files. Use native "
-            "reads and local Python tests; do not use SparseRead unless a native read is truncated.\n"
-        )
-    if ("p&l" in text or "p/l" in text or "pnl" in text) and "transactions" in text:
-        guidance += (
-            "- This is a native full-table analysis task. Use local Python/pandas or csv/json parsing "
-            "over the complete transaction files; do not use SparseRead for row-level computation.\n"
-        )
-    if "exam monitoring system" in text and "monitoring-status.md" in text:
-        guidance += (
-            "- For monitoring status audits, use a small Python/JSON command to compute the site "
-            "inventory from `config/sites.json` before writing: total sites, verified+enabled count, "
-            "verified+enabled names, and unverified/disabled count. Then cross-check `cron_schedule.conf`, "
-            "`pta_monitor.py`, and `config/feishu.json`; explicitly mention Hubei 502 and Henan 404 "
-            "if present in site notes.\n"
-        )
-    return guidance
-
-
 def validation_prompt(task: LoadedTask, mode: str, *, diagnostic_hints: bool = False) -> str:
     if mode == "native":
         return task.prompt
@@ -350,15 +258,6 @@ def validation_prompt(task: LoadedTask, mode: str, *, diagnostic_hints: bool = F
             + "\n"
         )
     if not diagnostic_hints:
-        task_spec_text = task.task_md.read_text(encoding="utf-8", errors="replace")
-        feature_hint = feature_guidance(task, task_spec_text)
-        if feature_hint:
-            return (
-                task.prompt
-                + "\n\nSparseRead is available, but this workspace shape is native-fit. "
-                + "Follow the native guidance below and use sro_preview/sro_read only if a native result is actually truncated.\n"
-                + feature_hint
-            )
         return (
             task.prompt
             + "\n\nSparseRead is available for long documents, PDFs, and multi-file evidence bundles. "
@@ -386,16 +285,7 @@ def validation_prompt(task: LoadedTask, mode: str, *, diagnostic_hints: bool = F
             + date_hint
             + "\n"
         )
-        if re.search(r"\bdiscount\b", task.prompt, re.I):
-            code_hint += (
-                "- For discount/calculation modules, expose a simple reusable entry point named "
-                "`calculate_discount`, `get_discount`, `compute_discount`, `calculate_user_discount`, "
-                "or a `DiscountCalculator` method with one of those names. It should accept a user row dict "
-                "and rules/rules_path where appropriate, and return a numeric discount or a dict containing "
-                "`discount_pct`/`final_discount_pct`.\n"
-            )
     explicit_hint = BENCH_COLLECT_HINTS.get(task.task_id)
-    feature_hint = feature_guidance(task, task_spec_text)
     if explicit_hint:
         prefix = (
             "SparseRead validation protocol (benchmark only, not a product gate):\n"
@@ -413,7 +303,6 @@ def validation_prompt(task: LoadedTask, mode: str, *, diagnostic_hints: bool = F
         + "- Use native reads for small files, config edits, scripts, calculations, and full-table work.\n"
         + "- For long documents, PDFs, reports, or compact evidence closures, call sro_preview first. If the OpenClaw gate recommends SparseRead and preview is insufficient, call exactly one sro_read(mode=collect), then write the requested deliverable immediately when ready.\n"
         + slot_hint
-        + feature_hint
         + code_hint
         + "- Do not call sro_read with list-of-string slots. Do not call verify/refine after ready evidence unless a named required slot is unresolved.\n"
     )
