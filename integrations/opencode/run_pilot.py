@@ -493,10 +493,170 @@ def native_targets(runtime: Path, task: str) -> list[Path]:
         return [Path("assets/document.txt")]
     if "task_21" in task:
         return [task21_pdf_relative(runtime)]
-    if "task_21" in task:
-        return [task21_pdf_relative(runtime)]
     if "00012" in task:
         return [Path("assets/a_stock_announcements")]
+    if "00086" in task:
+        return [Path("assets")]
+    return [Path("assets")]
+
+
+def simulate_sro(runtime: Path, task: str, trace: dict[str, Any], args: argparse.Namespace, *, observe_only: bool, diagnostic_hints: bool = False) -> None:
+    target = sro_target(runtime, task)
+    bridge_cmd = bridge_command_prefix(args) + [
+        "-m",
+        "sparseread_opencode.bridge",
+        "--workspace",
+        str(runtime),
+        "--mode",
+        "auto",
+    ]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{SR_PROJECT}{os.pathsep}{env.get('PYTHONPATH', '')}".rstrip(os.pathsep)
+    env["SRO_ENABLED"] = "1"
+    proc = subprocess.Popen(
+        bridge_cmd,
+        cwd=ROOT,
+        env=env,
+        text=True,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        preview = bridge_request(proc, "preview", {"path": str(target)})
+        trace["sro_events"].append({"tool": "sro_preview", "result": summarize_payload(preview)})
+        artifact_id = preview["preview_pack"]["artifact_id"]
+        read = bridge_request(
+            proc,
+            "read",
+            {
+                "target": {"artifact_id": artifact_id},
+                "mode": "collect",
+                "hint": sro_hint(task, diagnostic_hints=diagnostic_hints),
+            },
+        )
+        trace["sro_events"].append({"tool": "sro_read", "result": summarize_payload(read)})
+        bridge_trace = bridge_request(proc, "trace", {})
+        trace["bridge_trace"] = bridge_trace
+        if observe_only:
+            trace["notes"].append("SR tools exercised after native trace for observe comparison")
+    finally:
+        try:
+            bridge_request(proc, "shutdown", {})
+        except Exception:
+            pass
+        proc.kill()
+
+
+def bridge_command_prefix(args: argparse.Namespace) -> list[str]:
+    if args.bridge_command:
+        return json.loads(args.bridge_command) if args.bridge_command.strip().startswith("[") else args.bridge_command.split()
+    uv = shutil.which("uv")
+    if uv:
+        return [uv, "run", "--project", str(SR_PROJECT), "--with", "pymupdf", "python"]
+    return [args.python]
+
+
+def opencode_command_prefix(args: argparse.Namespace) -> list[str]:
+    raw = args.opencode_cmd.strip()
+    if not raw:
+        return []
+    if raw.startswith("["):
+        value = json.loads(raw)
+        if not isinstance(value, list) or not value or any(not isinstance(part, str) or not part.strip() for part in value):
+            raise ValueError(f"invalid --opencode-cmd JSON array: {args.opencode_cmd!r}")
+        return value
+    return [raw]
+
+
+def command_version(command: list[str]) -> str:
+    proc = subprocess.run(
+        command + ["--version"],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=60,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"version probe failed ({proc.returncode}): {' '.join(command)}")
+    return proc.stdout.strip().splitlines()[0]
+
+
+def source_revision() -> str:
+    proc = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=30,
+    )
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def bridge_request(proc: subprocess.Popen[str], method: str, params: dict[str, Any]) -> Any:
+    assert proc.stdin is not None and proc.stdout is not None
+    req = {"id": f"{method}-{time.time_ns()}", "method": method, "params": params}
+    proc.stdin.write(json.dumps(req) + "\n")
+    proc.stdin.flush()
+    line = proc.stdout.readline()
+    if not line:
+        stderr = proc.stderr.read() if proc.stderr else ""
+        raise RuntimeError(f"bridge returned no response: {stderr}")
+    payload = json.loads(line)
+    if not payload.get("ok"):
+        raise RuntimeError(payload.get("error"))
+    return payload["result"]
+
+
+def sro_target(runtime: Path, task: str) -> Path:
+    if "loogle" in task:
+        return runtime / "assets" / "document.txt"
+    if "task_21" in task:
+        return runtime / task21_pdf_relative(runtime)
+    if "00012" in task:
+        return runtime / "assets" / "a_stock_announcements"
+    if "00086" in task:
+        return runtime / "assets"
+    return runtime / "assets"
+
+
+def task21_pdf_relative(runtime: Path) -> Path:
+    preferred = runtime / "assets" / "openclaw_report.pdf"
+    if preferred.exists():
+        return Path("assets/openclaw_report.pdf")
+    matches = sorted((runtime / "assets").glob("*.pdf"))
+    if matches:
+        return matches[0].relative_to(runtime)
+    return Path("assets/openclaw_report.pdf")
+
+
+def sro_hint(task: str, *, diagnostic_hints: bool = False) -> dict[str, Any]:
+    """Return a HintSpec for the given task.
+
+    When diagnostic_hints=False (default), returns a minimal generic hint with no
+    task-specific slots or targets — this is the fair product evaluation path.
+    When diagnostic_hints=True, returns task-specific slots for debugging."""
+    if not diagnostic_hints:
+        return {"goal": "collect evidence required by the task", "type_hint": "auto"}
+    if "loogle" in task:
+        return _loogle_hint(task)
+    if "task_21" in task:
+        return {
+            "goal": "answer eight factual questions from the OpenClaw report PDF",
+            "type_hint": "pdf",
+            "slots": [
+                {"id": "total_skills", "question": "How many community-built skills were in the public registry before filtering?"},
+                {"id": "filtered_skills", "question": "How many skills remained after filtering out spam, duplicates, non-English, crypto/finance/trading, and malicious content?"},
+                {"id": "top_category", "question": "What is the largest skill category by count, and how many skills does it have?"},
+                {"id": "second_category", "question": "What is the second-largest skill category by count, and how many skills does it have?"},
+                {"id": "skill_file", "question": "What is the name of the file that defines an OpenClaw skill?"},
+                {"id": "gateway_api", "question": "What type of API does the OpenClaw gateway expose?"},
+                {"id": "collection_date", "question": "What date was the skills registry data collected?"},
+                {"id": "benchmark_tasks", "question": "How many new benchmark tasks does the paper propose?"},
+            ],
+        }
     return {"goal": "collect sparse evidence", "type_hint": "collection"}
 
 
